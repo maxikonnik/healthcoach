@@ -121,7 +121,7 @@ git commit -m "chore: каркас проекта на Python 3.12 и uv"
 - Consumes: ничего
 - Produces:
   - `ScaleOption(score: int, label: str)`
-  - `Question(id: str, number: int, text: str, scale: tuple[ScaleOption, ...] | None)`
+  - `Question(id: str, number: int, text: str, scale: tuple[ScaleOption, ...] | None, block_scale: tuple[ScaleOption, ...])` — `block_scale` заполняется загрузчиком, чтобы `options()` работал без обратной ссылки на блок
   - `Threshold(degree: str, min: int | None, max: int | None, sex: str | None)`
   - `Subscale(id: str, title: str, question_ids: tuple[str, ...], thresholds: tuple[Threshold, ...])`
   - `Block(id: str, title: str, part: str, core: bool, scale: tuple[ScaleOption, ...], questions: tuple[Question, ...], subscales: tuple[Subscale, ...])`
