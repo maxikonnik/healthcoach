@@ -1443,6 +1443,59 @@ def test_target_without_optimal_raises(tmp_path):
     )
     with pytest.raises(ReferenceError, match="оптимум"):
         load_references(tmp_path)
+
+
+def test_non_numeric_interval_bound_names_file_and_analyte(tmp_path):
+    """Латинская O вместо нуля — типичная опечатка при ручной правке."""
+    (tmp_path / "ferritin_broken.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: [6O, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "ferritin_broken.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_condition_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_condition.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - условие: 5\n"
+        "        оптимум: [60, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_condition.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_interval_shape_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_shape.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: 60\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_shape.yaml" in message
+    assert "ферритин" in message
 ```
 
 Файл `knowledge/references/ferritin.yaml`:
@@ -1538,6 +1591,13 @@ class Target:
 
 @dataclass(frozen=True)
 class Analyte:
+    """Показатель с целевыми коридорами коуча.
+
+    Порядок `targets` задаёт приоритет: побеждает первое целевое значение,
+    чьё условие подошло. Частные условия пишутся выше, запасное без условия —
+    последним.
+    """
+
     id: str
     name: str
     synonyms: tuple[str, ...]
@@ -1578,23 +1638,44 @@ def _interval(raw, where: str) -> Interval | None:
     if raw is None:
         return None
     if not isinstance(raw, list) or len(raw) != 2:
-        raise ReferenceError(f"{where}: интервал должен быть списком из двух значений")
+        raise ReferenceError(
+            f"{where}: интервал должен быть списком из двух значений, получено {raw!r}"
+        )
     low, high = raw
-    return Interval(
-        low=None if low is None else float(low),
-        high=None if high is None else float(high),
-    )
+    try:
+        return Interval(
+            low=None if low is None else float(low),
+            high=None if high is None else float(high),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReferenceError(
+            f"{where}: границы интервала должны быть числами, получено {raw!r}"
+        ) from exc
 
 
-def _condition(raw: dict | None) -> Condition:
-    raw = raw or {}
+def _condition(raw: dict | None, where: str) -> Condition:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ReferenceError(f"{where}: 'условие' должно быть словарём, получено {raw!r}")
+
     age = raw.get("возраст")
     if age is not None and (not isinstance(age, list) or len(age) != 2):
-        raise ReferenceError("условие: 'возраст' должен быть списком [от, до]")
+        raise ReferenceError(
+            f"{where}: 'возраст' должен быть списком [от, до], получено {age!r}"
+        )
+    try:
+        age_min = None if age is None or age[0] is None else int(age[0])
+        age_max = None if age is None or age[1] is None else int(age[1])
+    except (TypeError, ValueError) as exc:
+        raise ReferenceError(
+            f"{where}: границы возраста должны быть целыми числами, получено {age!r}"
+        ) from exc
+
     return Condition(
         sex=raw.get("пол"),
-        age_min=None if age is None or age[0] is None else int(age[0]),
-        age_max=None if age is None or age[1] is None else int(age[1]),
+        age_min=age_min,
+        age_max=age_max,
         cycle_phase=raw.get("фаза_цикла"),
     )
 
@@ -1605,7 +1686,7 @@ def _target(raw: dict, where: str) -> Target:
     optimal = _interval(raw["оптимум"], where)
     assert optimal is not None
     return Target(
-        condition=_condition(raw.get("условие")),
+        condition=_condition(raw.get("условие"), where),
         optimal=optimal,
         deficient=_interval(raw.get("дефицит"), where),
         excessive=_interval(raw.get("избыток"), where),
@@ -1653,7 +1734,7 @@ def load_references(directory: Path) -> References:
         try:
             analytes.extend(_analyte(a) for a in raw.get("показатели", ()))
             derived.extend(_derived(d) for d in raw.get("производные", ()))
-        except (KeyError, TypeError) as exc:
+        except (ReferenceError, KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ReferenceError(f"{path.name}: {exc}") from exc
 
     ids = [a.id for a in analytes] + [d.id for d in derived]
@@ -1675,7 +1756,7 @@ def load_references(directory: Path) -> References:
 uv run pytest tests/knowledge/test_references_model.py -v
 ```
 
-Ожидается: 7 PASS.
+Ожидается: 10 PASS.
 
 - [ ] **Step 5: Коммит**
 
