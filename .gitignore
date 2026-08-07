@@ -1,0 +1,17 @@
+# Данные клиентов не попадают в репозиторий никогда
+data/
+clients/
+*.db
+*.sqlite
+*.sqlite3
+registry.json
+out/
+reports/
+
+# Окружение
+.venv/
+__pycache__/
+*.pyc
+.env
+
+.DS_Store
