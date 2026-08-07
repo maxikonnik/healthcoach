@@ -13,6 +13,7 @@ STATUS_ABOVE = "выше целевого"
 STATUS_EXCESS = "избыток"
 STATUS_NO_RULE = "правило не задано"
 STATUS_UNIT_MISMATCH = "единицы не сопоставлены"
+STATUS_NOT_COMPUTED = "не удалось вычислить"
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class Measurement:
 class AnalyteVerdict:
     analyte_id: str
     title: str
-    value: float
+    value: float | None
     units: str
     status: str
     target: Interval | None

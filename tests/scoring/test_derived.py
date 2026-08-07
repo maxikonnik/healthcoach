@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from healthcoach.knowledge.formula import MissingOperand, validate_formula
 from healthcoach.knowledge.references import Interval, load_references
 from healthcoach.scoring.derived import FormulaError, compute_derived, evaluate_formula
 from healthcoach.scoring.references import Measurement
@@ -62,3 +63,35 @@ def test_derived_skipped_when_operand_absent():
     assert compute_derived(
         load_references(REFS), [Measurement("кальций", 10.0, "мг/дл")]
     ) == []
+
+
+def test_missing_operand_has_its_own_type():
+    """Только этот случай пропускается молча, поэтому у него отдельный тип."""
+    with pytest.raises(MissingOperand):
+        evaluate_formula("кальций / калий", {"кальций": 10.0})
+
+
+def test_validate_formula_returns_operand_names():
+    assert validate_formula("кальций / калий") == ("кальций", "калий")
+
+
+def test_validate_formula_rejects_syntax_error():
+    with pytest.raises(FormulaError, match="не разобрана"):
+        validate_formula("кальций /")
+
+
+def test_validate_formula_rejects_call():
+    with pytest.raises(FormulaError, match="недопустимая конструкция"):
+        validate_formula("__import__('os').system('ls')")
+
+
+def test_division_by_zero_gives_verdict_not_silence():
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [Measurement("кальций", 10.0, "мг/дл"), Measurement("калий", 0.0, "ммоль/л")],
+    )
+    assert verdict.analyte_id == "кальций_калий"
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "деление на ноль" in verdict.note

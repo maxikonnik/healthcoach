@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from healthcoach.knowledge.formula import FormulaError, validate_formula
+
 
 class ReferenceError(Exception):
     """Файл референсов некорректен."""
@@ -180,10 +182,15 @@ def _derived(raw: dict) -> Derived:
     where = f"производный {raw['id']!r}"
     optimal = _interval(raw["оптимум"], where)
     assert optimal is not None
+    formula = str(raw["формула"])
+    try:
+        validate_formula(formula)
+    except FormulaError as exc:
+        raise ReferenceError(f"{where}: {exc}") from exc
     return Derived(
         id=str(raw["id"]),
         name=str(raw["название"]),
-        formula=str(raw["формула"]),
+        formula=formula,
         optimal=optimal,
         note=raw.get("заметка"),
     )

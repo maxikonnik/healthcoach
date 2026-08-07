@@ -128,3 +128,19 @@ def test_malformed_interval_shape_names_file_and_analyte(tmp_path):
     message = str(excinfo.value)
     assert "broken_shape.yaml" in message
     assert "ферритин" in message
+
+
+def test_broken_formula_names_file_and_derived(tmp_path):
+    (tmp_path / "broken_formula.yaml").write_text(
+        "производные:\n"
+        "  - id: плохой\n"
+        "    название: Плохой\n"
+        "    формула: 'кальций /'\n"
+        "    оптимум: [1, 2]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_formula.yaml" in message
+    assert "плохой" in message
