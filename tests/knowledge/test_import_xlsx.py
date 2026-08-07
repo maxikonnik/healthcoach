@@ -1,0 +1,59 @@
+from healthcoach.knowledge.import_xlsx import (
+    is_section_heading,
+    slugify,
+    split_inline_scale,
+)
+
+
+def test_slugify_transliterates_cyrillic():
+    assert slugify("Образ жизни") == "obraz_zizni"
+    assert slugify("ЖЕЛУДОК  и П/Ж") == "zeludok_i_p_z"
+
+
+def test_slugify_is_stable_and_bounded():
+    assert slugify("  Питание  ") == slugify("Питание")
+    assert not slugify("Питание").startswith("_")
+    assert not slugify("Питание").endswith("_")
+
+
+def test_split_inline_scale_extracts_options():
+    text = (
+        "Регулярные занятия спортом\n"
+        "0 - Два и больше в неделю\n"
+        "1 - Один раз в неделю\n"
+        "2 - Один или два раза в месяц\n"
+        "3 - Никогда"
+    )
+    question, options = split_inline_scale(text)
+    assert question == "Регулярные занятия спортом"
+    assert [o["score"] for o in options] == [0, 1, 2, 3]
+    assert options[0]["label"] == "Два и больше в неделю"
+
+
+def test_split_inline_scale_handles_en_dash():
+    _, options = split_inline_scale("Вопрос\n0 – Нет\n1 – Да")
+    assert [o["label"] for o in options] == ["Нет", "Да"]
+
+
+def test_split_inline_scale_without_scale_returns_empty():
+    question, options = split_inline_scale("Отрыжка вскоре после еды")
+    assert question == "Отрыжка вскоре после еды"
+    assert options == []
+
+
+def test_split_inline_scale_joins_multiline_question():
+    question, options = split_inline_scale("Первая строка\nвторая строка\n0 - Нет")
+    assert question == "Первая строка вторая строка"
+    assert len(options) == 1
+
+
+def test_is_section_heading_recognises_numbered_and_plain():
+    assert is_section_heading("1. ПИТАНИЕ") == "ПИТАНИЕ"
+    assert is_section_heading("КЛИНИЧЕСКАЯ ЧАСТЬ") == "КЛИНИЧЕСКАЯ ЧАСТЬ"
+    assert is_section_heading("14. ЖЕНСКОЕ ЗДОРОВЬЕ") == "ЖЕНСКОЕ ЗДОРОВЬЕ"
+
+
+def test_is_section_heading_rejects_ordinary_text():
+    assert is_section_heading("Изжога или обратный заброс") is None
+    assert is_section_heading("Сумма всех баллов в данном блоке") is None
+    assert is_section_heading("") is None
