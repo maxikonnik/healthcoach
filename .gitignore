@@ -8,6 +8,9 @@ registry.json
 out/
 reports/
 
+# Рабочее пространство исполнения планов
+.superpowers/
+
 # Окружение
 .venv/
 __pycache__/

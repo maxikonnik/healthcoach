@@ -427,8 +427,10 @@ git commit -m "feat: модель спецификации опросника с
 
 **Files:**
 - Create: `src/healthcoach/knowledge/validation.py`
+- Create: `src/healthcoach/knowledge/import_xlsx.py`
 - Create: `tools/import_questionnaire.py`
 - Create: `tests/knowledge/test_validation.py`
+- Create: `tests/knowledge/test_import_xlsx.py`
 
 **Interfaces:**
 - Consumes: `Questionnaire`, `Subscale`, `Threshold`, `QuestionnaireError` из задачи 2
@@ -437,6 +439,11 @@ git commit -m "feat: модель спецификации опросника с
   - `validate_questionnaire(q: Questionnaire) -> list[Problem]`
   - `parse_threshold_range(text: str) -> tuple[int | None, int | None]`
   - `RangeParseError(Exception)`
+  - `slugify(title: str) -> str`
+  - `split_inline_scale(text: str) -> tuple[str, list[dict]]`
+  - `is_section_heading(text: str) -> str | None`
+
+**Почему разбор живёт в пакете, а не в скрипте.** `slugify` и `split_inline_scale` — чистые функции с неочевидным поведением: первая транслитерирует кириллицу, вторая отделяет шкалу, вписанную в текст вопроса переводами строки (так устроены блоки «Образ жизни» и «Женское здоровье» в исходном файле). Их надо тестировать, а код внутри `tools/` под тесты не попадает. Поэтому они лежат в `healthcoach.knowledge.import_xlsx`, а скрипт остаётся тонкой обёрткой над `openpyxl`.
 
 **Зачем валидатор.** В исходном xlsx на листе «РЕЗУЛЬТАТ КЛЮЧ» у блока «Опросник Candida» пороги заданы как `<40` (низкая), `41-140` (средняя), `<140` (высокая) для мужчин и `<60` / `61-180` / `<180` для женщин. Высокая степень с верхней границей, равной верхней границе средней, — почти наверняка опечатка: должно быть `>140` и `>180`. Валидатор ловит такие случаи: пересечения диапазонов, разрывы между ними и отсутствие открытого верхнего порога. Импорт печатает находки, коуч решает.
 
@@ -710,7 +717,140 @@ uv run pytest tests/knowledge/test_validation.py -v
 
 Ожидается: 12 PASS (6 параметризованных плюс 6 обычных).
 
-- [ ] **Step 5: Написать инструмент импорта**
+- [ ] **Step 5: Написать падающие тесты для разбора**
+
+Файл `tests/knowledge/test_import_xlsx.py`:
+
+```python
+from healthcoach.knowledge.import_xlsx import (
+    is_section_heading,
+    slugify,
+    split_inline_scale,
+)
+
+
+def test_slugify_transliterates_cyrillic():
+    assert slugify("Образ жизни") == "obraz_zizni"
+    assert slugify("ЖЕЛУДОК  и П/Ж") == "zeludok_i_p_z"
+
+
+def test_slugify_is_stable_and_bounded():
+    assert slugify("  Питание  ") == slugify("Питание")
+    assert not slugify("Питание").startswith("_")
+    assert not slugify("Питание").endswith("_")
+
+
+def test_split_inline_scale_extracts_options():
+    text = (
+        "Регулярные занятия спортом\n"
+        "0 - Два и больше в неделю\n"
+        "1 - Один раз в неделю\n"
+        "2 - Один или два раза в месяц\n"
+        "3 - Никогда"
+    )
+    question, options = split_inline_scale(text)
+    assert question == "Регулярные занятия спортом"
+    assert [o["score"] for o in options] == [0, 1, 2, 3]
+    assert options[0]["label"] == "Два и больше в неделю"
+
+
+def test_split_inline_scale_handles_en_dash():
+    _, options = split_inline_scale("Вопрос\n0 – Нет\n1 – Да")
+    assert [o["label"] for o in options] == ["Нет", "Да"]
+
+
+def test_split_inline_scale_without_scale_returns_empty():
+    question, options = split_inline_scale("Отрыжка вскоре после еды")
+    assert question == "Отрыжка вскоре после еды"
+    assert options == []
+
+
+def test_split_inline_scale_joins_multiline_question():
+    question, options = split_inline_scale("Первая строка\nвторая строка\n0 - Нет")
+    assert question == "Первая строка вторая строка"
+    assert len(options) == 1
+
+
+def test_is_section_heading_recognises_numbered_and_plain():
+    assert is_section_heading("1. ПИТАНИЕ") == "ПИТАНИЕ"
+    assert is_section_heading("КЛИНИЧЕСКАЯ ЧАСТЬ") == "КЛИНИЧЕСКАЯ ЧАСТЬ"
+    assert is_section_heading("14. ЖЕНСКОЕ ЗДОРОВЬЕ") == "ЖЕНСКОЕ ЗДОРОВЬЕ"
+
+
+def test_is_section_heading_rejects_ordinary_text():
+    assert is_section_heading("Изжога или обратный заброс") is None
+    assert is_section_heading("Сумма всех баллов в данном блоке") is None
+    assert is_section_heading("") is None
+```
+
+- [ ] **Step 6: Реализовать разбор и убедиться, что тесты проходят**
+
+Файл `src/healthcoach/knowledge/import_xlsx.py`:
+
+```python
+"""Чистые функции разбора исходного xlsx-опросника.
+
+Живут в пакете, а не в скрипте, потому что их поведение неочевидно
+и должно быть закреплено тестами.
+"""
+
+from __future__ import annotations
+
+import re
+
+_SECTION = re.compile(r"^\s*(?:\d+\.\s*)?([А-ЯЁ][А-ЯЁ \-/()]{4,})\s*$")
+_INLINE_SCALE = re.compile(r"^\s*(\d)\s*[-–—]\s*(.+)$")
+
+_TRANSLIT = str.maketrans(
+    {
+        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+        "ж": "z", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+        "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+        "ф": "f", "х": "h", "ц": "c", "ч": "c", "ш": "s", "щ": "s", "ъ": "",
+        "ы": "y", "ь": "", "э": "e", "ю": "u", "я": "a",
+    }
+)
+
+
+def slugify(title: str) -> str:
+    """Превратить русское название блока в латинский идентификатор."""
+    latin = title.strip().lower().translate(_TRANSLIT)
+    return re.sub(r"[^a-z0-9]+", "_", latin).strip("_")
+
+
+def split_inline_scale(text: str) -> tuple[str, list[dict]]:
+    """Отделить шкалу, вписанную в текст вопроса переводами строки.
+
+    Возвращает текст вопроса и список вариантов. Если шкалы нет,
+    список пуст и применяется шкала блока.
+    """
+    question_lines: list[str] = []
+    options: list[dict] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if (m := _INLINE_SCALE.match(line)) is not None:
+            options.append({"score": int(m.group(1)), "label": m.group(2).strip()})
+        else:
+            question_lines.append(line.strip())
+    return " ".join(question_lines), options
+
+
+def is_section_heading(text: str) -> str | None:
+    """Название секции, если строка им является, иначе None."""
+    if not text:
+        return None
+    match = _SECTION.match(text)
+    return match.group(1).strip() if match else None
+```
+
+```bash
+uv run pytest tests/knowledge/test_import_xlsx.py -v
+```
+
+Ожидается: 8 PASS. Транслитерация намеренно грубая — идентификаторы должны быть стабильными и различимыми, а не красивыми; при коллизии двух блоков поправить вручную в YAML.
+
+- [ ] **Step 7: Написать инструмент импорта**
 
 Файл `tools/import_questionnaire.py`:
 
@@ -730,38 +870,19 @@ uv run pytest tests/knowledge/test_validation.py -v
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 from openpyxl import load_workbook
 
+from healthcoach.knowledge.import_xlsx import (
+    is_section_heading,
+    slugify,
+    split_inline_scale,
+)
+
 SHEET_QUESTIONS = "ОПРОСНИК"
 SHEET_KEY = "РЕЗУЛЬТАТ КЛЮЧ"
-
-_SECTION = re.compile(r"^\s*(?:\d+\.\s*)?([А-ЯЁ][А-ЯЁ \-/()]{4,})\s*$")
-_INLINE_SCALE = re.compile(r"^\s*(\d)\s*[-–]\s*(.+)$")
-
-
-def slugify(title: str) -> str:
-    table = str.maketrans(
-        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
-        "abvgdeezziyklmnoprstufhccss_y_eua",
-    )
-    return re.sub(r"[^a-z0-9]+", "_", title.strip().lower().translate(table)).strip("_")
-
-
-def split_inline_scale(text: str) -> tuple[str, list[dict]]:
-    """Отделить шкалу, вписанную в текст вопроса переводами строки."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    question_lines: list[str] = []
-    options: list[dict] = []
-    for line in lines:
-        if (m := _INLINE_SCALE.match(line)) is not None:
-            options.append({"score": int(m.group(1)), "label": m.group(2).strip()})
-        else:
-            question_lines.append(line.strip())
-    return " ".join(question_lines), options
 
 
 def main(xlsx: Path, out: Path) -> None:
@@ -776,8 +897,9 @@ def main(xlsx: Path, out: Path) -> None:
         b = row[1].value
         h = row[7].value
 
-        if isinstance(a, str) and _SECTION.match(a) and not b:
-            title = _SECTION.match(a).group(1).strip().capitalize()
+        heading = is_section_heading(a) if isinstance(a, str) else None
+        if heading and not b:
+            title = heading.capitalize()
             current = slugify(title)
             lines += [
                 f"  - id: {current}",
@@ -822,7 +944,7 @@ if __name__ == "__main__":
     main(Path(sys.argv[1]), Path(sys.argv[2]))
 ```
 
-- [ ] **Step 6: Прогнать импорт и убедиться, что черновик читается**
+- [ ] **Step 8: Прогнать импорт и убедиться, что черновик читается**
 
 ```bash
 uv run python tools/import_questionnaire.py \
@@ -832,10 +954,12 @@ head -40 knowledge/questionnaire.draft.yaml
 
 Ожидается: файл создан, в нём видны блоки и вопросы с пометками `ПРОВЕРИТЬ`. Черновик **не коммитим** — он рабочий материал; в репозиторий пойдёт доведённый вручную `knowledge/questionnaire.yaml` в следующей задаче.
 
-- [ ] **Step 7: Коммит**
+- [ ] **Step 9: Коммит**
 
 ```bash
-git add src/healthcoach/knowledge/validation.py tools/import_questionnaire.py tests/knowledge/test_validation.py
+git add src/healthcoach/knowledge/validation.py src/healthcoach/knowledge/import_xlsx.py \
+        tools/import_questionnaire.py \
+        tests/knowledge/test_validation.py tests/knowledge/test_import_xlsx.py
 git commit -m "feat: валидатор порогов опросника и разовый импорт из xlsx"
 ```
 
