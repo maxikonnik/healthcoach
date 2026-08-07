@@ -75,3 +75,56 @@ def test_target_without_optimal_raises(tmp_path):
     )
     with pytest.raises(ReferenceError, match="оптимум"):
         load_references(tmp_path)
+
+
+def test_non_numeric_interval_bound_names_file_and_analyte(tmp_path):
+    """Латинская O вместо нуля — типичная опечатка при ручной правке."""
+    (tmp_path / "ferritin_broken.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: [6O, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "ferritin_broken.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_condition_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_condition.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - условие: 5\n"
+        "        оптимум: [60, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_condition.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_interval_shape_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_shape.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: 60\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_shape.yaml" in message
+    assert "ферритин" in message
