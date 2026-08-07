@@ -569,6 +569,41 @@ def test_degrees_checked_per_sex_independently():
         ]
     )
     assert validate_questionnaire(q) == []
+
+
+def test_unknown_degree_name_is_reported():
+    q = _questionnaire(
+        [
+            Threshold("странная", 1, 5, None),
+            Threshold("высокая", 6, None, None),
+        ]
+    )
+    problems = validate_questionnaire(q)
+    assert any("не входит в известный порядок" in p.message for p in problems)
+
+
+def test_dass_masculine_degree_names_are_recognised():
+    """Названия градаций DASS на листе ключа — в мужском роде и через 'е'."""
+    q = _questionnaire(
+        [
+            Threshold("Нормальный", 0, 9, None),
+            Threshold("Средний", 10, 13, None),
+            Threshold("Умеренный", 14, 20, None),
+            Threshold("Тяжелый", 21, 27, None),
+            Threshold("Очень тяжелый", 28, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
+
+
+def test_degree_matching_ignores_case_and_yo():
+    q = _questionnaire(
+        [
+            Threshold("НИЗКАЯ", 1, 5, None),
+            Threshold("Тяжёлая", 6, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
 ```
 
 - [ ] **Step 2: Запустить тесты и убедиться, что они падают**
@@ -597,7 +632,27 @@ _RANGE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 _GREATER = re.compile(r"^\s*>\s*(\d+)\s*$")
 _LESS = re.compile(r"^\s*<\s*(\d+)\s*$")
 
-_DEGREE_ORDER = ("низкая", "средняя", "умеренная", "высокая", "тяжёлая", "очень тяжёлая")
+_DEGREE_ORDER = (
+    "нормальный",
+    "низкая",
+    "средняя",
+    "средний",
+    "умеренная",
+    "умеренный",
+    "высокая",
+    "тяжелая",
+    "тяжелый",
+    "очень тяжелая",
+    "очень тяжелый",
+)
+"""Порядок степеней от лёгкой к тяжёлой.
+
+Женские формы — для блоков опросника («степень отклонения»), мужские —
+для DASS («показатель»). В одной подгруппе используется одна семья названий,
+поэтому общий плоский список сохраняет относительный порядок внутри каждой.
+"""
+
+_DEGREE_INDEX = {name: i for i, name in enumerate(_DEGREE_ORDER)}
 
 
 class RangeParseError(Exception):
@@ -625,18 +680,37 @@ def parse_threshold_range(text: str) -> tuple[int | None, int | None]:
     raise RangeParseError(f"не удалось разобрать диапазон {text!r}")
 
 
+def _normalize_degree(degree: str) -> str:
+    """Привести название степени к виду, в котором оно ищется в порядке."""
+    return degree.strip().casefold().replace("ё", "е")
+
+
+def _degree_rank(degree: str) -> int | None:
+    """Позиция степени в порядке, либо None если название незнакомо."""
+    return _DEGREE_INDEX.get(_normalize_degree(degree))
+
+
 def _sort_key(threshold: Threshold) -> tuple[int, int]:
-    order = (
-        _DEGREE_ORDER.index(threshold.degree)
-        if threshold.degree in _DEGREE_ORDER
-        else len(_DEGREE_ORDER)
-    )
+    rank = _degree_rank(threshold.degree)
+    order = rank if rank is not None else len(_DEGREE_ORDER)
     lower = threshold.min if threshold.min is not None else -10**9
     return order, lower
 
 
 def _check_group(where: str, thresholds: list[Threshold]) -> list[Problem]:
     problems: list[Problem] = []
+
+    for threshold in thresholds:
+        if _degree_rank(threshold.degree) is None:
+            problems.append(
+                Problem(
+                    where,
+                    f"степень {threshold.degree!r} не входит в известный порядок "
+                    f"({', '.join(_DEGREE_ORDER)}); сортировка степеней в этой "
+                    f"подгруппе ненадёжна, проверьте написание",
+                )
+            )
+
     ordered = sorted(thresholds, key=_sort_key)
 
     for earlier, later in zip(ordered, ordered[1:]):
@@ -715,7 +789,7 @@ def validate_questionnaire(questionnaire: Questionnaire) -> list[Problem]:
 uv run pytest tests/knowledge/test_validation.py -v
 ```
 
-Ожидается: 12 PASS (6 параметризованных плюс 6 обычных).
+Ожидается: 15 PASS (6 параметризованных плюс 9 обычных).
 
 - [ ] **Step 5: Написать падающие тесты для разбора**
 
