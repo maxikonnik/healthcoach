@@ -115,3 +115,37 @@ def test_degrees_checked_per_sex_independently():
         ]
     )
     assert validate_questionnaire(q) == []
+
+
+def test_unknown_degree_name_is_reported():
+    q = _questionnaire(
+        [
+            Threshold("странная", 1, 5, None),
+            Threshold("высокая", 6, None, None),
+        ]
+    )
+    problems = validate_questionnaire(q)
+    assert any("не входит в известный порядок" in p.message for p in problems)
+
+
+def test_dass_masculine_degree_names_are_recognised():
+    q = _questionnaire(
+        [
+            Threshold("Нормальный", 0, 9, None),
+            Threshold("Средний", 10, 13, None),
+            Threshold("Умеренный", 14, 20, None),
+            Threshold("Тяжелый", 21, 27, None),
+            Threshold("Очень тяжелый", 28, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
+
+
+def test_degree_matching_ignores_case_and_yo():
+    q = _questionnaire(
+        [
+            Threshold("НИЗКАЯ", 1, 5, None),
+            Threshold("Тяжёлая", 6, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
