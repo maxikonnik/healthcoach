@@ -25,6 +25,17 @@ class Resolution:
     candidates: tuple[Analyte, ...]
     raw_name: str
 
+    def __post_init__(self) -> None:
+        if self.analyte is not None and self.candidates != (self.analyte,):
+            raise ValueError(
+                "распознанный показатель должен быть единственным кандидатом"
+            )
+        if self.analyte is None and len(self.candidates) == 1:
+            raise ValueError(
+                "единственный кандидат — это распознанный показатель, "
+                "он должен быть указан в analyte"
+            )
+
     @property
     def is_certain(self) -> bool:
         return self.analyte is not None

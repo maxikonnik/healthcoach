@@ -81,3 +81,31 @@ def test_certainty_flags_are_mutually_exclusive(references):
             resolution.is_ambiguous,
         ]
         assert sum(flags) == 1
+
+
+def test_resolution_refuses_a_lone_candidate_without_the_analyte():
+    """Все три признака оказались бы ложными, и вызывающий код провалился бы мимо ветвей."""
+    from healthcoach.intake.resolve import Resolution
+
+    references = load_references(REFS)
+    ferritin = references.analyte("ферритин")
+    with pytest.raises(ValueError, match="единственный кандидат"):
+        Resolution(analyte=None, candidates=(ferritin,), raw_name="Ферритин")
+
+
+def test_resolution_refuses_an_analyte_absent_from_its_own_candidates():
+    from healthcoach.intake.resolve import Resolution
+
+    references = load_references(REFS)
+    ferritin = references.analyte("ферритин")
+    with pytest.raises(ValueError, match="единственным кандидатом"):
+        Resolution(analyte=ferritin, candidates=(), raw_name="Ферритин")
+
+
+def test_every_outcome_of_the_real_resolver_satisfies_the_invariant():
+    """Инвариант выполняется на всех исходах, а не только на удобных."""
+    references = load_references(REFS)
+    for raw in ("Ферритин", "Гомоцистеин", "", "(нг/мл)", "Ferritin", "Кальций"):
+        resolution = resolve_analyte(references, raw)
+        flags = [resolution.is_certain, resolution.is_unknown, resolution.is_ambiguous]
+        assert sum(flags) == 1, f"{raw!r}: {flags}"
