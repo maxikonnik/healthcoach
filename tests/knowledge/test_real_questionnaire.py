@@ -97,11 +97,65 @@ def test_candida_top_degree_is_open_ended():
         assert threshold.min == (141 if threshold.sex == "м" else 181)
 
 
-def test_candida_symptom_sections_have_the_confirmed_scale():
-    """Баллы секций Б и В в таблице не выписаны; значения подтверждены коучем."""
+def _subscale_questions(block, subscale):
+    ids = set(subscale.question_ids)
+    return [q for q in block.questions if q.id in ids]
+
+
+def test_candida_sections_keep_their_own_scales():
+    """У каждой секции Candida своя шкала, выписанная в колонке H."""
     q = _questionnaire()
     block = q.block("oprosnik_candida")
-    assert [(o.score, o.label) for o in block.scale] == [(0, "Нет"), (35, "Да")]
+    by_id = {s.id: s for s in block.subscales}
+
+    main = _subscale_questions(block, by_id["б"])
+    assert all(
+        [(o.score, o.label) for o in question.options()]
+        == [(3, "слабые"), (6, "средние"), (9, "сильные")]
+        for question in main
+    )
+
+    other = _subscale_questions(block, by_id["в"])
+    assert all(
+        [(o.score, o.label) for o in question.options()]
+        == [(1, "слабые"), (2, "средние"), (3, "сильные")]
+        for question in other
+    )
+
+
+def test_candida_history_scores_are_multi_digit():
+    """Баллы секции А доходят до 35; однозначный разбор их терял."""
+    q = _questionnaire()
+    block = q.block("oprosnik_candida")
+    history = _subscale_questions(block, block.subscales[0])
+    tops = {max(o.score for o in question.options()) for question in history}
+    assert 35 in tops and 25 in tops and 20 in tops
+
+
+def test_nutrition_parts_have_opposite_scales():
+    """Часть 1 считает вредное, часть 2 — полезное; шкалы зеркальны."""
+    q = _questionnaire()
+    block = q.block("pitanie")
+    by_id = {s.id: s for s in block.subscales}
+
+    harmful = _subscale_questions(block, by_id["а"])[0]
+    healthy = _subscale_questions(block, by_id["б"])[0]
+
+    assert harmful.options()[0].label == "не употребляю"
+    assert healthy.options()[0].label == "употребляю ежедневно"
+
+
+def test_qeesi_masking_index_has_its_own_scale():
+    """Индекс маскировки считается по 0/1, остальные секции — по 0/5/10."""
+    q = _questionnaire()
+    block = q.block("bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi")
+    by_id = {s.id: s for s in block.subscales}
+
+    masking = _subscale_questions(block, by_id["г"])[0]
+    symptoms = _subscale_questions(block, by_id["в"])[0]
+
+    assert [o.score for o in masking.options()] == [0, 1]
+    assert [o.score for o in symptoms.options()] == [0, 5, 10]
 
 
 def test_sex_specific_thresholds_exist_where_the_key_defines_them():

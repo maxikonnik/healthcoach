@@ -66,16 +66,6 @@ CANDIDA_TOP_FIX = {"м": 141, "ж": 181}
 заканчивается на 140 (180), поэтому высокая начинается со следующего балла.
 """
 
-CANDIDA_SCALE = [
-    {"score": 0, "label": "Нет"},
-    {"score": 35, "label": "Да"},
-]
-"""Шкала секций Б и В опросника Candida.
-
-В колонке H написано «Выберите баллы, соответствующие вашим симптомам»,
-но сами баллы в таблице не перечислены. Значения подтверждены коучем.
-"""
-
 DASS_NOTE = """    # DASS: три подшкалы (депрессия, тревожность, стресс) пока не разделены.
     # На скрытом листе «DASS (показатели)» формулы относят каждый вопрос сразу
     # к двум подшкалам из трёх — в каждой оказывается 28 вопросов вместо 14.
@@ -118,9 +108,15 @@ def _is_block_heading(text: str, has_question_text: bool) -> bool:
 
 
 def _collect_scale(sheet, start_row: int, end_row: int) -> list[dict]:
-    """Собрать шкалу блока из колонки H."""
+    """Собрать шкалу из колонки H в пределах диапазона строк.
+
+    Шкала относится к подгруппе, а не к блоку: у «Питания» части А и Б
+    заданы противоположно (0 — не употребляю против 0 — ежедневно),
+    у Candida каждая секция считается по-своему (35, 3/6/9, 1/2/3),
+    у QEESI индекс маскировки отличается от остальных секций.
+    """
     options: list[dict] = []
-    for row in range(start_row, min(end_row, start_row + 12) + 1):
+    for row in range(start_row, end_row + 1):
         cell = sheet.cell(row, 8).value
         if not isinstance(cell, str):
             continue
@@ -390,9 +386,11 @@ def _emit(blocks: list[dict], thresholds: dict[str, list[dict]]) -> str:
             lines += [f"          - {qid}" for qid in qids]
             found = _match_thresholds(block, subscale, thresholds)
             if "qeesi" in block["id"]:
-                # Верхние границы 100 и 10 — потолок шкалы QEESI, а не порог.
-                # Оставляем степень открытой сверху, чтобы максимальный балл
-                # тоже получал степень.
+                # Верхние границы 100 и 10 — потолок шкалы, а не порог: они
+                # в точности равны максимально достижимой сумме секции
+                # (10 вопросов по 10 баллов и 10 вопросов по 1 баллу).
+                # Открываем степень сверху — на достижимых баллах это ничего
+                # не меняет, но снимает мнимую находку валидатора.
                 found = [
                     {**t, "max": None} if t["degree"] == "высокая" else t
                     for t in found
@@ -425,21 +423,25 @@ def main() -> int:
 
     blocks, _ = _read_questions(workbook[SHEET_QUESTIONS])
     sheet = workbook[SHEET_QUESTIONS]
+    unscaled: list[str] = []
+
     for block in blocks:
-        first = min(
-            (q["row"] for sub in block["subscales"] for q in sub["questions"]),
-            default=block["row"],
-        )
-        last = max(
-            (q["row"] for sub in block["subscales"] for q in sub["questions"]),
-            default=block["row"],
-        )
-        block["scale"] = _collect_scale(sheet, block["row"], last)
+        # Шкалу ищем по каждой подгруппе отдельно: в разных секциях одного
+        # блока она может быть разной и даже противоположной.
+        for index, subscale in enumerate(block["subscales"]):
+            rows = [q["row"] for q in subscale["questions"]]
+            if not rows:
+                subscale["scale"] = []
+                continue
+            start = subscale.get("row", block["row"] if index == 0 else min(rows))
+            subscale["scale"] = _collect_scale(sheet, start, max(rows))
+
+        with_scale = [s["scale"] for s in block["subscales"] if s["scale"]]
+        block["scale"] = with_scale[0] if with_scale else []
+
         if not block["scale"]:
-            block["scale"] = _collect_scale(sheet, first, last)
-        if not block["scale"]:
-            # Шкала блока не выписана в колонке H, но может быть вписана
-            # в каждый вопрос — тогда собираем её объединением.
+            # Шкала не выписана в колонке H, но может быть вписана в каждый
+            # вопрос — тогда собираем её объединением.
             inline: dict[int, str] = {}
             questions = [q for sub in block["subscales"] for q in sub["questions"]]
             if questions and all(q["scale"] for q in questions):
@@ -449,8 +451,24 @@ def main() -> int:
                 block["scale"] = [
                     {"score": score, "label": inline[score]} for score in sorted(inline)
                 ]
-        if not block["scale"] and block["id"] == "oprosnik_candida":
-            block["scale"] = list(CANDIDA_SCALE)
+
+        # Подгруппа со своей шкалой прописывает её каждому своему вопросу,
+        # иначе вопрос унаследовал бы шкалу соседней секции.
+        for subscale in block["subscales"]:
+            if not subscale["scale"] or subscale["scale"] == block["scale"]:
+                continue
+            for question in subscale["questions"]:
+                if not question["scale"]:
+                    question["scale"] = list(subscale["scale"])
+
+        for subscale in block["subscales"]:
+            for question in subscale["questions"]:
+                if not question["scale"] and not block["scale"]:
+                    unscaled.append(f"{block['id']}/{subscale['id']}.{question['number']}")
+
+    if unscaled:
+        print("НЕ НАЙДЕНА ШКАЛА:", unscaled[:10], f"(всего {len(unscaled)})")
+        return 1
 
     thresholds = _read_thresholds(workbook[SHEET_KEY])
 

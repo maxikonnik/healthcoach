@@ -55,15 +55,35 @@ blocks:
       - id: pitanie.б.1
         number: 1
         text: "Свежие овощи и фрукты"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
       - id: pitanie.б.2
         number: 2
         text: "Мясо, птица, рыба и морепродукты"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
       - id: pitanie.б.3
         number: 3
         text: "Питьевая вода – фильтрованная и/или вода из стеклянных бутылок"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
       - id: pitanie.б.4
         number: 4
         text: "Стараюсь придерживаться принципов правильного питания"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
     subscales:
       - id: а
         title: "А. Часть 1"
@@ -2240,33 +2260,63 @@ blocks:
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.1
         number: 1
         text: "Вы курите табак раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.2
         number: 2
         text: "Вы употребляете алкоголные напитки, пиво или вино один раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.3
         number: 3
         text: "Вы употребляете напитки с кофеином один раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.4
         number: 4
         text: "Используете ли вы регулярно (раз в неделю и чаще) духи, лак дл волос или другие ароматизированные средства личной гигиены"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.5
         number: 5
         text: "Был ли ваш дом или ваше рабочее место обработано от насекомых за последний год"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.6
         number: 6
         text: "На вашей нынешней работы или в вашем хобби вы регулярно (раз в неделю или чаще) подвергаетесь воздействию каких-либо химикатов, дыма или паров"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.7
         number: 7
         text: "Курит ли вы или кто-то в вашем доме, кроме вас самих"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.8
         number: 8
         text: "Испольуется ли у вас дома для приготовления пищи газовая или пропановая плита"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.9
         number: 9
         text: "Используется ли ароматизированный кондиционер для белья для стирки вашей одежды или постельного белья"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.10
         number: 10
         text: "Приниматете ли вы регулярно (раз в ределю и чаще) что-либо из следующего: стероидные препараты, такие как преднизолон; обезболивающие, лекарства от депрессии, беспокойства или растройства настроения; лекарства для сна, наркотики"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
       - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.1
         number: 1
         text: "Насколько ваша чувствительность к химическим веществам влияет на ваше питание"
@@ -2388,8 +2438,9 @@ blocks:
     part: дополнительная
     core: false
     scale:
-      - {score: 0, label: "Нет"}
-      - {score: 35, label: "Да"}
+      - {score: 3, label: "слабые"}
+      - {score: 6, label: "средние"}
+      - {score: 9, label: "сильные"}
     questions:
       - id: oprosnik_candida.а.1
         number: 1
@@ -2554,99 +2605,227 @@ blocks:
       - id: oprosnik_candida.в.1
         number: 1
         text: "Сонливость"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.2
         number: 2
         text: "Раздражительность"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.3
         number: 3
         text: "Проблемы с координацией движений"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.4
         number: 4
         text: "Проблемы с концентрацией внимания"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.5
         number: 5
         text: "Частые перепады настроения"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.6
         number: 6
         text: "Головная боль"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.7
         number: 7
         text: "Головокружение/потеря равновесия"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.8
         number: 8
         text: "Давление выше ушей, ощущение отека головы"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.9
         number: 9
         text: "Тенденция к легкому образованию синяков"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.10
         number: 10
         text: "Хроническая сыпь или зуд"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.11
         number: 11
         text: "Онемение, покалывание"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.12
         number: 12
         text: "Несварение или изжога"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.13
         number: 13
         text: "Пищевая чувствительность или непереносимость"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.14
         number: 14
         text: "Слизь в стуле"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.15
         number: 15
         text: "Ректальный зуд"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.16
         number: 16
         text: "Сухость во рту или горле"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.17
         number: 17
         text: "Сыпь или волдыри во рту"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.18
         number: 18
         text: "Плохой запах изо рта"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.19
         number: 19
         text: "Плохой запах от ног, тела, волос независимо от мытья"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.20
         number: 20
         text: "Заложенность носа или отечность носа"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.21
         number: 21
         text: "Зуд в носу"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.22
         number: 22
         text: "Ангина"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.23
         number: 23
         text: "Ларингит, грубый голос"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.24
         number: 24
         text: "Кашель или хронический бронхит"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.25
         number: 25
         text: "Боль или чувство сдавливания в груди"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.26
         number: 26
         text: "Хрипы или одышка"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.27
         number: 27
         text: "Частое мочеиспускание"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.28
         number: 28
         text: "Жжение при мочеиспускании"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.29
         number: 29
         text: "Пятна перед глазами или хаотичные видения"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.30
         number: 30
         text: "Жжение или слезотечение из глаз"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.31
         number: 31
         text: "Рецидивирующие инфекции или выделения из ушной раковины"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
       - id: oprosnik_candida.в.32
         number: 32
         text: "Боль в ушах или снижение слуха"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
     subscales:
       - id: а
         title: "А. История"
