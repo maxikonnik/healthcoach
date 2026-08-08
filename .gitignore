@@ -21,3 +21,6 @@ __pycache__/
 knowledge/questionnaire.draft.yaml
 
 .DS_Store
+
+# Образцы выгрузок лабораторий — медданные, в репозиторий не идут
+samples/

@@ -275,7 +275,7 @@ git commit -m "feat: схема базы и открытие с проверко
 - Create: `tests/storage/test_snapshots.py`
 
 **Interfaces:**
-- Consumes: `open_database`, `StorageError` из задачи 1; `Measurement` из `healthcoach.scoring.references`; `Answers` из `healthcoach.scoring.questionnaire`
+- Consumes: `open_database`, `StorageError` из задачи 1. **Больше ничего:** `storage` не импортирует `scoring` — это соседние слои, а не надстройка. Свой `Answers = dict[str, int]` объявляется локально; структурно он совпадает с одноимённым псевдонимом в `scoring`, поэтому словарь передаётся в `collect_findings` напрямую.
 - Produces:
   - `Client(code: str, full_name: str, contacts: str | None, note: str | None)`
   - `ClientRepository(connection)` с методами `add(full_name, contacts=None, note=None) -> Client`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
@@ -435,6 +435,26 @@ def test_snapshot_module_never_touches_the_identity_table():
     source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
     assert "identities" not in source
     assert "full_name" not in source
+
+
+def test_snapshot_module_does_not_delegate_to_the_client_repository():
+    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта.
+
+    Проверка по дереву импортов, а не по строкам: делегирование не содержало бы
+    ни слова 'identities', ни 'full_name', и текстовый страж его пропустил бы.
+    """
+    import ast
+
+    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+
+    leaking = {name for name in imported if "storage.clients" in name}
+    assert not leaking, f"модуль срезов импортирует {sorted(leaking)}"
 ```
 
 - [ ] **Step 3: Запустить тесты и убедиться, что они падают**
@@ -700,7 +720,7 @@ class SnapshotRepository:
 uv run pytest tests/storage/ -v
 ```
 
-Ожидается: 13 PASS (5 по клиентам, 8 по срезам).
+Ожидается: 14 PASS (5 по клиентам, 9 по срезам).
 
 - [ ] **Step 7: Прогнать весь набор**
 
@@ -708,7 +728,7 @@ uv run pytest tests/storage/ -v
 uv run pytest -q
 ```
 
-Ожидается: 151 проходящих.
+Ожидается: 157 проходящих.
 
 - [ ] **Step 8: Коммит**
 
