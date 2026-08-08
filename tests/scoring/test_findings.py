@@ -116,3 +116,62 @@ def test_questionnaire_without_degree_still_reported():
     (finding,) = findings
     assert finding.status == "в пределах нормы"
     assert finding.value == 0
+
+
+def _dass_questionnaire() -> Questionnaire:
+    """Блок с градациями DASS: мужской род и буква 'е', как на листе ключа."""
+    questions = tuple(
+        Question(
+            id=f"dass.{i}",
+            number=i,
+            text=f"Утверждение {i}",
+            scale=None,
+            block_scale=SCALE,
+        )
+        for i in range(1, 4)
+    )
+    block = Block(
+        id="dass",
+        title="DASS — депрессия",
+        part="дополнительная",
+        core=False,
+        scale=SCALE,
+        questions=questions,
+        subscales=(
+            Subscale(
+                id="весь",
+                title="Весь блок",
+                question_ids=tuple(q.id for q in questions),
+                thresholds=(
+                    Threshold("Нормальный", 0, 1, None),
+                    Threshold("Тяжелый", 2, None, None),
+                ),
+            ),
+        ),
+    )
+    return Questionnaire(version="1.0", blocks=(block,))
+
+
+def test_dass_masculine_degree_sorts_as_severe():
+    """Тяжёлая депрессия по DASS обязана стоять раньше показателя в норме."""
+    findings = collect_findings(
+        _dass_questionnaire(),
+        load_references(REFS),
+        answers={f"dass.{i}": 2 for i in range(1, 4)},  # сумма 6 → Тяжелый
+        measurements=[Measurement("ферритин", 75, "нг/мл")],  # в целевом
+        subject=SUBJECT,
+    )
+    assert findings[0].status == "Тяжелый"
+    assert findings[0].title == "DASS — депрессия"
+
+
+def test_dass_normal_degree_is_not_treated_as_severe():
+    findings = collect_findings(
+        _dass_questionnaire(),
+        load_references(REFS),
+        answers={f"dass.{i}": 0 for i in range(1, 4)},  # сумма 0 → Нормальный
+        measurements=[Measurement("ферритин", 18, "нг/мл")],  # дефицит
+        subject=SUBJECT,
+    )
+    assert findings[0].status == "дефицит"
+    assert findings[-1].status == "Нормальный"

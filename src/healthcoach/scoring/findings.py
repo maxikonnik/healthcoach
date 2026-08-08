@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from healthcoach.knowledge.degrees import degree_rank
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.scoring.derived import compute_derived
@@ -32,20 +33,31 @@ STATUS_NORMAL = "в пределах нормы"
 _SEVERITY = {
     STATUS_DEFICIT: 0,
     STATUS_EXCESS: 0,
-    "высокая": 0,
-    "тяжёлая": 0,
-    "очень тяжёлая": 0,
     STATUS_BELOW: 1,
     STATUS_ABOVE: 1,
-    "средняя": 1,
-    "умеренная": 1,
-    "низкая": 2,
     STATUS_WITHIN: 3,
     STATUS_NORMAL: 3,
     STATUS_UNIT_MISMATCH: 4,
     STATUS_NOT_COMPUTED: 4,
     STATUS_NO_RULE: 5,
 }
+
+_SEVERITY_BY_DEGREE_RANK = (3, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0)
+"""Тяжесть по позиции степени в DEGREE_ORDER: 0 — требует внимания, 3 — норма."""
+
+_SEVERITY_UNKNOWN = 1
+"""Незнакомый статус не прячется среди нормальных находок."""
+
+
+def _severity(status: str) -> int:
+    """Тяжесть статуса: у степеней она берётся из общего словаря."""
+    known = _SEVERITY.get(status)
+    if known is not None:
+        return known
+    rank = degree_rank(status)
+    if rank is not None:
+        return _SEVERITY_BY_DEGREE_RANK[rank]
+    return _SEVERITY_UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -118,5 +130,5 @@ def collect_findings(
     for verdict in compute_derived(references, measurements):
         findings.append(_from_verdict(verdict, KIND_DERIVED))
 
-    findings.sort(key=lambda f: (_SEVERITY.get(f.status, 3), f.kind, f.title))
+    findings.sort(key=lambda f: (_severity(f.status), f.kind, f.title))
     return findings

@@ -5,43 +5,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from healthcoach.knowledge.degrees import DEGREE_ORDER, degree_rank
 from healthcoach.knowledge.questionnaire import Questionnaire, Subscale, Threshold
 
 _RANGE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 _GREATER = re.compile(r"^\s*>\s*(\d+)\s*$")
 _LESS = re.compile(r"^\s*<\s*(\d+)\s*$")
-
-_DEGREE_ORDER = (
-    "нормальный",
-    "низкая",
-    "средняя",
-    "средний",
-    "умеренная",
-    "умеренный",
-    "высокая",
-    "тяжелая",
-    "тяжелый",
-    "очень тяжелая",
-    "очень тяжелый",
-)
-"""Порядок степеней от лёгкой к тяжёлой.
-
-Женские формы — для блоков опросника («степень отклонения»), мужские —
-для DASS («показатель»). В одной подгруппе используется одна семья названий,
-поэтому общий плоский список сохраняет относительный порядок внутри каждой.
-"""
-
-_DEGREE_INDEX = {name: i for i, name in enumerate(_DEGREE_ORDER)}
-
-
-def _normalize_degree(degree: str) -> str:
-    """Привести название степени к виду, в котором оно ищется в порядке."""
-    return degree.strip().casefold().replace("ё", "е")
-
-
-def _degree_rank(degree: str) -> int | None:
-    """Позиция степени в порядке, либо None если название незнакомо."""
-    return _DEGREE_INDEX.get(_normalize_degree(degree))
 
 
 class RangeParseError(Exception):
@@ -70,8 +39,8 @@ def parse_threshold_range(text: str) -> tuple[int | None, int | None]:
 
 
 def _sort_key(threshold: Threshold) -> tuple[int, int]:
-    rank = _degree_rank(threshold.degree)
-    order = rank if rank is not None else len(_DEGREE_ORDER)
+    rank = degree_rank(threshold.degree)
+    order = rank if rank is not None else len(DEGREE_ORDER)
     lower = threshold.min if threshold.min is not None else -10**9
     return order, lower
 
@@ -80,12 +49,12 @@ def _check_group(where: str, thresholds: list[Threshold]) -> list[Problem]:
     problems: list[Problem] = []
 
     for threshold in thresholds:
-        if _degree_rank(threshold.degree) is None:
+        if degree_rank(threshold.degree) is None:
             problems.append(
                 Problem(
                     where,
                     f"степень {threshold.degree!r} не входит в известный порядок "
-                    f"({', '.join(_DEGREE_ORDER)}); сортировка степеней в этой "
+                    f"({', '.join(DEGREE_ORDER)}); сортировка степеней в этой "
                     f"подгруппе ненадёжна, проверьте написание",
                 )
             )
