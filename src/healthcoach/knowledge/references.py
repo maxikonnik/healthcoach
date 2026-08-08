@@ -28,6 +28,14 @@ class Interval:
 
 
 @dataclass(frozen=True)
+class Conversion:
+    """Объявленный коучем пересчёт в единицы референса."""
+
+    from_units: str
+    factor: float
+
+
+@dataclass(frozen=True)
 class Condition:
     sex: str | None
     age_min: int | None
@@ -69,6 +77,8 @@ class Analyte:
     name: str
     synonyms: tuple[str, ...]
     units: str
+    unit_aliases: tuple[str, ...]
+    conversions: tuple[Conversion, ...]
     lab_range: Interval | None
     targets: tuple[Target, ...]
     interpret_with: tuple[str, ...]
@@ -160,6 +170,20 @@ def _target(raw: dict, where: str) -> Target:
     )
 
 
+def _conversion(raw: dict, where: str) -> Conversion:
+    if "множитель" not in raw:
+        raise ReferenceError(f"{where}: у пересчёта нет ключа 'множитель'")
+    if "из" not in raw:
+        raise ReferenceError(f"{where}: у пересчёта нет ключа 'из'")
+    try:
+        factor = float(raw["множитель"])
+    except (TypeError, ValueError) as exc:
+        raise ReferenceError(
+            f"{where}: множитель должен быть числом, получено {raw['множитель']!r}"
+        ) from exc
+    return Conversion(from_units=str(raw["из"]), factor=factor)
+
+
 def _analyte(raw: dict) -> Analyte:
     analyte_id = str(raw["id"])
     where = f"показатель {analyte_id!r}"
@@ -171,6 +195,8 @@ def _analyte(raw: dict) -> Analyte:
         name=str(raw["название"]),
         synonyms=tuple(str(s) for s in raw.get("синонимы", ())),
         units=str(raw["единицы"]),
+        unit_aliases=tuple(str(u) for u in raw.get("синонимы_единиц", ())),
+        conversions=tuple(_conversion(c, where) for c in raw.get("пересчёт", ())),
         lab_range=_interval(raw.get("лабораторный_интервал"), where),
         targets=targets,
         interpret_with=tuple(str(s) for s in raw.get("трактовать_с", ())),

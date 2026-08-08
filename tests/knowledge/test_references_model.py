@@ -144,3 +144,38 @@ def test_broken_formula_names_file_and_derived(tmp_path):
     message = str(excinfo.value)
     assert "broken_formula.yaml" in message
     assert "плохой" in message
+
+
+def test_unit_aliases_and_conversions_are_parsed(tmp_path):
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: глюкоза\n"
+        "    название: Глюкоза\n"
+        "    единицы: ммоль/л\n"
+        "    синонимы_единиц: [mmol/L]\n"
+        "    пересчёт:\n"
+        "      - из: мг/дл\n"
+        "        множитель: 0.0555\n"
+        "    целевые:\n"
+        "      - оптимум: [4.1, 5.3]\n",
+        encoding="utf-8",
+    )
+    glucose = load_references(tmp_path).analyte("глюкоза")
+    assert glucose.unit_aliases == ("mmol/L",)
+    assert glucose.conversions[0].from_units == "мг/дл"
+    assert glucose.conversions[0].factor == 0.0555
+
+
+def test_analytes_without_the_new_keys_still_load(tmp_path):
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: x\n"
+        "    название: Икс\n"
+        "    единицы: ед\n"
+        "    целевые:\n"
+        "      - оптимум: [1, 2]\n",
+        encoding="utf-8",
+    )
+    analyte = load_references(tmp_path).analyte("x")
+    assert analyte.unit_aliases == ()
+    assert analyte.conversions == ()
