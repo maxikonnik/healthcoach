@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -181,7 +182,41 @@ def _conversion(raw: dict, where: str) -> Conversion:
         raise ReferenceError(
             f"{where}: множитель должен быть числом, получено {raw['множитель']!r}"
         ) from exc
+    if not math.isfinite(factor) or factor <= 0:
+        raise ReferenceError(
+            f"{where}: множитель должен быть конечным положительным числом, "
+            f"получено {raw['множитель']!r}"
+        )
     return Conversion(from_units=str(raw["из"]), factor=factor)
+
+
+def _normalized_unit(units: str) -> str:
+    """Единицы сравниваются без пробелов и регистра.
+
+    Дублирует healthcoach.knowledge.units.normalize_units намеренно: тот модуль
+    импортирует этот, и обратный импорт замкнул бы цикл. Правило простое
+    и закреплено тестом на согласованность двух реализаций.
+    """
+    return "".join(units.split()).casefold()
+
+
+def _reject_unit_collisions(analyte: Analyte, where: str) -> None:
+    """Одна и та же единица не может быть и синонимом, и требующей пересчёта.
+
+    Синоним означает «пересчитывать нечего», множитель — «пересчитать вот так».
+    Объявить оба сразу — противоречие в базе знаний, и разрешать его порядком
+    перебора значило бы молча выбрать одно из двух.
+    """
+    aliases = {_normalized_unit(u) for u in analyte.unit_aliases}
+    aliases.add(_normalized_unit(analyte.units))
+    collisions = sorted(
+        c.from_units for c in analyte.conversions if _normalized_unit(c.from_units) in aliases
+    )
+    if collisions:
+        raise ReferenceError(
+            f"{where}: единицы {collisions} объявлены и как не требующие пересчёта, "
+            f"и как требующие множителя — оставьте что-то одно"
+        )
 
 
 def _analyte(raw: dict) -> Analyte:
@@ -190,7 +225,7 @@ def _analyte(raw: dict) -> Analyte:
     targets = tuple(_target(t, where) for t in raw["целевые"])
     if not targets:
         raise ReferenceError(f"{where}: нет ни одного целевого значения")
-    return Analyte(
+    analyte = Analyte(
         id=analyte_id,
         name=str(raw["название"]),
         synonyms=tuple(str(s) for s in raw.get("синонимы", ())),
@@ -202,6 +237,8 @@ def _analyte(raw: dict) -> Analyte:
         interpret_with=tuple(str(s) for s in raw.get("трактовать_с", ())),
         note=raw.get("заметка"),
     )
+    _reject_unit_collisions(analyte, where)
+    return analyte
 
 
 def _derived(raw: dict) -> Derived:

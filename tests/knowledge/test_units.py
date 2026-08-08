@@ -82,3 +82,77 @@ def test_conversion_without_multiplier_is_refused(tmp_path):
 
     with pytest.raises(ReferenceError, match="множитель"):
         load_references(tmp_path)
+
+
+def test_normalisers_in_the_two_modules_agree():
+    """references.py нормализует единицы своей копией — она не должна разойтись."""
+    from healthcoach.knowledge.references import _normalized_unit
+
+    for raw in ("нг/мл", "  НГ / МЛ ", "ng/mL", "ммоль/л", "МКГ/Л"):
+        assert _normalized_unit(raw) == normalize_units(raw)
+
+
+@pytest.mark.parametrize("bad", [".inf", "-.inf", ".nan", "0", "-1.5"])
+def test_degenerate_multiplier_is_refused(tmp_path, bad):
+    """Опечатка в множителе превратила бы анализ в бесконечность или ноль."""
+    from healthcoach.knowledge.references import ReferenceError
+
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: глюкоза\n"
+        "    название: Глюкоза\n"
+        "    единицы: ммоль/л\n"
+        "    пересчёт:\n"
+        "      - из: мг/дл\n"
+        f"        множитель: {bad}\n"
+        "    целевые:\n"
+        "      - оптимум: [4.1, 5.3]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "глюкоза" in message
+    assert "множитель" in message
+
+
+def test_unit_declared_both_ways_is_refused(tmp_path):
+    from healthcoach.knowledge.references import ReferenceError
+
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    синонимы_единиц: [мкг/л]\n"
+        "    пересчёт:\n"
+        "      - из: МКГ / Л\n"
+        "        множитель: 2\n"
+        "    целевые:\n"
+        "      - оптимум: [60, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "ферритин" in message
+    assert "одно" in message
+
+
+def test_reference_units_cannot_also_be_a_conversion_source(tmp_path):
+    from healthcoach.knowledge.references import ReferenceError
+
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    пересчёт:\n"
+        "      - из: нг/мл\n"
+        "        множитель: 3\n"
+        "    целевые:\n"
+        "      - оптимум: [60, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError, match="ферритин"):
+        load_references(tmp_path)
