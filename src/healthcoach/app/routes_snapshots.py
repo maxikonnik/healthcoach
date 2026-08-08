@@ -1,0 +1,176 @@
+"""Экран среза: ответы анкеты, ввод показателей, находки."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+
+from healthcoach.app.deps import Context, Repositories
+from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
+from healthcoach.intake.resolve import resolve_analyte
+from healthcoach.knowledge.units import UnitError, convert_to_reference
+from healthcoach.scoring.findings import collect_findings
+from healthcoach.scoring.references import Measurement, Subject
+
+UNRESOLVED = ""
+"""analyte_id нераспознанного показателя: он хранится, но не трактуется."""
+
+
+@dataclass(frozen=True)
+class Row:
+    measurement: object
+    title: str
+    problem: str | None
+
+
+def build_router(context: Context, templates) -> APIRouter:
+    router = APIRouter()
+
+    def _snapshot_or_404(repo: Repositories, snapshot_id: int):
+        snapshot = repo.snapshots.get(snapshot_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
+        return snapshot
+
+    def _rows(repo: Repositories, snapshot_id: int) -> list[Row]:
+        rows: list[Row] = []
+        for measurement in repo.snapshots.measurements(snapshot_id):
+            if not measurement.analyte_id:
+                rows.append(
+                    Row(measurement, measurement.raw_name, "показатель не распознан")
+                )
+                continue
+            analyte = context.references.analyte(measurement.analyte_id)
+            if analyte is None:
+                rows.append(
+                    Row(measurement, measurement.analyte_id, "показатель не распознан")
+                )
+                continue
+            problem = None
+            if measurement.units.strip().casefold() != analyte.units.strip().casefold():
+                problem = f"единицы не сопоставлены: {measurement.units}"
+            rows.append(Row(measurement, analyte.name, problem))
+        return rows
+
+    def _page(
+        request: Request,
+        repo: Repositories,
+        snapshot,
+        imported: ImportedAnswers | None = None,
+    ):
+        return templates.TemplateResponse(
+            request,
+            "snapshot.html",
+            {
+                "snapshot": snapshot,
+                "rows": _rows(repo, snapshot.id),
+                "answers_count": len(repo.snapshots.answers(snapshot.id)),
+                "imported": imported,
+            },
+        )
+
+    @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
+    def snapshot_page(request: Request, snapshot_id: int):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            return _page(request, repo, snapshot)
+
+    @router.post("/snapshots/{snapshot_id}/answers", response_class=HTMLResponse)
+    async def upload_answers(
+        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    ):
+        payload = await file.read()
+        try:
+            imported = parse_answers(context.questionnaire, payload)
+        except AnswersError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.save_answers(snapshot_id, imported.answers)
+            return _page(request, repo, snapshot, imported=imported)
+
+    @router.post("/snapshots/{snapshot_id}/measurements")
+    def add_measurement(
+        snapshot_id: int,
+        raw_name: str = Form(...),
+        value: str = Form(...),
+        units: str = Form(...),
+        taken_on: str = Form(...),
+    ):
+        try:
+            number = float(value.replace(",", "."))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="значение должно быть числом") from exc
+        try:
+            when = date.fromisoformat(taken_on)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="дата в формате ГГГГ-ММ-ДД") from exc
+
+        resolution = resolve_analyte(context.references, raw_name)
+        analyte_id, stored_value, stored_units = UNRESOLVED, number, units
+        if resolution.is_certain:
+            analyte_id = resolution.analyte.id
+            try:
+                stored_value = convert_to_reference(resolution.analyte, number, units)
+                stored_units = resolution.analyte.units
+            except UnitError:
+                stored_value, stored_units = number, units
+
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.add_measurement(
+                snapshot_id,
+                analyte_id=analyte_id,
+                raw_name=raw_name,
+                value=stored_value,
+                units=stored_units,
+                taken_on=when,
+            )
+        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+
+    @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/confirm")
+    def confirm(snapshot_id: int, measurement_id: int):
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.confirm_measurement(measurement_id)
+        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+
+    @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
+    def findings(snapshot_id: int, sex: str = "ж", age: int = 35):
+        """Находки текстом: полноценный отчёт собирает план 4.
+
+        Пол и возраст пока приходят параметрами запроса со значениями по
+        умолчанию: их место в карточке клиента, но туда они попадут вместе
+        с обезличиванием, которому нужны те же поля. Так они хотя бы
+        задаются снаружи, а не зашиты в код.
+        """
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            measurements = [
+                Measurement(m.analyte_id, m.value, m.units)
+                for m in repo.snapshots.measurements(snapshot_id)
+                if m.confirmed and m.analyte_id
+            ]
+            answers = repo.snapshots.answers(snapshot_id)
+
+        found = collect_findings(
+            context.questionnaire,
+            context.references,
+            answers,
+            measurements,
+            Subject(sex=sex, age=age),
+        )
+        lines = [f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}", ""]
+        for finding in found:
+            value = "—" if finding.value is None else finding.value
+            lines.append(
+                f"[{finding.kind}] {finding.title}: {value} {finding.units} "
+                f"— {finding.status}"
+                + (f" ({finding.note})" if finding.note else "")
+            )
+        return "\n".join(lines)
+
+    return router
