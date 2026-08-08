@@ -2332,7 +2332,7 @@ git commit -m "feat: производные показатели с безопа
 **Interfaces:**
 - Consumes: `SubscaleScore` из задачи 4; `AnalyteVerdict`, `Subject`, `Measurement` из задачи 6; `compute_derived` из задачи 7; `Questionnaire` и `References` из задач 2 и 5
 - Produces:
-  - `Finding(kind, subject_id, title, value, units, status, target, lab_range, note, rule_missing)` где `kind` ∈ `{"показатель", "производный", "опросник"}`
+  - `Finding(kind, subject_id, title, value, units, status, target, lab_range, note, rule_missing)` где `kind` ∈ `{"показатель", "производный", "опросник"}`, а `value` — `float | None` (`None` у производного, который не удалось вычислить)
   - `collect_findings(questionnaire, references, answers, measurements, subject) -> list[Finding]`
 
 **Порядок.** Находки сортируются по значимости: сначала требующие внимания (дефицит, избыток, высокая степень), затем умеренные отклонения, затем норма, и в самом конце — то, для чего правило не задано. Это порядок, в котором их удобно читать и коучу, и модели.
@@ -2490,6 +2490,7 @@ from healthcoach.scoring.references import (
     STATUS_BELOW,
     STATUS_DEFICIT,
     STATUS_EXCESS,
+    STATUS_NOT_COMPUTED,
     STATUS_NO_RULE,
     STATUS_UNIT_MISMATCH,
     STATUS_WITHIN,
@@ -2519,6 +2520,7 @@ _SEVERITY = {
     STATUS_WITHIN: 3,
     STATUS_NORMAL: 3,
     STATUS_UNIT_MISMATCH: 4,
+    STATUS_NOT_COMPUTED: 4,
     STATUS_NO_RULE: 5,
 }
 
@@ -2528,7 +2530,7 @@ class Finding:
     kind: str
     subject_id: str
     title: str
-    value: float
+    value: float | None
     units: str
     status: str
     target: Interval | None
