@@ -1,4 +1,10 @@
-from healthcoach.knowledge.degrees import DEGREE_ORDER, degree_rank, normalize_degree
+from healthcoach.knowledge.degrees import (
+    DEGREE_ORDER,
+    DEGREE_SEVERITY,
+    degree_rank,
+    degree_severity,
+    normalize_degree,
+)
 
 
 def test_normalize_lowers_case_and_folds_yo():
@@ -26,3 +32,23 @@ def test_yo_and_e_spellings_rank_the_same():
 
 def test_unknown_degree_has_no_rank():
     assert degree_rank("странная") is None
+
+
+def test_every_degree_in_order_has_a_severity():
+    """Две структуры уже расходились однажды — тест не даёт этому повториться."""
+    assert set(DEGREE_SEVERITY) == set(DEGREE_ORDER)
+
+
+def test_severity_does_not_depend_on_gender():
+    pairs = (
+        ("средняя", "средний"),
+        ("умеренная", "умеренный"),
+        ("тяжелая", "тяжелый"),
+        ("очень тяжелая", "очень тяжелый"),
+    )
+    for feminine, masculine in pairs:
+        assert degree_severity(feminine) == degree_severity(masculine)
+
+
+def test_severity_ignores_case_and_yo():
+    assert degree_severity("Тяжёлая") == degree_severity("тяжелая")

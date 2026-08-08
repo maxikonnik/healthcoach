@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from healthcoach.knowledge.degrees import degree_rank
+from healthcoach.knowledge.degrees import degree_severity
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.scoring.derived import compute_derived
@@ -42,9 +42,6 @@ _SEVERITY = {
     STATUS_NO_RULE: 5,
 }
 
-_SEVERITY_BY_DEGREE_RANK = (3, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0)
-"""Тяжесть по позиции степени в DEGREE_ORDER: 0 — требует внимания, 3 — норма."""
-
 _SEVERITY_UNKNOWN = 1
 """Незнакомый статус не прячется среди нормальных находок."""
 
@@ -54,9 +51,9 @@ def _severity(status: str) -> int:
     known = _SEVERITY.get(status)
     if known is not None:
         return known
-    rank = degree_rank(status)
-    if rank is not None:
-        return _SEVERITY_BY_DEGREE_RANK[rank]
+    from_degree = degree_severity(status)
+    if from_degree is not None:
+        return from_degree
     return _SEVERITY_UNKNOWN
 
 
