@@ -2827,6 +2827,9 @@ blocks:
           - {score: 2, label: "средние"}
           - {score: 3, label: "сильные"}
     subscales:
+    # Секции считаются отдельно, но степень выносится по общей
+    # сумме: порог 141/181 недостижим для секции «Прочие симптомы»
+    # (её максимум 96). Максимум по всем секциям — 548.
       - id: а
         title: "А. История"
         question_ids:
@@ -2844,13 +2847,7 @@ blocks:
           - oprosnik_candida.а.12
           - oprosnik_candida.а.13
           - oprosnik_candida.а.14
-        thresholds:
-          - {degree: низкая, min: null, max: 40, sex: м}
-          - {degree: низкая, min: null, max: 60, sex: ж}
-          - {degree: средняя, min: 41, max: 140, sex: м}
-          - {degree: средняя, min: 61, max: 180, sex: ж}
-          - {degree: высокая, min: 141, max: null, sex: м}
-          - {degree: высокая, min: 181, max: null, sex: ж}
+        thresholds: []
       - id: б
         title: "Б. Главные симптомы"
         question_ids:
@@ -2878,16 +2875,84 @@ blocks:
           - oprosnik_candida.б.22
           - oprosnik_candida.б.23
           - oprosnik_candida.б.24
-        thresholds:
-          - {degree: низкая, min: null, max: 40, sex: м}
-          - {degree: низкая, min: null, max: 60, sex: ж}
-          - {degree: средняя, min: 41, max: 140, sex: м}
-          - {degree: средняя, min: 61, max: 180, sex: ж}
-          - {degree: высокая, min: 141, max: null, sex: м}
-          - {degree: высокая, min: 181, max: null, sex: ж}
+        thresholds: []
       - id: в
         title: "В. Прочие симптомы"
         question_ids:
+          - oprosnik_candida.в.1
+          - oprosnik_candida.в.2
+          - oprosnik_candida.в.3
+          - oprosnik_candida.в.4
+          - oprosnik_candida.в.5
+          - oprosnik_candida.в.6
+          - oprosnik_candida.в.7
+          - oprosnik_candida.в.8
+          - oprosnik_candida.в.9
+          - oprosnik_candida.в.10
+          - oprosnik_candida.в.11
+          - oprosnik_candida.в.12
+          - oprosnik_candida.в.13
+          - oprosnik_candida.в.14
+          - oprosnik_candida.в.15
+          - oprosnik_candida.в.16
+          - oprosnik_candida.в.17
+          - oprosnik_candida.в.18
+          - oprosnik_candida.в.19
+          - oprosnik_candida.в.20
+          - oprosnik_candida.в.21
+          - oprosnik_candida.в.22
+          - oprosnik_candida.в.23
+          - oprosnik_candida.в.24
+          - oprosnik_candida.в.25
+          - oprosnik_candida.в.26
+          - oprosnik_candida.в.27
+          - oprosnik_candida.в.28
+          - oprosnik_candida.в.29
+          - oprosnik_candida.в.30
+          - oprosnik_candida.в.31
+          - oprosnik_candida.в.32
+        thresholds: []
+      - id: всего
+        title: "Всего по опроснику"
+        question_ids:
+          - oprosnik_candida.а.1
+          - oprosnik_candida.а.2
+          - oprosnik_candida.а.3
+          - oprosnik_candida.а.4
+          - oprosnik_candida.а.5
+          - oprosnik_candida.а.6
+          - oprosnik_candida.а.7
+          - oprosnik_candida.а.8
+          - oprosnik_candida.а.9
+          - oprosnik_candida.а.10
+          - oprosnik_candida.а.11
+          - oprosnik_candida.а.12
+          - oprosnik_candida.а.13
+          - oprosnik_candida.а.14
+          - oprosnik_candida.б.1
+          - oprosnik_candida.б.2
+          - oprosnik_candida.б.3
+          - oprosnik_candida.б.4
+          - oprosnik_candida.б.5
+          - oprosnik_candida.б.6
+          - oprosnik_candida.б.7
+          - oprosnik_candida.б.8
+          - oprosnik_candida.б.9
+          - oprosnik_candida.б.10
+          - oprosnik_candida.б.11
+          - oprosnik_candida.б.12
+          - oprosnik_candida.б.13
+          - oprosnik_candida.б.14
+          - oprosnik_candida.б.15
+          - oprosnik_candida.б.16
+          - oprosnik_candida.б.17
+          - oprosnik_candida.б.18
+          - oprosnik_candida.б.19
+          - oprosnik_candida.б.20
+          - oprosnik_candida.б.21
+          - oprosnik_candida.б.22
+          - oprosnik_candida.б.23
+          - oprosnik_candida.б.24
           - oprosnik_candida.в.1
           - oprosnik_candida.в.2
           - oprosnik_candida.в.3

@@ -86,11 +86,58 @@ def test_gastro_block_reference_case():
     assert scored["весь"].degree == "средняя"
 
 
+def test_candida_degree_comes_from_the_total():
+    """Пороги Candida относятся к сумме по всему опроснику, а не к секциям."""
+    q = _questionnaire()
+    block = q.block("oprosnik_candida")
+    by_id = {s.id: s for s in block.subscales}
+
+    assert set(by_id) == {"а", "б", "в", "всего"}
+    assert len(by_id["всего"].question_ids) == 70
+    assert by_id["всего"].thresholds
+    for section in ("а", "б", "в"):
+        assert by_id[section].thresholds == ()
+
+
+def test_candida_sections_still_report_their_sums():
+    """Секции остаются в результате — коуч видит разбивку без степени."""
+    q = _questionnaire()
+    block = q.block("oprosnik_candida")
+    answers = {
+        question.id: max(o.score for o in question.options())
+        for question in block.questions
+    }
+    scored = {
+        s.subscale_id: s
+        for s in score_questionnaire(q, answers, sex="м")
+        if s.block_id == "oprosnik_candida"
+    }
+
+    assert scored["а"].score == 236 and scored["а"].degree is None
+    assert scored["б"].score == 216 and scored["б"].degree is None
+    assert scored["в"].score == 96 and scored["в"].degree is None
+    assert scored["всего"].score == 548 and scored["всего"].degree == "высокая"
+
+
+def test_candida_other_symptoms_alone_cannot_reach_the_threshold():
+    """Причина, по которой пороги считаются от суммы: секция В даёт максимум 96."""
+    q = _questionnaire()
+    block = q.block("oprosnik_candida")
+    by_id = {s.id: s for s in block.subscales}
+    other = _subscale_questions(block, by_id["в"])
+    ceiling = sum(max(o.score for o in question.options()) for question in other)
+
+    threshold = min(
+        t.min for t in by_id["всего"].thresholds if t.degree == "высокая"
+    )
+    assert ceiling < threshold
+
+
 def test_candida_top_degree_is_open_ended():
     """Верхняя степень Candida исправлена с '<140' на «выше 140»."""
     q = _questionnaire()
-    subscale = q.block("oprosnik_candida").subscales[0]
-    top = [t for t in subscale.thresholds if t.degree == "высокая"]
+    by_id = {s.id: s for s in q.block("oprosnik_candida").subscales}
+    top = [t for t in by_id["всего"].thresholds if t.degree == "высокая"]
     assert {t.sex for t in top} == {"м", "ж"}
     for threshold in top:
         assert threshold.max is None
@@ -160,7 +207,5 @@ def test_qeesi_masking_index_has_its_own_scale():
 
 def test_sex_specific_thresholds_exist_where_the_key_defines_them():
     q = _questionnaire()
-    for block_id in ("oprosnik_candida",):
-        for subscale in q.block(block_id).subscales:
-            sexes = {t.sex for t in subscale.thresholds}
-            assert sexes == {"м", "ж"}, f"{block_id}/{subscale.id}: {sexes}"
+    by_id = {s.id: s for s in q.block("oprosnik_candida").subscales}
+    assert {t.sex for t in by_id["всего"].thresholds} == {"м", "ж"}

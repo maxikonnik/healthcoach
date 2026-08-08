@@ -58,6 +58,15 @@ KEY_ALIASES = {
     "dass_oprosnik_depressia_trevoznost_stress": "DASS - депрессия, тревожность, стресс",
 }
 
+CANDIDA_TOTAL = "всего"
+"""Пороги Candida относятся к сумме по всему опроснику, а не к секциям.
+
+На листе ключа одни и те же значения продублированы в трёх строках подряд,
+но секция «Прочие симптомы» набирает максимум 96 баллов и порог 141 для неё
+недостижим в принципе. Максимум по всем трём секциям — 548, что сходится
+с классическим опросником Крука. Подтверждено коучем: считаем сумму.
+"""
+
 CANDIDA_TOP_FIX = {"м": 141, "ж": 181}
 """Верхняя степень Candida записана в ключе как '<140' и '<180'.
 
@@ -317,8 +326,10 @@ def _match_thresholds(
     if not candidates:
         return []
 
-    if len(block["subscales"]) == 1:
-        return thresholds[candidates[0]]
+    if len(block["subscales"]) == 1 or subscale["id"] == CANDIDA_TOTAL:
+        # У Candida одни и те же пороги продублированы в трёх строках ключа —
+        # берём первую, она относится к сумме по всему опроснику.
+        return thresholds[sorted(candidates)[0]]
 
     letter = subscale["id"].upper()
     for key in candidates:
@@ -361,6 +372,12 @@ def _emit(blocks: list[dict], thresholds: dict[str, list[dict]]) -> str:
                             f"label: {_quote(option['label'])}}}"
                         )
         lines.append("    subscales:")
+        if block["id"] == "oprosnik_candida":
+            lines.append(
+                "    # Секции считаются отдельно, но степень выносится по общей"
+                "\n    # сумме: порог 141/181 недостижим для секции «Прочие симптомы»"
+                "\n    # (её максимум 96). Максимум по всем секциям — 548."
+            )
         if block["id"].startswith("dass"):
             lines.append(DASS_NOTE)
             for key in sorted(thresholds):
@@ -371,12 +388,29 @@ def _emit(blocks: list[dict], thresholds: dict[str, list[dict]]) -> str:
                         for t in thresholds[key]
                     )
                     lines.append(f"    # {name}: {formatted}")
-        for subscale in block["subscales"]:
+        emitted = list(block["subscales"])
+        if block["id"] == "oprosnik_candida":
+            emitted.append(
+                {
+                    "id": CANDIDA_TOTAL,
+                    "title": "Всего по опроснику",
+                    "questions": [q for s in block["subscales"] for q in s["questions"]],
+                    "sections": [s["id"] for s in block["subscales"]],
+                }
+            )
+
+        for subscale in emitted:
             qids = []
             for question in subscale["questions"]:
+                section = subscale.get("sections") and next(
+                    s["id"]
+                    for s in block["subscales"]
+                    if question in s["questions"]
+                )
+                owner = section or subscale["id"]
                 qid = f"{block['id']}.{question['number']}"
                 if len(block["subscales"]) > 1:
-                    qid = f"{block['id']}.{subscale['id']}.{question['number']}"
+                    qid = f"{block['id']}.{owner}.{question['number']}"
                 qids.append(qid)
             lines += [
                 f"      - id: {subscale['id']}",
@@ -384,6 +418,10 @@ def _emit(blocks: list[dict], thresholds: dict[str, list[dict]]) -> str:
                 "        question_ids:",
             ]
             lines += [f"          - {qid}" for qid in qids]
+            if block["id"] == "oprosnik_candida" and subscale["id"] != CANDIDA_TOTAL:
+                # Пороги вынесены в подгруппу «всего»; секции дают только сумму.
+                lines.append("        thresholds: []")
+                continue
             found = _match_thresholds(block, subscale, thresholds)
             if "qeesi" in block["id"]:
                 # Верхние границы 100 и 10 — потолок шкалы, а не порог: они
