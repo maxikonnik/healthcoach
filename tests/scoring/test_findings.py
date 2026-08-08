@@ -153,25 +153,34 @@ def _dass_questionnaire() -> Questionnaire:
 
 
 def test_dass_masculine_degree_sorts_as_severe():
-    """Тяжёлая депрессия по DASS обязана стоять раньше показателя в норме."""
+    """Тяжёлая депрессия по DASS обязана обгонять дефицит показателя.
+
+    Проверка неслучайна: если распознавание мужских форм отвалится, степень
+    получит тяжесть «неизвестно» (1), дефицит останется на 0, и порядок
+    перевернётся — тест упадёт.
+    """
     findings = collect_findings(
         _dass_questionnaire(),
         load_references(REFS),
         answers={f"dass.{i}": 2 for i in range(1, 4)},  # сумма 6 → Тяжелый
-        measurements=[Measurement("ферритин", 75, "нг/мл")],  # в целевом
+        measurements=[Measurement("ферритин", 18, "нг/мл")],  # дефицит
         subject=SUBJECT,
     )
-    assert findings[0].status == "Тяжелый"
-    assert findings[0].title == "DASS — депрессия"
+    assert [f.status for f in findings] == ["Тяжелый", "дефицит"]
 
 
 def test_dass_normal_degree_is_not_treated_as_severe():
+    """«Нормальный» обязан уступить показателю ниже целевого коридора.
+
+    При отвалившемся распознавании «Нормальный» получил бы тяжесть
+    «неизвестно» (1) вместо нормы (3), сравнялся бы с «ниже целевого»
+    и обогнал бы его по вторичному ключу — тест упадёт.
+    """
     findings = collect_findings(
         _dass_questionnaire(),
         load_references(REFS),
         answers={f"dass.{i}": 0 for i in range(1, 4)},  # сумма 0 → Нормальный
-        measurements=[Measurement("ферритин", 18, "нг/мл")],  # дефицит
+        measurements=[Measurement("ферритин", 45, "нг/мл")],  # ниже целевого
         subject=SUBJECT,
     )
-    assert findings[0].status == "дефицит"
-    assert findings[-1].status == "Нормальный"
+    assert [f.status for f in findings] == ["ниже целевого", "Нормальный"]

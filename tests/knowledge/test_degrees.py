@@ -52,3 +52,9 @@ def test_severity_does_not_depend_on_gender():
 
 def test_severity_ignores_case_and_yo():
     assert degree_severity("Тяжёлая") == degree_severity("тяжелая")
+
+
+def test_dass_key_sheet_names_are_all_known():
+    """Названия градаций DASS взяты с листа «РЕЗУЛЬТАТ КЛЮЧ» дословно."""
+    for name in ("Нормальный", "Средний", "Умеренный", "Тяжелый", "Очень тяжелый"):
+        assert degree_severity(name) is not None
