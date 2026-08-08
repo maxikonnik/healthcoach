@@ -40,7 +40,7 @@ CORE_PARTS = {"организационная", "клиническая"}
 
 _LEADING_NUMBER = re.compile(r"^\s*\d+\.\s*")
 _SUBSCALE = re.compile(r"^([А-Д])\.\s*(.+)$", re.DOTALL)
-_SCALE_OPTION = re.compile(r"^\s*(\d)\s*[-–—]\s*(.+)$")
+_SCALE_OPTION = re.compile(r"^\s*(\d+)\s*[-–—]\s*(.+)$")
 _LOOKS_LIKE_RANGE = re.compile(r"^\s*(?:[<>]\s*\d+|\d+\s*[-–]\s*\d+)\s*$")
 
 DASS_SUBSCALES = (

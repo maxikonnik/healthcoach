@@ -57,3 +57,28 @@ def test_is_section_heading_rejects_ordinary_text():
     assert is_section_heading("Изжога или обратный заброс") is None
     assert is_section_heading("Сумма всех баллов в данном блоке") is None
     assert is_section_heading("") is None
+
+
+def test_split_inline_scale_reads_multi_digit_scores():
+    """В опроснике Candida баллы двузначные: 10, 20, 35."""
+    question, options = split_inline_scale(
+        "Применяли ли вы антибиотики длительно\n0 - Нет\n35 - Да"
+    )
+    assert question == "Применяли ли вы антибиотики длительно"
+    assert [(o["score"], o["label"]) for o in options] == [(0, "Нет"), (35, "Да")]
+
+
+def test_split_inline_scale_reads_three_option_multi_digit_scale():
+    _, options = split_inline_scale(
+        "Употребляли противозачаточные препараты\n"
+        "0 - не употреблял(а)\n"
+        "8 - от 6 до 24 месяцев\n"
+        "15 - более 24 месяцев"
+    )
+    assert [o["score"] for o in options] == [0, 8, 15]
+
+
+def test_split_inline_scale_does_not_leak_scores_into_question_text():
+    """Нераспознанный вариант молча уезжал в текст вопроса — так было до фикса."""
+    question, _ = split_inline_scale("Вопрос\n0 - Нет\n35 - Да")
+    assert "35" not in question

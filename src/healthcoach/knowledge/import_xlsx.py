@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 
 _SECTION = re.compile(r"^\s*(?:\d+\.\s*)?([А-ЯЁ][А-ЯЁ \-/()]{4,})\s*$")
-_INLINE_SCALE = re.compile(r"^\s*(\d)\s*[-–—]\s*(.+)$")
+_INLINE_SCALE = re.compile(r"^\s*(\d+)\s*[-–—]\s*(.+)$")
+"""Балл может быть многозначным: в опроснике Candida встречаются 10, 20, 35."""
 
 _TRANSLIT = str.maketrans(
     {
