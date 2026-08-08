@@ -63,9 +63,11 @@ def _doctor(raw: dict, where: str) -> Doctor:
     )
 
 
-def _specialty(raw: dict) -> Specialty:
+def _specialty(raw: dict, position: int) -> Specialty:
     if "id" not in raw:
-        raise SpecialistsError("у специальности нет ключа 'id'")
+        name = raw.get("название")
+        label = f"{name!r}" if name else f"на позиции {position}"
+        raise SpecialistsError(f"у специальности {label} нет ключа 'id'")
     where = f"специальность {raw['id']!r}"
     for key in ("название", "когда"):
         if key not in raw:
@@ -84,7 +86,9 @@ def load_specialists(path: Path) -> Specialists:
     if "специальности" not in raw:
         raise SpecialistsError(f"{path}: нет ключа 'специальности'")
 
-    specialties = tuple(_specialty(s) for s in raw["специальности"])
+    specialties = tuple(
+        _specialty(s, i) for i, s in enumerate(raw["специальности"], start=1)
+    )
     ids = [s.id for s in specialties]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:

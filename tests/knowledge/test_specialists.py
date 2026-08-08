@@ -65,3 +65,43 @@ def test_specialty_without_when_raises(tmp_path):
     )
     with pytest.raises(SpecialistsError, match="когда"):
         load_specialists(path)
+
+
+def test_specialty_without_id_is_named_by_its_title(tmp_path):
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "специальности:\n  - название: Икс\n    когда: Всегда\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SpecialistsError, match="Икс"):
+        load_specialists(path)
+
+
+def test_specialty_without_id_or_title_is_named_by_position(tmp_path):
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "специальности:\n"
+        "  - id: первая\n"
+        "    название: Первая\n"
+        "    когда: Всегда\n"
+        "  - когда: Иногда\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SpecialistsError, match="на позиции 2"):
+        load_specialists(path)
+
+
+def test_doctor_without_contacts_names_the_specialty(tmp_path):
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        "специальности:\n"
+        "  - id: эндокринолог\n"
+        "    название: Эндокринолог\n"
+        "    когда: Всегда\n"
+        "    врачи:\n"
+        "      - имя: Без контактов\n"
+        "        формат: онлайн\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SpecialistsError, match="эндокринолог"):
+        load_specialists(path)
