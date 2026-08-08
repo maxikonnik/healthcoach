@@ -1386,7 +1386,9 @@ from collections.abc import Sequence
 
 from healthcoach.knowledge.questionnaire import Block, Questionnaire
 
-PAYLOAD_VERSION = "1.0"
+PAYLOAD_VERSION = "1.1"
+"""1.1 добавила ключ «блоки»: без него нельзя отличить вопрос, который
+клиент пропустил, от вопроса, который ему не показывали."""
 
 
 class QuestionnaireHtmlError(Exception):
@@ -1466,6 +1468,7 @@ function download() {
     "версия": PAYLOAD_VERSION,
     "клиент": CLIENT_CODE,
     "спецификация": SPEC_VERSION,
+    "блоки": SHOWN_BLOCKS,
     "ответы": collect(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)],
@@ -1533,10 +1536,12 @@ def render_questionnaire(
             parts.extend(_render_question(q, subscale.title) for q in questions)
         sections.append("\n".join(parts))
 
+    shown = [block.id for block in blocks]
     script = (
         f"const CLIENT_CODE = {json.dumps(client_code, ensure_ascii=False)};\n"
         f"const SPEC_VERSION = {json.dumps(questionnaire.version)};\n"
         f"const PAYLOAD_VERSION = {json.dumps(PAYLOAD_VERSION)};\n"
+        f"const SHOWN_BLOCKS = {json.dumps(shown, ensure_ascii=False)};\n"
         f"{_SCRIPT}"
     )
 
@@ -1603,7 +1608,7 @@ git commit -m "feat: автономный HTML-опросник с сохран�
 **Interfaces:**
 - Consumes: `Questionnaire` из `healthcoach.knowledge.questionnaire`; `PAYLOAD_VERSION` из `healthcoach.intake.questionnaire_html`
 - Produces:
-  - `ImportedAnswers(client_code: str, answers: dict[str, int], skipped: tuple[str, ...])`
+  - `ImportedAnswers(client_code: str, shown_blocks: tuple[str, ...], answers: dict[str, int], skipped: tuple[str, ...], not_asked: tuple[str, ...])` — `skipped` это вопросы, которые клиент видел и оставил пустыми; `not_asked` — вопросы блоков, которых ему не отправляли. Смешивать их нельзя: необязательных вопросов в спецификации больше двух сотен, и в общем списке они превращают его в шум.
   - `parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> ImportedAnswers`
   - `AnswersError(Exception)`
 
@@ -1744,7 +1749,9 @@ class AnswersError(Exception):
 class ImportedAnswers:
     client_code: str
     answers: dict[str, int]
+    shown_blocks: tuple[str, ...]
     skipped: tuple[str, ...]
+    not_asked: tuple[str, ...]
 
 
 def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> ImportedAnswers:
@@ -1783,10 +1790,28 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
     if not isinstance(raw_answers, dict):
         raise AnswersError("в файле ответов нет объекта 'ответы'")
 
+    raw_blocks = body.get("блоки")
+    if not isinstance(raw_blocks, list) or not all(
+        isinstance(b, str) for b in raw_blocks
+    ):
+        raise AnswersError("в файле ответов нет списка 'блоки' со строками")
+
+    known_blocks = {block.id for block in questionnaire.blocks}
+    unknown = [b for b in raw_blocks if b not in known_blocks]
+    if unknown:
+        raise AnswersError(
+            f"в спецификации нет блоков {sorted(unknown)}; "
+            f"вероятно, опросник собран по другой версии"
+        )
+    shown_blocks = tuple(raw_blocks)
+
     scales: dict[str, set[int]] = {}
+    asked: set[str] = set()
     for block in questionnaire.blocks:
         for question in block.questions:
             scales[question.id] = {o.score for o in question.options()}
+            if block.id in shown_blocks:
+                asked.add(question.id)
 
     answers: dict[str, int] = {}
     for question_id, score in raw_answers.items():
@@ -1807,11 +1832,19 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
             )
         answers[question_id] = score
 
-    skipped = tuple(qid for qid in scales if qid not in answers)
+    answered_outside = sorted(answers.keys() - asked)
+    if answered_outside:
+        raise AnswersError(
+            f"есть ответы на вопросы из блоков, которые клиенту не показывали: "
+            f"{answered_outside}"
+        )
+
     return ImportedAnswers(
         client_code=str(body.get("клиент", "")),
         answers=answers,
-        skipped=skipped,
+        shown_blocks=shown_blocks,
+        skipped=tuple(qid for qid in scales if qid in asked and qid not in answers),
+        not_asked=tuple(qid for qid in scales if qid not in asked),
     )
 ```
 
@@ -2385,11 +2418,17 @@ git commit -m "feat: каркас приложения, карточка кли�
 - Create: `tests/app/test_snapshot_routes.py`
 
 **Interfaces:**
-- Consumes: `Context`; `parse_answers`, `AnswersError`; `resolve_analyte`; `convert_to_reference`, `UnitError`; `collect_findings`, `Subject`, `Measurement`
+- Consumes: `Context` и `Context.session()`; `parse_answers`, `AnswersError`, `ImportedAnswers`; `resolve_analyte`; `convert_to_reference`, `UnitError`; `collect_findings`, `Subject`, `Measurement`
 - Produces:
   - Маршруты: `GET /snapshots/{id}`, `POST /snapshots/{id}/answers` (загрузка файла), `POST /snapshots/{id}/measurements` (ручной ввод), `POST /snapshots/{id}/measurements/{mid}/confirm`, `GET /snapshots/{id}/findings`
 
 **Как работает ввод показателя.** Коуч вводит название так, как оно написано в бланке, значение, единицы и дату забора. Система распознаёт показатель и пересчитывает единицы. Если название не распознано или единицы не сопоставлены — измерение **всё равно сохраняется**, но помечается, и на экране видно почему. Находки считаются только по подтверждённым измерениям: это те самые ворота сверки из спецификации.
+
+**Работа с базой.** Каждое обращение к базе — внутри `with context.session() as repo:`. Обработчики синхронные, FastAPI выполняет их в пуле потоков, общее соединение падало бы с `ProgrammingError` (см. задачу 7). Внутри одного обработчика открывается одна сессия, а не по одной на каждое чтение.
+
+**Почему загрузка ответов не делает редирект.** `parse_answers` возвращает разбор: сколько ответов пришло, какие вопросы клиент видел и пропустил (`skipped`) и какие ему вовсе не показывали (`not_asked`). Этот разбор нужен коучу сразу — поэтому загрузка отрисовывает страницу среза с отчётом об импорте, а не отправляет редиректом. Показывается только `skipped`: это вопросы, с которыми коучу есть что делать. `not_asked` на экран не выводится вообще — там больше двух сотен вопросов необязательных блоков, к клиенту отношения не имеющих.
+
+**Отложено сознательно:** список показанных блоков не сохраняется в базу, поэтому отчёт об импорте виден только сразу после загрузки; при следующем открытии страницы остаётся счётчик загруженных ответов. Хранение потребовало бы колонки в таблице срезов, а сегодня разбор нужен именно в момент загрузки.
 
 - [ ] **Step 1: Написать падающие тесты**
 
@@ -2404,6 +2443,7 @@ from fastapi.testclient import TestClient
 
 from healthcoach.app.deps import build_context
 from healthcoach.app.main import create_app
+from healthcoach.intake.questionnaire_html import PAYLOAD_VERSION
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
 
@@ -2419,6 +2459,27 @@ def _snapshot(test_client) -> int:
     test_client.post("/clients", data={"full_name": "Иванова Мария"})
     test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
     return 1
+
+
+def _measurements(context, snapshot_id):
+    with context.session() as repo:
+        return repo.snapshots.measurements(snapshot_id)
+
+
+def _stored_answers(context, snapshot_id):
+    with context.session() as repo:
+        return repo.snapshots.answers(snapshot_id)
+
+
+def _answers_file(context, answers, blocks):
+    body = {
+        "версия": PAYLOAD_VERSION,
+        "клиент": "CL-0001",
+        "спецификация": context.questionnaire.version,
+        "блоки": blocks,
+        "ответы": answers,
+    }
+    return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
 def test_snapshot_page_renders(client):
@@ -2446,7 +2507,7 @@ def test_measurement_is_recognised_and_stored(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.analyte_id == "ферритин"
     assert stored.value == 18.0
     assert stored.confirmed is False
@@ -2464,7 +2525,7 @@ def test_alias_units_are_converted_on_entry(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.units == "нг/мл"
     assert stored.value == 18.0
 
@@ -2481,7 +2542,7 @@ def test_unknown_analyte_is_stored_and_flagged(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.analyte_id == ""
     assert stored.raw_name == "Гомоцистеин"
 
@@ -2501,7 +2562,7 @@ def test_unmatched_units_are_stored_and_flagged(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.units == "пмоль/л"
     page = test_client.get(f"/snapshots/{snapshot_id}").text
     assert "единицы" in page
@@ -2519,34 +2580,47 @@ def test_confirming_a_measurement_shows_it_as_confirmed(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
-    (again,) = context.snapshots.measurements(snapshot_id)
+    (again,) = _measurements(context, snapshot_id)
     assert again.confirmed is True
 
 
 def test_answers_upload_is_stored(client):
     test_client, context = client
     snapshot_id = _snapshot(test_client)
-    questionnaire = context.questionnaire
-    block = questionnaire.block("obraz_zizni")
+    block = context.questionnaire.block("obraz_zizni")
     answers = {q.id: min(o.score for o in q.options()) for q in block.questions}
-    payload = json.dumps(
-        {
-            "версия": "1.0",
-            "клиент": "CL-0001",
-            "спецификация": questionnaire.version,
-            "ответы": answers,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
+    core = [b.id for b in context.questionnaire.blocks if b.core]
 
     response = test_client.post(
         f"/snapshots/{snapshot_id}/answers",
-        files={"file": ("ответы.json", payload, "application/json")},
+        files={
+            "file": ("ответы.json", _answers_file(context, answers, core), "application/json")
+        },
     )
-    assert response.status_code in (200, 303)
-    assert context.snapshots.answers(snapshot_id) == answers
+    assert response.status_code == 200
+    assert _stored_answers(context, snapshot_id) == answers
+
+
+def test_upload_reports_skipped_but_not_the_blocks_never_shown(client):
+    """Коуч видит, что клиент пропустил, и не видит того, чего ему не слали."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    block = context.questionnaire.block("obraz_zizni")
+    answers = {block.questions[0].id: 0}
+    core = [b.id for b in context.questionnaire.blocks if b.core]
+
+    page = test_client.post(
+        f"/snapshots/{snapshot_id}/answers",
+        files={
+            "file": ("ответы.json", _answers_file(context, answers, core), "application/json")
+        },
+    ).text
+
+    assert block.questions[1].id in page
+    candida = context.questionnaire.block("oprosnik_candida")
+    assert candida.questions[0].id not in page
 
 
 def test_broken_answers_upload_is_reported(client):
@@ -2573,7 +2647,7 @@ def test_findings_respect_the_sex_parameter(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
 
     female = test_client.get(
@@ -2602,7 +2676,7 @@ def test_findings_use_only_confirmed_measurements(client):
     before = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" not in before
 
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
     after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" in after
@@ -2637,6 +2711,22 @@ uv run pytest tests/app/test_snapshot_routes.py -v
 {% else %}
 <p class="muted">Ответы не загружены.</p>
 {% endif %}
+
+{% if imported %}
+<p>Файл разобран: {{ imported.answers | length }} ответов,
+  пропущено {{ imported.skipped | length }}.</p>
+{% if imported.skipped %}
+<details>
+  <summary class="warn">Клиент видел, но не ответил — {{ imported.skipped | length }}</summary>
+  <ul>
+    {% for question_id in imported.skipped %}
+    <li class="muted">{{ question_id }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endif %}
+
 <form method="post" action="/snapshots/{{ snapshot.id }}/answers"
       enctype="multipart/form-data">
   <label>Файл ответов<input type="file" name="file" accept=".json" required></label>
@@ -2708,8 +2798,8 @@ from datetime import date
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from healthcoach.app.deps import Context
-from healthcoach.intake.answers import AnswersError, parse_answers
+from healthcoach.app.deps import Context, Repositories
+from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.units import UnitError, convert_to_reference
 from healthcoach.scoring.findings import collect_findings
@@ -2729,15 +2819,15 @@ class Row:
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
-    def _snapshot_or_404(snapshot_id: int):
-        snapshot = context.snapshots.get(snapshot_id)
+    def _snapshot_or_404(repo: Repositories, snapshot_id: int):
+        snapshot = repo.snapshots.get(snapshot_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
         return snapshot
 
-    def _rows(snapshot_id: int) -> list[Row]:
+    def _rows(repo: Repositories, snapshot_id: int) -> list[Row]:
         rows: list[Row] = []
-        for measurement in context.snapshots.measurements(snapshot_id):
+        for measurement in repo.snapshots.measurements(snapshot_id):
             if not measurement.analyte_id:
                 rows.append(
                     Row(measurement, measurement.raw_name, "показатель не распознан")
@@ -2755,29 +2845,42 @@ def build_router(context: Context, templates) -> APIRouter:
             rows.append(Row(measurement, analyte.name, problem))
         return rows
 
-    @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
-    def snapshot_page(request: Request, snapshot_id: int):
-        snapshot = _snapshot_or_404(snapshot_id)
+    def _page(
+        request: Request,
+        repo: Repositories,
+        snapshot,
+        imported: ImportedAnswers | None = None,
+    ):
         return templates.TemplateResponse(
             request,
             "snapshot.html",
             {
                 "snapshot": snapshot,
-                "rows": _rows(snapshot_id),
-                "answers_count": len(context.snapshots.answers(snapshot_id)),
+                "rows": _rows(repo, snapshot.id),
+                "answers_count": len(repo.snapshots.answers(snapshot.id)),
+                "imported": imported,
             },
         )
 
-    @router.post("/snapshots/{snapshot_id}/answers")
-    async def upload_answers(snapshot_id: int, file: UploadFile = File(...)):
-        _snapshot_or_404(snapshot_id)
+    @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
+    def snapshot_page(request: Request, snapshot_id: int):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            return _page(request, repo, snapshot)
+
+    @router.post("/snapshots/{snapshot_id}/answers", response_class=HTMLResponse)
+    async def upload_answers(
+        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    ):
         payload = await file.read()
         try:
             imported = parse_answers(context.questionnaire, payload)
         except AnswersError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        context.snapshots.save_answers(snapshot_id, imported.answers)
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.save_answers(snapshot_id, imported.answers)
+            return _page(request, repo, snapshot, imported=imported)
 
     @router.post("/snapshots/{snapshot_id}/measurements")
     def add_measurement(
@@ -2787,7 +2890,6 @@ def build_router(context: Context, templates) -> APIRouter:
         units: str = Form(...),
         taken_on: str = Form(...),
     ):
-        _snapshot_or_404(snapshot_id)
         try:
             number = float(value.replace(",", "."))
         except ValueError as exc:
@@ -2807,20 +2909,23 @@ def build_router(context: Context, templates) -> APIRouter:
             except UnitError:
                 stored_value, stored_units = number, units
 
-        context.snapshots.add_measurement(
-            snapshot_id,
-            analyte_id=analyte_id,
-            raw_name=raw_name,
-            value=stored_value,
-            units=stored_units,
-            taken_on=when,
-        )
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.add_measurement(
+                snapshot_id,
+                analyte_id=analyte_id,
+                raw_name=raw_name,
+                value=stored_value,
+                units=stored_units,
+                taken_on=when,
+            )
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/confirm")
     def confirm(snapshot_id: int, measurement_id: int):
-        _snapshot_or_404(snapshot_id)
-        context.snapshots.confirm_measurement(measurement_id)
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.confirm_measurement(measurement_id)
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
@@ -2832,16 +2937,19 @@ def build_router(context: Context, templates) -> APIRouter:
         с обезличиванием, которому нужны те же поля. Так они хотя бы
         задаются снаружи, а не зашиты в код.
         """
-        snapshot = _snapshot_or_404(snapshot_id)
-        measurements = [
-            Measurement(m.analyte_id, m.value, m.units)
-            for m in context.snapshots.measurements(snapshot_id)
-            if m.confirmed and m.analyte_id
-        ]
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            measurements = [
+                Measurement(m.analyte_id, m.value, m.units)
+                for m in repo.snapshots.measurements(snapshot_id)
+                if m.confirmed and m.analyte_id
+            ]
+            answers = repo.snapshots.answers(snapshot_id)
+
         found = collect_findings(
             context.questionnaire,
             context.references,
-            context.snapshots.answers(snapshot_id),
+            answers,
             measurements,
             Subject(sex=sex, age=age),
         )
@@ -2876,7 +2984,7 @@ from healthcoach.app import routes_clients, routes_snapshots
 uv run pytest tests/app/ -v
 ```
 
-Ожидается: 19 PASS.
+Ожидается: 21 PASS.
 
 - [ ] **Step 7: Прогнать весь набор**
 
@@ -2884,7 +2992,7 @@ uv run pytest tests/app/ -v
 uv run pytest -q
 ```
 
-Ожидается: 219 проходящих.
+Ожидается: 243 проходящих.
 
 - [ ] **Step 8: Пройти сквозной путь руками**
 
@@ -2894,9 +3002,10 @@ uv run python -m healthcoach.app.main
 
 1. Добавить клиента, создать срез.
 2. Скачать опросник, заполнить в браузере несколько блоков, скачать ответы.
-3. Загрузить файл ответов в срез.
+3. Загрузить файл ответов в срез — убедиться, что отчёт об импорте показывает пропущенные вопросы и не показывает вопросы блоков, которых клиенту не отправляли.
 4. Ввести ферритин 18 нг/мл, подтвердить.
 5. Открыть находки — дефицит ферритина и степени по заполненным блокам.
+6. Остановить `Ctrl+C`, удалить созданную базу `data/healthcoach.db` — это проверочные данные, им в рабочей базе не место.
 
 - [ ] **Step 9: Коммит**
 

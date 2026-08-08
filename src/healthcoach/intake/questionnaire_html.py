@@ -14,7 +14,9 @@ from collections.abc import Sequence
 
 from healthcoach.knowledge.questionnaire import Block, Questionnaire
 
-PAYLOAD_VERSION = "1.0"
+PAYLOAD_VERSION = "1.1"
+"""1.1 добавила ключ «блоки»: без него нельзя отличить вопрос, который
+клиент пропустил, от вопроса, который ему не показывали."""
 
 
 class QuestionnaireHtmlError(Exception):
@@ -136,6 +138,7 @@ function download() {
     "версия": PAYLOAD_VERSION,
     "клиент": CLIENT_CODE,
     "спецификация": SPEC_VERSION,
+    "блоки": SHOWN_BLOCKS,
     "ответы": collect(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)],
@@ -203,10 +206,12 @@ def render_questionnaire(
             parts.extend(_render_question(q, subscale.title) for q in questions)
         sections.append("\n".join(parts))
 
+    shown = [block.id for block in blocks]
     script = (
         f"const CLIENT_CODE = {json.dumps(client_code, ensure_ascii=False)};\n"
         f"const SPEC_VERSION = {json.dumps(questionnaire.version)};\n"
         f"const PAYLOAD_VERSION = {json.dumps(PAYLOAD_VERSION)};\n"
+        f"const SHOWN_BLOCKS = {json.dumps(shown, ensure_ascii=False)};\n"
         f"{_SCRIPT}"
     )
 

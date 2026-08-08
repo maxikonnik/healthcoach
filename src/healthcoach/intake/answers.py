@@ -15,9 +15,20 @@ class AnswersError(Exception):
 
 @dataclass(frozen=True)
 class ImportedAnswers:
+    """Результат разбора файла ответов.
+
+    `skipped` и `not_asked` разделены намеренно: первое — вопросы, которые
+    клиент видел и оставил пустыми, и с ними коучу есть что делать; второе —
+    вопросы из блоков, которые этому клиенту вовсе не отправляли. Сваленные
+    в одну кучу, они превращали бы список в шум: необязательных вопросов в
+    спецификации больше двух сотен.
+    """
+
     client_code: str
+    shown_blocks: tuple[str, ...]
     answers: dict[str, int]
     skipped: tuple[str, ...]
+    not_asked: tuple[str, ...]
 
 
 def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> ImportedAnswers:
@@ -56,10 +67,28 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
             f"а загружена {questionnaire.version!r}"
         )
 
+    raw_blocks = body.get("блоки")
+    if not isinstance(raw_blocks, list) or not all(
+        isinstance(b, str) for b in raw_blocks
+    ):
+        raise AnswersError("в файле ответов нет списка 'блоки' со строками")
+
+    known_blocks = {block.id for block in questionnaire.blocks}
+    unknown = [b for b in raw_blocks if b not in known_blocks]
+    if unknown:
+        raise AnswersError(
+            f"в спецификации нет блоков {sorted(unknown)}; "
+            f"вероятно, опросник собран по другой версии"
+        )
+    shown_blocks = tuple(raw_blocks)
+
     scales: dict[str, set[int]] = {}
+    asked: set[str] = set()
     for block in questionnaire.blocks:
         for question in block.questions:
             scales[question.id] = {o.score for o in question.options()}
+            if block.id in shown_blocks:
+                asked.add(question.id)
 
     answers: dict[str, int] = {}
     for question_id, score in raw_answers.items():
@@ -80,9 +109,17 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
             )
         answers[question_id] = score
 
-    skipped = tuple(qid for qid in scales if qid not in answers)
+    answered_outside = sorted(answers.keys() - asked)
+    if answered_outside:
+        raise AnswersError(
+            f"есть ответы на вопросы из блоков, которые клиенту не показывали: "
+            f"{answered_outside}"
+        )
+
     return ImportedAnswers(
         client_code=str(body.get("клиент", "")),
+        shown_blocks=shown_blocks,
         answers=answers,
-        skipped=skipped,
+        skipped=tuple(qid for qid in scales if qid in asked and qid not in answers),
+        not_asked=tuple(qid for qid in scales if qid not in asked),
     )
