@@ -2083,16 +2083,27 @@ git commit -m "feat: сверка измерений с целевыми кор�
 ### Task 7: Производные показатели
 
 **Files:**
+- Create: `src/healthcoach/knowledge/formula.py`
 - Create: `src/healthcoach/scoring/derived.py`
 - Create: `knowledge/references/derived.yaml`
+- Modify: `src/healthcoach/scoring/references.py` — добавить `STATUS_NOT_COMPUTED`, сделать `AnalyteVerdict.value` необязательным
+- Modify: `src/healthcoach/knowledge/references.py` — проверять формулу при загрузке
 - Create: `tests/scoring/test_derived.py`
+- Modify: `tests/knowledge/test_references_model.py` — тест на битую формулу в базе знаний
 
 **Interfaces:**
 - Consumes: `References`, `Derived`, `Interval` из задачи 5; `Measurement`, `AnalyteVerdict` из задачи 6
 - Produces:
   - `evaluate_formula(formula: str, values: dict[str, float]) -> float`
-  - `FormulaError(Exception)`
+  - `validate_formula(formula: str) -> tuple[str, ...]` — проверить форму, не вычисляя, вернуть имена операндов
+  - `FormulaError(Exception)`, `MissingOperand(FormulaError)`
+  - `STATUS_NOT_COMPUTED = "не удалось вычислить"`
+  - `AnalyteVerdict.value: float | None`
   - `compute_derived(refs: References, measurements: list[Measurement]) -> list[AnalyteVerdict]`
+
+**Где живёт разбор формул.** Мини-язык формул — часть формата базы знаний, поэтому он лежит в слое `knowledge`, а не в `scoring`. Это позволяет `load_references` проверять формулы при загрузке, не заставляя `knowledge` импортировать `scoring` и не переворачивая зависимость между слоями.
+
+**Что молчит, а что говорит.** Молча пропускается ровно один случай — не хватает измерения для операнда (`MissingOperand`): это не пробел в данных, а несобранный набор анализов. Опечатка в формуле ловится при загрузке базы знаний и называет файл и показатель. Деление на ноль от реальных данных даёт вердикт `"не удалось вычислить"` со значением `None`.
 
 **Про безопасность формул.** Формулы разбираются через `ast` с белым списком узлов: только имена, числа и четыре арифметических действия. Никакого `eval` над произвольной строкой — база знаний это данные, а данные не должны уметь выполнять код. Кириллические идентификаторы в формулах допустимы: `кальций / калий` — корректное выражение Python.
 
@@ -2105,6 +2116,7 @@ from pathlib import Path
 
 import pytest
 
+from healthcoach.knowledge.formula import MissingOperand, validate_formula
 from healthcoach.knowledge.references import Interval, load_references
 from healthcoach.scoring.derived import FormulaError, compute_derived, evaluate_formula
 from healthcoach.scoring.references import Measurement
@@ -2165,6 +2177,57 @@ def test_derived_skipped_when_operand_absent():
     assert compute_derived(
         load_references(REFS), [Measurement("кальций", 10.0, "мг/дл")]
     ) == []
+
+
+def test_missing_operand_has_its_own_type():
+    """Только этот случай пропускается молча, поэтому у него отдельный тип."""
+    with pytest.raises(MissingOperand):
+        evaluate_formula("кальций / калий", {"кальций": 10.0})
+
+
+def test_validate_formula_returns_operand_names():
+    assert validate_formula("кальций / калий") == ("кальций", "калий")
+
+
+def test_validate_formula_rejects_syntax_error():
+    with pytest.raises(FormulaError, match="не разобрана"):
+        validate_formula("кальций /")
+
+
+def test_validate_formula_rejects_call():
+    with pytest.raises(FormulaError, match="недопустимая конструкция"):
+        validate_formula("__import__('os').system('ls')")
+
+
+def test_division_by_zero_gives_verdict_not_silence():
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [Measurement("кальций", 10.0, "мг/дл"), Measurement("калий", 0.0, "ммоль/л")],
+    )
+    assert verdict.analyte_id == "кальций_калий"
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "деление на ноль" in verdict.note
+```
+
+В `tests/knowledge/test_references_model.py` добавить тест на битую формулу в базе знаний:
+
+```python
+def test_broken_formula_names_file_and_derived(tmp_path):
+    (tmp_path / "broken_formula.yaml").write_text(
+        "производные:\n"
+        "  - id: плохой\n"
+        "    название: Плохой\n"
+        "    формула: 'кальций /'\n"
+        "    оптимум: [1, 2]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_formula.yaml" in message
+    assert "плохой" in message
 ```
 
 Файл `knowledge/references/derived.yaml`:
@@ -2201,26 +2264,22 @@ uv run pytest tests/scoring/test_derived.py -v
 
 Ожидается: FAIL с `ModuleNotFoundError: No module named 'healthcoach.scoring.derived'`.
 
-- [ ] **Step 3: Реализовать вычисление производных**
+- [ ] **Step 3: Реализовать разбор формул и вычисление производных**
 
-Файл `src/healthcoach/scoring/derived.py`:
+Файл `src/healthcoach/knowledge/formula.py`:
 
 ```python
-"""Производные показатели: соотношения и индексы."""
+"""Мини-язык формул базы знаний.
+
+Формулы приходят из данных, поэтому разбираются деревом с белым списком
+узлов: имена, числа, четыре арифметических действия и унарный минус.
+Никакого eval — данные не должны уметь выполнять код.
+"""
 
 from __future__ import annotations
 
 import ast
 import operator
-
-from healthcoach.knowledge.references import References
-from healthcoach.scoring.references import (
-    STATUS_ABOVE,
-    STATUS_BELOW,
-    STATUS_WITHIN,
-    AnalyteVerdict,
-    Measurement,
-)
 
 _OPS = {
     ast.Add: operator.add,
@@ -2229,23 +2288,49 @@ _OPS = {
     ast.Div: operator.truediv,
 }
 
+_VALIDATION_PLACEHOLDER = 1.0
+"""Подставляется вместо операнда, когда проверяется только форма формулы."""
+
 
 class FormulaError(Exception):
     """Формулу производного показателя невозможно вычислить."""
 
 
-def _eval(node: ast.AST, values: dict[str, float]) -> float:
+class MissingOperand(FormulaError):
+    """Не хватает измерения для одного из операндов формулы.
+
+    Единственный случай, в котором производный показатель пропускается
+    молча: это не пробел в данных, а просто несобранный набор анализов.
+    """
+
+
+def _parse(formula: str) -> ast.Expression:
+    try:
+        return ast.parse(formula, mode="eval")
+    except SyntaxError as exc:
+        raise FormulaError(f"формула не разобрана: {formula!r}") from exc
+
+
+def _walk(node: ast.AST, values: dict[str, float] | None, names: list[str]) -> float:
+    """Обойти дерево формулы.
+
+    При `values is None` идёт проверка формы: имена операндов собираются
+    в `names`, вместо значений подставляется единица, измерения не нужны.
+    """
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        left = _eval(node.left, values)
-        right = _eval(node.right, values)
+        left = _walk(node.left, values, names)
+        right = _walk(node.right, values, names)
         if isinstance(node.op, ast.Div) and right == 0:
             raise FormulaError("деление на ноль")
         return _OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -_eval(node.operand, values)
+        return -_walk(node.operand, values, names)
     if isinstance(node, ast.Name):
+        names.append(node.id)
+        if values is None:
+            return _VALIDATION_PLACEHOLDER
         if node.id not in values:
-            raise FormulaError(f"нет значения для операнда {node.id!r}")
+            raise MissingOperand(f"нет значения для операнда {node.id!r}")
         return values[node.id]
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return float(node.value)
@@ -2254,11 +2339,79 @@ def _eval(node: ast.AST, values: dict[str, float]) -> float:
 
 def evaluate_formula(formula: str, values: dict[str, float]) -> float:
     """Вычислить формулу. Разрешены только имена, числа и арифметика."""
+    return _walk(_parse(formula).body, values, [])
+
+
+def validate_formula(formula: str) -> tuple[str, ...]:
+    """Проверить форму формулы, не вычисляя её, и вернуть имена операндов."""
+    names: list[str] = []
+    _walk(_parse(formula).body, None, names)
+    return tuple(names)
+```
+
+В `src/healthcoach/scoring/references.py` добавить константу рядом с остальными статусами и сделать значение вердикта необязательным:
+
+```python
+STATUS_NOT_COMPUTED = "не удалось вычислить"
+```
+
+```python
+    value: float | None
+```
+
+В `src/healthcoach/knowledge/references.py` добавить импорт и проверять формулу при загрузке:
+
+```python
+from healthcoach.knowledge.formula import FormulaError, validate_formula
+```
+
+```python
+def _derived(raw: dict) -> Derived:
+    where = f"производный {raw['id']!r}"
+    optimal = _interval(raw["оптимум"], where)
+    assert optimal is not None
+    formula = str(raw["формула"])
     try:
-        tree = ast.parse(formula, mode="eval")
-    except SyntaxError as exc:
-        raise FormulaError(f"формула не разобрана: {formula!r}") from exc
-    return _eval(tree.body, values)
+        validate_formula(formula)
+    except FormulaError as exc:
+        raise ReferenceError(f"{where}: {exc}") from exc
+    return Derived(
+        id=str(raw["id"]),
+        name=str(raw["название"]),
+        formula=formula,
+        optimal=optimal,
+        note=raw.get("заметка"),
+    )
+```
+
+Файл `src/healthcoach/scoring/derived.py`:
+
+```python
+"""Производные показатели: соотношения и индексы."""
+
+from __future__ import annotations
+
+from healthcoach.knowledge.formula import (
+    FormulaError,
+    MissingOperand,
+    evaluate_formula,
+)
+from healthcoach.knowledge.references import References
+from healthcoach.scoring.references import (
+    STATUS_ABOVE,
+    STATUS_BELOW,
+    STATUS_NOT_COMPUTED,
+    STATUS_WITHIN,
+    AnalyteVerdict,
+    Measurement,
+)
+
+__all__ = [
+    "FormulaError",
+    "MissingOperand",
+    "compute_derived",
+    "evaluate_formula",
+]
 
 
 def compute_derived(
@@ -2267,7 +2420,8 @@ def compute_derived(
     """Посчитать производные показатели по имеющимся измерениям.
 
     Производный, для которого не хватает операндов, пропускается молча —
-    это не пробел в данных, а просто несобранный набор анализов.
+    это не пробел в данных, а просто несобранный набор анализов. Любая
+    другая ошибка вычисления даёт вердикт: молча не теряется ничего.
     """
     values: dict[str, float] = {}
     for measurement in measurements:
@@ -2279,7 +2433,22 @@ def compute_derived(
     for derived in references.derived:
         try:
             value = evaluate_formula(derived.formula, values)
-        except FormulaError:
+        except MissingOperand:
+            continue
+        except FormulaError as exc:
+            verdicts.append(
+                AnalyteVerdict(
+                    analyte_id=derived.id,
+                    title=derived.name,
+                    value=None,
+                    units="",
+                    status=STATUS_NOT_COMPUTED,
+                    target=derived.optimal,
+                    lab_range=None,
+                    note=str(exc),
+                    rule_missing=True,
+                )
+            )
             continue
 
         if derived.optimal.contains(value):
@@ -2312,7 +2481,7 @@ def compute_derived(
 uv run pytest tests/scoring/test_derived.py -v
 ```
 
-Ожидается: 9 PASS.
+Ожидается: 14 PASS в `test_derived.py` и 11 в `test_references_model.py`.
 
 - [ ] **Step 5: Коммит**
 
