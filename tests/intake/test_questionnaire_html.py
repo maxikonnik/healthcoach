@@ -8,7 +8,14 @@ from healthcoach.intake.questionnaire_html import (
     QuestionnaireHtmlError,
     render_questionnaire,
 )
-from healthcoach.knowledge.questionnaire import load_questionnaire
+from healthcoach.knowledge.questionnaire import (
+    Block,
+    Question,
+    Questionnaire,
+    ScaleOption,
+    Subscale,
+    load_questionnaire,
+)
 
 SPEC = Path(__file__).parents[2] / "knowledge" / "questionnaire.yaml"
 
@@ -88,8 +95,47 @@ def test_answers_payload_shape_is_documented_in_the_page(questionnaire):
     assert '"ответы"' in html
 
 
-def test_html_escapes_question_text(questionnaire):
-    """В тексте вопросов встречаются кавычки и угловые скобки."""
-    html = render_questionnaire(questionnaire, "CL-0001")
+def _question(number: int, text: str, scale):
+    return Question(
+        id=f"blok.a.{number}", number=number, text=text, scale=None, block_scale=scale
+    )
+
+
+def _hostile_questionnaire() -> Questionnaire:
+    """Спецификация, каждое текстовое поле которой пытается вырваться в разметку."""
+    scale = (ScaleOption(score=0, label='<img src=x onerror="alert(1)">'),)
+    questions = (
+        _question(1, '<script>alert("взлом")</script>', scale),
+        _question(2, "кавычка \" и амперсанд &", scale),
+    )
+    block = Block(
+        id="blok",
+        title="<i>название блока</i>",
+        part="1",
+        core=True,
+        scale=scale,
+        questions=questions,
+        subscales=(
+            Subscale(
+                id="a", title="<b>первая</b>", question_ids=("blok.a.1",), thresholds=()
+            ),
+            Subscale(
+                id="b", title="<b>вторая</b>", question_ids=("blok.a.2",), thresholds=()
+            ),
+        ),
+    )
+    return Questionnaire(version="test", blocks=(block,))
+
+
+def test_hostile_text_in_the_specification_cannot_escape_into_markup():
+    """Текст берётся из базы знаний коуча, но экранируется как недоверенный."""
+    html = render_questionnaire(_hostile_questionnaire(), "CL-0001")
+
     assert "<script>alert" not in html
+    assert "&lt;script&gt;alert" in html
+    assert 'onerror="alert(1)"' not in html
+    assert "<i>название блока</i>" not in html
+    assert "<b>первая</b>" not in html
+    assert "<b>вторая</b>" not in html
+
     assert re.search(r"<body|<main", html)

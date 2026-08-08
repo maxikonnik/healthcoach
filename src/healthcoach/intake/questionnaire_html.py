@@ -36,9 +36,13 @@ h3 { font-size: .95rem; font-weight: 600; opacity: .75; margin: 1.5rem 0 .5rem; 
 label { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; }
 .bar { position: fixed; inset: auto 0 0 0; padding: .75rem 1rem;
        background: Canvas; border-top: 1px solid; display: flex; gap: 1rem;
-       align-items: center; justify-content: space-between; }
+       align-items: center; justify-content: space-between; flex-wrap: wrap; }
 button { font: inherit; padding: .5rem 1rem; cursor: pointer; }
 .done { opacity: .55; }
+#warning { flex-basis: 100%; order: -1; margin: 0; font-size: .9rem;
+           background: #fff3cd; color: #4a3b00; padding: .5rem .7rem;
+           border-radius: .3rem; }
+#warning[hidden] { display: none; }
 """
 
 _SCRIPT = """
@@ -70,15 +74,53 @@ function refresh() {
   }
 }
 
+// Хранилище может быть недоступно: приватный режим, переполненная квота,
+// запрет сторонних данных. Молча потерять ответы клиента нельзя — он
+// заполняет опросник за несколько подходов и узнает о потере слишком поздно.
+let storageBroken = false;
+
+function warn(text) {
+  const el = document.getElementById('warning');
+  el.textContent = text;
+  el.hidden = false;
+}
+
+function noStorage() {
+  storageBroken = true;
+  warn('Браузер не сохраняет прогресс: не закрывайте страницу и нажмите ' +
+       '«Скачать ответы», когда закончите.');
+}
+
 function save() {
-  localStorage.setItem(KEY, JSON.stringify(collect()));
+  if (!storageBroken) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(collect()));
+    } catch (e) {
+      noStorage();
+    }
+  }
   refresh();
 }
 
 function restore() {
-  const raw = localStorage.getItem(KEY);
+  let raw = null;
+  try {
+    raw = localStorage.getItem(KEY);
+  } catch (e) {
+    noStorage();
+    return refresh();
+  }
   if (!raw) return refresh();
-  const data = JSON.parse(raw);
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    data = null;
+  }
+  if (!data || typeof data !== 'object') {
+    warn('Сохранённые ответы не читаются, придётся заполнить заново.');
+    return refresh();
+  }
   for (const [name, score] of Object.entries(data)) {
     const el = form.querySelector(
       'input[name="' + name + '"][value="' + score + '"]');
@@ -181,7 +223,8 @@ def render_questionnaire(
         "Когда закончите, нажмите «Скачать ответы» и пришлите файл специалисту.</p>"
         f'<form id="form">{"".join(sections)}</form>'
         "</main>"
-        '<div class="bar"><span id="progress"></span>'
+        '<div class="bar"><p id="warning" hidden></p>'
+        '<span id="progress"></span>'
         '<button type="button" id="download">Скачать ответы</button></div>'
         f"<script>{script}</script>"
         "</body></html>"
