@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ client.code }}{% endblock %}
+{% block body %}
+<h1>{{ client.full_name }} <span class="muted">{{ client.code }}</span></h1>
+{% if client.contacts %}<p class="muted">{{ client.contacts }}</p>{% endif %}
+
+<h2>Опросник для клиента</h2>
+<form method="get" action="/clients/{{ client.code }}/questionnaire">
+  <label>Дополнительные блоки
+    <select name="extra" multiple size="5">
+      {% for block in extra_blocks %}
+      <option value="{{ block.id }}">{{ block.title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Скачать файл</button>
+</form>
+<p class="muted">Ядро включено всегда. Отправьте файл клиенту в мессенджере.</p>
+
+<h2>Срезы</h2>
+<form method="post" action="/clients/{{ client.code }}/snapshots">
+  <label>Дата среза<input type="date" name="taken_on" required></label>
+  <label>Заметка<input name="note"></label>
+  <button type="submit">Создать</button>
+</form>
+
+{% if snapshots %}
+<table>
+  <tr><th>Дата</th><th>Заметка</th><th></th></tr>
+  {% for snapshot in snapshots %}
+  <tr>
+    <td>{{ snapshot.taken_on }}</td>
+    <td class="muted">{{ snapshot.note or "—" }}</td>
+    <td><a href="/snapshots/{{ snapshot.id }}">открыть</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Срезов пока нет.</p>
+{% endif %}
+{% endblock %}

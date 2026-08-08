@@ -1230,7 +1230,7 @@ def resolve_analyte(references: References, raw_name: str) -> Resolution:
 uv run pytest tests/intake/test_resolve.py -v
 ```
 
-Ожидается: 15 PASS (9 параметризованных плюс 6 обычных).
+Ожидается: 13 PASS (9 параметризованных плюс 4 обычных).
 
 - [ ] **Step 5: Коммит**
 
@@ -1460,11 +1460,13 @@ function restore() {
 }
 
 function download() {
+  // Ключи в двойных кавычках намеренно: страница сама объявляет формат,
+  // который потом разбирает импорт, и тест ищет это объявление в тексте файла.
   const payload = {
-    'версия': PAYLOAD_VERSION,
-    'клиент': CLIENT_CODE,
-    'спецификация': SPEC_VERSION,
-    'ответы': collect(),
+    "версия": PAYLOAD_VERSION,
+    "клиент": CLIENT_CODE,
+    "спецификация": SPEC_VERSION,
+    "ответы": collect(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)],
                         { type: 'application/json' });
@@ -1886,12 +1888,15 @@ git commit -m "feat: импорт ответов клиента с провер�
 **Interfaces:**
 - Consumes: `ClientRepository`, `SnapshotRepository`, `open_database`; `load_questionnaire`, `load_references`, `load_specialists`
 - Produces:
-  - `Context(questionnaire, references, specialists, clients, snapshots)` — собранное состояние приложения
+  - `Repositories(clients, snapshots)` — хранилища поверх одного соединения
+  - `Context(questionnaire, references, specialists, documents_dir, database_path)` — собранное состояние приложения; `Context.session()` — контекстный менеджер, выдающий `Repositories` на один запрос
   - `build_context(data_dir: Path, knowledge_dir: Path) -> Context`
   - `create_app(context: Context) -> FastAPI`
   - Маршруты: `GET /` (список клиентов), `POST /clients` (добавить), `GET /clients/{code}` (карточка), `POST /clients/{code}/snapshots` (новый срез), `GET /clients/{code}/questionnaire` (скачать HTML-опросник)
 
-**Почему приложение собирается из контекста.** База знаний и база данных загружаются один раз при запуске и передаются явно, а не берутся из глобалей. Тесты создают приложение поверх временной базы одной строкой, без монкипатчинга.
+**Почему приложение собирается из контекста.** База знаний загружается один раз при запуске и передаётся явно, а не берётся из глобалей. Тесты создают приложение поверх временной базы одной строкой, без монкипатчинга.
+
+**Почему соединение своё на каждый запрос.** FastAPI выполняет синхронные обработчики в пуле рабочих потоков, а `sqlite3.Connection` принадлежит потоку, в котором создан: общее соединение падает с `ProgrammingError` на первом же обращении к базе. Соединение открывается и закрывается внутри `Context.session()`, поэтому оно всегда принадлежит потоку обработчика и не накапливается — это закрывает и отложенное замечание из задачи 1. Все обращения к базе в обработчике должны находиться внутри `with context.session() as repo:`; наружу выносятся только чтение базы знаний и отрисовка ответа, которым база не нужна.
 
 - [ ] **Step 1: Добавить зависимости**
 
@@ -1915,6 +1920,7 @@ git commit -m "feat: импорт ответов клиента с провер�
 Файл `tests/app/test_clients_routes.py`:
 
 ```python
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -1979,6 +1985,23 @@ def test_questionnaire_download_is_html(client):
     assert "attachment" in response.headers.get("content-disposition", "")
 
 
+def test_requests_from_different_threads_all_reach_the_database(client):
+    """Обработчики выполняются в пуле потоков, соединение нельзя делить.
+
+    sqlite3.Connection принадлежит потоку, в котором создан. Если соединение
+    станет общим на всё приложение, эти запросы упадут с ProgrammingError.
+    """
+    client.post("/clients", data={"full_name": "Иванова Мария"})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        responses = list(
+            pool.map(lambda _: client.get("/clients/CL-0001"), range(24))
+        )
+
+    assert [r.status_code for r in responses] == [200] * 24
+    assert all("Иванова Мария" in r.text for r in responses)
+
+
 def test_questionnaire_can_include_extra_blocks(client):
     client.post("/clients", data={"full_name": "Иванова Мария"})
     response = client.get(
@@ -2006,14 +2029,23 @@ uv run pytest tests/app/test_clients_routes.py -v
 Файл `src/healthcoach/app/deps.py`:
 
 ```python
-"""Состояние приложения: база знаний и база данных.
+"""Состояние приложения: база знаний и доступ к базе данных.
 
-Загружается один раз при запуске и передаётся явно, чтобы тесты могли
-поднять приложение поверх временной базы без монкипатчинга.
+База знаний читается один раз при запуске: она неизменна и общая для всех
+запросов. Соединение с базой данных — наоборот, своё на каждый запрос.
+FastAPI выполняет синхронные обработчики в пуле рабочих потоков, а
+sqlite3.Connection принадлежит потоку, в котором создан; общее соединение
+падало бы с ProgrammingError на первом же обращении. Заодно соединения не
+копятся: каждое закрывается по выходе из запроса.
+
+Контекст передаётся явно, чтобы тесты поднимали приложение поверх временной
+базы без монкипатчинга.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -2026,27 +2058,46 @@ from healthcoach.storage.snapshots import SnapshotRepository
 
 
 @dataclass(frozen=True)
+class Repositories:
+    """Хранилища поверх одного соединения, живущего один запрос."""
+
+    clients: ClientRepository
+    snapshots: SnapshotRepository
+
+
+@dataclass(frozen=True)
 class Context:
     questionnaire: Questionnaire
     references: References
     specialists: Specialists
-    clients: ClientRepository
-    snapshots: SnapshotRepository
     documents_dir: Path
+    database_path: Path
+
+    @contextmanager
+    def session(self) -> Iterator[Repositories]:
+        """Открыть соединение на время одного запроса и закрыть его."""
+        connection = open_database(self.database_path)
+        try:
+            yield Repositories(
+                clients=ClientRepository(connection),
+                snapshots=SnapshotRepository(connection),
+            )
+        finally:
+            connection.close()
 
 
 def build_context(data_dir: Path, knowledge_dir: Path) -> Context:
     """Собрать состояние приложения из папок с данными и базой знаний."""
     documents_dir = data_dir / "documents"
     documents_dir.mkdir(parents=True, exist_ok=True)
-    connection = open_database(data_dir / "healthcoach.db")
+    database_path = data_dir / "healthcoach.db"
+    open_database(database_path).close()
     return Context(
         questionnaire=load_questionnaire(knowledge_dir / "questionnaire.yaml"),
         references=load_references(knowledge_dir / "references"),
         specialists=load_specialists(knowledge_dir / "specialists.yaml"),
-        clients=ClientRepository(connection),
-        snapshots=SnapshotRepository(connection),
         documents_dir=documents_dir,
+        database_path=database_path,
     )
 ```
 
@@ -2192,58 +2243,69 @@ def build_router(context: Context, templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     def clients_page(request: Request):
-        return templates.TemplateResponse(
-            request, "clients.html", {"clients": context.clients.all()}
-        )
+        with context.session() as repo:
+            return templates.TemplateResponse(
+                request, "clients.html", {"clients": repo.clients.all()}
+            )
 
     @router.post("/clients")
     def add_client(full_name: str = Form(...), contacts: str = Form("")):
-        try:
-            client = context.clients.add(full_name, contacts=contacts or None)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        with context.session() as repo:
+            try:
+                client = repo.clients.add(full_name, contacts=contacts or None)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse(f"/clients/{client.code}", status_code=303)
 
     @router.get("/clients/{code}", response_class=HTMLResponse)
     def client_page(request: Request, code: str):
-        client = context.clients.get(code)
-        if client is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
-        return templates.TemplateResponse(
-            request,
-            "client.html",
-            {
-                "client": client,
-                "snapshots": context.snapshots.for_client(code),
-                "extra_blocks": [
-                    b for b in context.questionnaire.blocks if not b.core
-                ],
-            },
-        )
+        with context.session() as repo:
+            client = repo.clients.get(code)
+            if client is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+            return templates.TemplateResponse(
+                request,
+                "client.html",
+                {
+                    "client": client,
+                    "snapshots": repo.snapshots.for_client(code),
+                    "extra_blocks": [
+                        b for b in context.questionnaire.blocks if not b.core
+                    ],
+                },
+            )
 
     @router.post("/clients/{code}/snapshots")
     def add_snapshot(code: str, taken_on: str = Form(...), note: str = Form("")):
-        if context.clients.get(code) is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
-        try:
-            when = date.fromisoformat(taken_on)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="дата в формате ГГГГ-ММ-ДД") from exc
-        context.snapshots.create(code, when, note=note or None)
+        with context.session() as repo:
+            if repo.clients.get(code) is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+            try:
+                when = date.fromisoformat(taken_on)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="дата в формате ГГГГ-ММ-ДД"
+                ) from exc
+            repo.snapshots.create(code, when, note=note or None)
         return RedirectResponse(f"/clients/{code}", status_code=303)
 
     @router.get("/clients/{code}/questionnaire")
     def questionnaire_file(code: str, extra: list[str] = Query(default=[])):
-        if context.clients.get(code) is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+        with context.session() as repo:
+            if repo.clients.get(code) is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
         try:
-            html = render_questionnaire(context.questionnaire, code, extra_block_ids=extra)
+            html = render_questionnaire(
+                context.questionnaire, code, extra_block_ids=extra
+            )
         except QuestionnaireHtmlError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return HTMLResponse(
             html,
             headers={
-                "content-disposition": f'attachment; filename="questionnaire-{code}.html"'
+                "content-disposition": (
+                    f'attachment; filename="questionnaire-{code}.html"'
+                )
             },
         )
 
@@ -2295,7 +2357,7 @@ if __name__ == "__main__":
 uv run pytest tests/app/ -v
 ```
 
-Ожидается: 8 PASS.
+Ожидается: 9 PASS.
 
 - [ ] **Step 8: Поднять приложение и посмотреть**
 

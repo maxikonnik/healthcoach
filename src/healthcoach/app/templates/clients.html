@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Клиенты{% endblock %}
+{% block body %}
+<h1>Клиенты</h1>
+
+<form method="post" action="/clients">
+  <label>ФИО<input name="full_name" required></label>
+  <label>Контакты<input name="contacts" placeholder="@nickname"></label>
+  <button type="submit">Добавить</button>
+</form>
+
+{% if clients %}
+<table>
+  <tr><th>Код</th><th>ФИО</th><th>Контакты</th></tr>
+  {% for client in clients %}
+  <tr>
+    <td><a href="/clients/{{ client.code }}">{{ client.code }}</a></td>
+    <td>{{ client.full_name }}</td>
+    <td class="muted">{{ client.contacts or "—" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Пока никого нет.</p>
+{% endif %}
+{% endblock %}
