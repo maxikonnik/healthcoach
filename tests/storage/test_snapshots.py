@@ -98,3 +98,23 @@ def test_snapshot_module_never_touches_the_identity_table():
     source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
     assert "identities" not in source
     assert "full_name" not in source
+
+
+def test_snapshot_module_does_not_delegate_to_the_client_repository():
+    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта.
+
+    Проверка по дереву импортов, а не по строкам: делегирование не содержало бы
+    ни слова 'identities', ни 'full_name', и текстовый страж его пропустил бы.
+    """
+    import ast
+
+    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+
+    leaking = {name for name in imported if "storage.clients" in name}
+    assert not leaking, f"модуль срезов импортирует {sorted(leaking)}"
