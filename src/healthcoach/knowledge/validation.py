@@ -26,15 +26,18 @@ class Problem:
 def parse_threshold_range(text: str) -> tuple[int | None, int | None]:
     """Разобрать запись диапазона из ключа опросника.
 
-    Баллы целые, поэтому строгие неравенства сводятся к включающим границам:
-    ">14" — это 15 и выше, "<40" — это 39 и ниже.
+    В ключе коуча ">N" читается как «N и выше», а "<N" — как «N и ниже»:
+    знаки обозначают открытую сторону диапазона, а не строгое неравенство.
+    Это установлено по самому файлу — при строгом чтении ровно один балл
+    выпадал бы из шкалы в каждом из двадцати одного блока, а у DASS граница
+    ">28" совпадает с общепринятым порогом крайне тяжёлой степени.
     """
     if (m := _RANGE.match(text)) is not None:
         return int(m.group(1)), int(m.group(2))
     if (m := _GREATER.match(text)) is not None:
-        return int(m.group(1)) + 1, None
+        return int(m.group(1)), None
     if (m := _LESS.match(text)) is not None:
-        return None, int(m.group(1)) - 1
+        return None, int(m.group(1))
     raise RangeParseError(f"не удалось разобрать диапазон {text!r}")
 
 
