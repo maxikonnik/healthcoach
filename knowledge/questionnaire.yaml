@@ -1,0 +1,3192 @@
+version: "1.0"
+blocks:
+  - id: pitanie
+    title: "ПИТАНИЕ"
+    part: организационная
+    core: true
+    scale:
+      - {score: 0, label: "не употребляю"}
+      - {score: 1, label: "употребляю 1-3 раза в месяц"}
+      - {score: 2, label: "употребляю 1-3 раза в неделю"}
+      - {score: 3, label: "употребляю ежедневно"}
+    questions:
+      - id: pitanie.а.1
+        number: 1
+        text: "Искусственные подсластители, сахарозаменители"
+      - id: pitanie.а.2
+        number: 2
+        text: "Конфеты, десерты, сладости, сахар в чистом виде"
+      - id: pitanie.а.3
+        number: 3
+        text: "Батончики «здоровые» (финики, сухофрукты, мед и пр.)"
+      - id: pitanie.а.4
+        number: 4
+        text: "Батончики с молочным протеином"
+      - id: pitanie.а.5
+        number: 5
+        text: "Газированные сладкие напитки"
+      - id: pitanie.а.6
+        number: 6
+        text: "Напитки с кофеином"
+      - id: pitanie.а.7
+        number: 7
+        text: "Фаст-фуд"
+      - id: pitanie.а.8
+        number: 8
+        text: "Жареная пища"
+      - id: pitanie.а.9
+        number: 9
+        text: "Мясные полуфабрикаты"
+      - id: pitanie.а.10
+        number: 10
+        text: "Маргарин (продукты с маргарином)"
+      - id: pitanie.а.11
+        number: 11
+        text: "Молочная продукция"
+      - id: pitanie.а.12
+        number: 12
+        text: "Мучные изделия"
+      - id: pitanie.а.13
+        number: 13
+        text: "Вода неизвестного качества"
+      - id: pitanie.а.14
+        number: 14
+        text: "Дистиллированная вода"
+      - id: pitanie.б.1
+        number: 1
+        text: "Свежие овощи и фрукты"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
+      - id: pitanie.б.2
+        number: 2
+        text: "Мясо, птица, рыба и морепродукты"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
+      - id: pitanie.б.3
+        number: 3
+        text: "Питьевая вода – фильтрованная и/или вода из стеклянных бутылок"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
+      - id: pitanie.б.4
+        number: 4
+        text: "Стараюсь придерживаться принципов правильного питания"
+        scale:
+          - {score: 0, label: "употребляю ежедневно"}
+          - {score: 1, label: "употребляю 1-3 раза в неделю"}
+          - {score: 2, label: "употребляю 1-3 раза в месяц"}
+          - {score: 3, label: "не употребляю"}
+    subscales:
+      - id: а
+        title: "А. Часть 1"
+        question_ids:
+          - pitanie.а.1
+          - pitanie.а.2
+          - pitanie.а.3
+          - pitanie.а.4
+          - pitanie.а.5
+          - pitanie.а.6
+          - pitanie.а.7
+          - pitanie.а.8
+          - pitanie.а.9
+          - pitanie.а.10
+          - pitanie.а.11
+          - pitanie.а.12
+          - pitanie.а.13
+          - pitanie.а.14
+        thresholds:
+          - {degree: низкая, min: 4, max: 8, sex: null}
+          - {degree: средняя, min: 9, max: 13, sex: null}
+          - {degree: высокая, min: 14, max: null, sex: null}
+      - id: б
+        title: "Б. Часть 2"
+        question_ids:
+          - pitanie.б.1
+          - pitanie.б.2
+          - pitanie.б.3
+          - pitanie.б.4
+        thresholds:
+          - {degree: низкая, min: 4, max: 8, sex: null}
+          - {degree: средняя, min: 9, max: 13, sex: null}
+          - {degree: высокая, min: 14, max: null, sex: null}
+  - id: vrednye_substancii
+    title: "ВРЕДНЫЕ СУБСТАНЦИИ"
+    part: организационная
+    core: true
+    scale:
+      - {score: 0, label: "не употребляю"}
+      - {score: 1, label: "употребляю 1-3 раза в месяц"}
+      - {score: 2, label: "употребляю 1-3 раза в неделю"}
+      - {score: 3, label: "употребляю ежедневно"}
+    questions:
+      - id: vrednye_substancii.1
+        number: 1
+        text: "Сигареты/сигары/трубки"
+      - id: vrednye_substancii.2
+        number: 2
+        text: "Кальян"
+      - id: vrednye_substancii.3
+        number: 3
+        text: "Слабый алкоголь"
+      - id: vrednye_substancii.4
+        number: 4
+        text: "Крепкий алкоголь"
+      - id: vrednye_substancii.5
+        number: 5
+        text: "Конопля и ее производные"
+      - id: vrednye_substancii.6
+        number: 6
+        text: "ЛСД, экстази и др. \"клубные\" наркотики"
+      - id: vrednye_substancii.7
+        number: 7
+        text: "Кокаин/Амфетамины"
+      - id: vrednye_substancii.8
+        number: 8
+        text: "Героин и/или другие опиаты"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - vrednye_substancii.1
+          - vrednye_substancii.2
+          - vrednye_substancii.3
+          - vrednye_substancii.4
+          - vrednye_substancii.5
+          - vrednye_substancii.6
+          - vrednye_substancii.7
+          - vrednye_substancii.8
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 8, sex: null}
+          - {degree: высокая, min: 9, max: null, sex: null}
+  - id: obraz_zizni
+    title: "ОБРАЗ ЖИЗНИ"
+    part: организационная
+    core: true
+    scale:
+      - {score: 0, label: "Да"}
+      - {score: 1, label: "Нет"}
+      - {score: 2, label: "Один или два раза в месяц"}
+      - {score: 3, label: "Никогда"}
+    questions:
+      - id: obraz_zizni.1
+        number: 1
+        text: "Ежедневная утренняя разминка/зарядка"
+        scale:
+          - {score: 0, label: "Да"}
+          - {score: 1, label: "Нет"}
+      - id: obraz_zizni.2
+        number: 2
+        text: "Регулярные занятия спортом"
+        scale:
+          - {score: 0, label: "Два и больше в неделю"}
+          - {score: 1, label: "Один раз в неделю"}
+          - {score: 2, label: "Один или два раза в месяц"}
+          - {score: 3, label: "Никогда"}
+      - id: obraz_zizni.3
+        number: 3
+        text: "Соблюдение резко ограничительных диет/вегетаринства/веганства"
+        scale:
+          - {score: 0, label: "Никогда"}
+          - {score: 1, label: "Один раз в 3 месяца"}
+          - {score: 2, label: "Один раз в полгода"}
+          - {score: 3, label: "Постоянно"}
+      - id: obraz_zizni.4
+        number: 4
+        text: "Стабильный сон 7-8 часов в день"
+        scale:
+          - {score: 0, label: "Да"}
+          - {score: 1, label: "Нет"}
+      - id: obraz_zizni.5
+        number: 5
+        text: "Работа более 60 часов в неделю"
+        scale:
+          - {score: 0, label: "Никогда"}
+          - {score: 1, label: "Эпизодически"}
+          - {score: 2, label: "Часто"}
+          - {score: 3, label: "Постоянно"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - obraz_zizni.1
+          - obraz_zizni.2
+          - obraz_zizni.3
+          - obraz_zizni.4
+          - obraz_zizni.5
+        thresholds:
+          - {degree: высокая, min: 5, max: null, sex: null}
+  - id: preparaty
+    title: "ПРЕПАРАТЫ"
+    part: организационная
+    core: true
+    scale:
+      - {score: 0, label: "не принимаю"}
+      - {score: 1, label: "принимаю"}
+    questions:
+      - id: preparaty.1
+        number: 1
+        text: "Антациды"
+      - id: preparaty.2
+        number: 2
+        text: "Анксиолитики"
+      - id: preparaty.3
+        number: 3
+        text: "Антибиотики"
+      - id: preparaty.4
+        number: 4
+        text: "Антиконвульсанты"
+      - id: preparaty.5
+        number: 5
+        text: "Антидепрессанты"
+      - id: preparaty.6
+        number: 6
+        text: "ЗГТ/МГТ (заместительная/менопаузальная гормональная терапия)"
+      - id: preparaty.7
+        number: 7
+        text: "Противогрибковые препараты"
+      - id: preparaty.8
+        number: 8
+        text: "Противопаразитарные препараты"
+      - id: preparaty.9
+        number: 9
+        text: "НПВС (аспирин, ибупрофен)"
+      - id: preparaty.10
+        number: 10
+        text: "Парацетамол"
+      - id: preparaty.11
+        number: 11
+        text: "Ингибиторы протонной помпы (ИПП)"
+      - id: preparaty.12
+        number: 12
+        text: "Ингаляторы при астме"
+      - id: preparaty.13
+        number: 13
+        text: "Бета-блокаторы"
+      - id: preparaty.14
+        number: 14
+        text: "Статины"
+      - id: preparaty.15
+        number: 15
+        text: "Слабительные"
+      - id: preparaty.16
+        number: 16
+        text: "Диуретики"
+      - id: preparaty.17
+        number: 17
+        text: "Препараты для лечения сердечно-сосудистых заболеваний"
+      - id: preparaty.18
+        number: 18
+        text: "Оральные контрацептивы (КОК) и др. противозачаточные препараты"
+      - id: preparaty.19
+        number: 19
+        text: "Эстрогены или прогестерон"
+      - id: preparaty.20
+        number: 20
+        text: "Глюкокортикостероиды"
+      - id: preparaty.21
+        number: 21
+        text: "Инсулин"
+      - id: preparaty.22
+        number: 22
+        text: "Метформин или др. cахароснижающие препараты"
+      - id: preparaty.23
+        number: 23
+        text: "Препараты тестостерона"
+      - id: preparaty.24
+        number: 24
+        text: "Виагра и аналоги"
+      - id: preparaty.25
+        number: 25
+        text: "Гормоны щитовидной железы"
+      - id: preparaty.26
+        number: 26
+        text: "Седатики/Снотворные"
+      - id: preparaty.27
+        number: 27
+        text: "Противоопухолевые препараты/Химиотерапия"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - preparaty.1
+          - preparaty.2
+          - preparaty.3
+          - preparaty.4
+          - preparaty.5
+          - preparaty.6
+          - preparaty.7
+          - preparaty.8
+          - preparaty.9
+          - preparaty.10
+          - preparaty.11
+          - preparaty.12
+          - preparaty.13
+          - preparaty.14
+          - preparaty.15
+          - preparaty.16
+          - preparaty.17
+          - preparaty.18
+          - preparaty.19
+          - preparaty.20
+          - preparaty.21
+          - preparaty.22
+          - preparaty.23
+          - preparaty.24
+          - preparaty.25
+          - preparaty.26
+          - preparaty.27
+        thresholds:
+          - {degree: высокая, min: 5, max: null, sex: null}
+  - id: zeludok_i_p_z
+    title: "ЖЕЛУДОК и П/Ж"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: zeludok_i_p_z.1
+        number: 1
+        text: "Отрыжка вскоре после еды"
+      - id: zeludok_i_p_z.2
+        number: 2
+        text: "Изжога или обратный заброс (рефлюкс) пищи из желудка в пищевод"
+      - id: zeludok_i_p_z.3
+        number: 3
+        text: "Вздутие, тяжесть через час после еды"
+      - id: zeludok_i_p_z.4
+        number: 4
+        text: "Потеря интереса/вкуса к белковой пище"
+      - id: zeludok_i_p_z.5
+        number: 5
+        text: "Ощущение дискомфорта/переполненности желудка после еды"
+      - id: zeludok_i_p_z.6
+        number: 6
+        text: "Состояние \"лучше себя чувстую, если не поем\""
+      - id: zeludok_i_p_z.7
+        number: 7
+        text: "Неприятный привкус во рту"
+      - id: zeludok_i_p_z.8
+        number: 8
+        text: "Несвежее дыхание (галитоз)"
+      - id: zeludok_i_p_z.9
+        number: 9
+        text: "Налёт на языке"
+      - id: zeludok_i_p_z.10
+        number: 10
+        text: "Насыщение малым объемом пищи"
+      - id: zeludok_i_p_z.11
+        number: 11
+        text: "Пропускаю еду / питаюсь с перебоями из-за отсутствия аппетита"
+      - id: zeludok_i_p_z.12
+        number: 12
+        text: "Боль в желудке, жжение и/или ноющая боль через 30 мин -1.5 часа после еды"
+      - id: zeludok_i_p_z.13
+        number: 13
+        text: "Острая или жирная (жареная) пища, шоколад, кофе, алкоголь вызывают жжение или ноющую боль в желудке"
+      - id: zeludok_i_p_z.14
+        number: 14
+        text: "Боли/спазмы/дискомфорт в желудке"
+      - id: zeludok_i_p_z.15
+        number: 15
+        text: "Хрупкие или ломкие ногти"
+      - id: zeludok_i_p_z.16
+        number: 16
+        text: "Анемия, не поддающаяся корректировке препаратми железа"
+      - id: zeludok_i_p_z.17
+        number: 17
+        text: "Опоясывающие боли"
+      - id: zeludok_i_p_z.18
+        number: 18
+        text: "Тошнота/рвота"
+      - id: zeludok_i_p_z.19
+        number: 19
+        text: "Трудность или боль во время проглатывания еды или жидкости"
+      - id: zeludok_i_p_z.20
+        number: 20
+        text: "Чёрный или дёгтеобразный стул"
+      - id: zeludok_i_p_z.21
+        number: 21
+        text: "Непереваренная пища в кале (особенно, наличие мышечных волокон по копрограмме)"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - zeludok_i_p_z.1
+          - zeludok_i_p_z.2
+          - zeludok_i_p_z.3
+          - zeludok_i_p_z.4
+          - zeludok_i_p_z.5
+          - zeludok_i_p_z.6
+          - zeludok_i_p_z.7
+          - zeludok_i_p_z.8
+          - zeludok_i_p_z.9
+          - zeludok_i_p_z.10
+          - zeludok_i_p_z.11
+          - zeludok_i_p_z.12
+          - zeludok_i_p_z.13
+          - zeludok_i_p_z.14
+          - zeludok_i_p_z.15
+          - zeludok_i_p_z.16
+          - zeludok_i_p_z.17
+          - zeludok_i_p_z.18
+          - zeludok_i_p_z.19
+          - zeludok_i_p_z.20
+          - zeludok_i_p_z.21
+        thresholds:
+          - {degree: низкая, min: 6, max: 10, sex: null}
+          - {degree: средняя, min: 11, max: 15, sex: null}
+          - {degree: высокая, min: 16, max: null, sex: null}
+  - id: tonkiy_kisecnik
+    title: "ТОНКИЙ КИШЕЧНИК"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: tonkiy_kisecnik.1
+        number: 1
+        text: "Болезнь Крона"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "В прошлом"}
+          - {score: 2, label: "Состояние умеренной тяжести"}
+          - {score: 3, label: "Тяжелое состояние"}
+      - id: tonkiy_kisecnik.2
+        number: 2
+        text: "Утренняя рвота кислым содержимым"
+      - id: tonkiy_kisecnik.3
+        number: 3
+        text: "Голодные и ночные боли"
+      - id: tonkiy_kisecnik.4
+        number: 4
+        text: "Боль в эпигастрии, жжение и/или ноющая боль, которая облегчается приемом пищи, употреблением сливок, молока или приемом антацидных препаратов"
+      - id: tonkiy_kisecnik.5
+        number: 5
+        text: "Вздутие живота через 1-2 часа после приема пищи"
+      - id: tonkiy_kisecnik.6
+        number: 6
+        text: "Метеоризм, урчание вскоре после приема пищи"
+      - id: tonkiy_kisecnik.7
+        number: 7
+        text: "Диарея вскоре после приема пищи"
+      - id: tonkiy_kisecnik.8
+        number: 8
+        text: "Резкий неприятный запах стула"
+      - id: tonkiy_kisecnik.9
+        number: 9
+        text: "Неоформленный водянистый стул, от 1-3 раз/сутки"
+      - id: tonkiy_kisecnik.10
+        number: 10
+        text: "Частый/бесконтрольный прием НПВС"
+      - id: tonkiy_kisecnik.11
+        number: 11
+        text: "Пищевая аллергия/непереносимость"
+      - id: tonkiy_kisecnik.12
+        number: 12
+        text: "Непереносимость глютена (хлебобулочных изделий)"
+      - id: tonkiy_kisecnik.13
+        number: 13
+        text: "Непереносимость молочной продукции"
+      - id: tonkiy_kisecnik.14
+        number: 14
+        text: "Синусит, постоянная заложенность носа («ватная голова»)"
+      - id: tonkiy_kisecnik.15
+        number: 15
+        text: "Акне/розацеа у взрослых"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - tonkiy_kisecnik.1
+          - tonkiy_kisecnik.2
+          - tonkiy_kisecnik.3
+          - tonkiy_kisecnik.4
+          - tonkiy_kisecnik.5
+          - tonkiy_kisecnik.6
+          - tonkiy_kisecnik.7
+          - tonkiy_kisecnik.8
+          - tonkiy_kisecnik.9
+          - tonkiy_kisecnik.10
+          - tonkiy_kisecnik.11
+          - tonkiy_kisecnik.12
+          - tonkiy_kisecnik.13
+          - tonkiy_kisecnik.14
+          - tonkiy_kisecnik.15
+        thresholds:
+          - {degree: низкая, min: 2, max: 6, sex: null}
+          - {degree: средняя, min: 7, max: 11, sex: null}
+          - {degree: высокая, min: 12, max: null, sex: null}
+  - id: infekcii_invazii_zkt
+    title: "ИНФЕКЦИИ / ИНВАЗИИ ЖКТ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: infekcii_invazii_zkt.1
+        number: 1
+        text: "Приём антибиотиков"
+        scale:
+          - {score: 0, label: "Никогда"}
+          - {score: 1, label: "Более 3 месяцев назад"}
+          - {score: 2, label: "Менее трех месяцев назад"}
+          - {score: 3, label: "Менее 1 месяца назад"}
+      - id: infekcii_invazii_zkt.2
+        number: 2
+        text: "Кандидоз слизистых"
+      - id: infekcii_invazii_zkt.3
+        number: 3
+        text: "«Стопа атлета», паховая эпидермофития, грибок ногтя, шелушение стоп, стригущий лишай"
+      - id: infekcii_invazii_zkt.4
+        number: 4
+        text: "Вагинальный кандидоз (молочница)"
+      - id: infekcii_invazii_zkt.5
+        number: 5
+        text: "Усиление кандидоза после потребления сахара, крахмала, алкоголя"
+      - id: infekcii_invazii_zkt.6
+        number: 6
+        text: "Сонливость/вялость после потребления углеводистой пищи"
+      - id: infekcii_invazii_zkt.7
+        number: 7
+        text: "Перхоть"
+      - id: infekcii_invazii_zkt.8
+        number: 8
+        text: "Анальный зуд"
+      - id: infekcii_invazii_zkt.9
+        number: 9
+        text: "Паразитоз в анамнезе или сейчас"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - infekcii_invazii_zkt.1
+          - infekcii_invazii_zkt.2
+          - infekcii_invazii_zkt.3
+          - infekcii_invazii_zkt.4
+          - infekcii_invazii_zkt.5
+          - infekcii_invazii_zkt.6
+          - infekcii_invazii_zkt.7
+          - infekcii_invazii_zkt.8
+          - infekcii_invazii_zkt.9
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 8, sex: null}
+          - {degree: высокая, min: 9, max: null, sex: null}
+  - id: tolstyy_kisecnik
+    title: "ТОЛСТЫЙ КИШЕЧНИК"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: tolstyy_kisecnik.1
+        number: 1
+        text: "Анальный зуд"
+      - id: tolstyy_kisecnik.2
+        number: 2
+        text: "Боль в области заднего прохода, спазмы"
+      - id: tolstyy_kisecnik.3
+        number: 3
+        text: "Дискомфорт, боль, спазмы в нижней половине живота"
+      - id: tolstyy_kisecnik.4
+        number: 4
+        text: "Затрудненная дефекация"
+      - id: tolstyy_kisecnik.5
+        number: 5
+        text: "Дефекация реже 1 раза в день"
+      - id: tolstyy_kisecnik.6
+        number: 6
+        text: "Кал угловатой/плоской формы"
+      - id: tolstyy_kisecnik.7
+        number: 7
+        text: "Неоформленный стул/диарея с частотой 3-10 раз в сутки"
+      - id: tolstyy_kisecnik.8
+        number: 8
+        text: "Схваткообразные боли при диарее"
+      - id: tolstyy_kisecnik.9
+        number: 9
+        text: "Чередование запора и диареи"
+      - id: tolstyy_kisecnik.10
+        number: 10
+        text: "Акт дефекации, приносящий облегчение"
+      - id: tolstyy_kisecnik.11
+        number: 11
+        text: "Эмоциональный стресс и/или прием сырых продуктов и овощей вызывает вздутие живота, боль, спазмы, скопление газов"
+      - id: tolstyy_kisecnik.12
+        number: 12
+        text: "Чувство переполнения или напряжения в области живота появляется через 2-4 часа после еды"
+      - id: tolstyy_kisecnik.13
+        number: 13
+        text: "Выраженный дурнопахнущий запах газов"
+      - id: tolstyy_kisecnik.14
+        number: 14
+        text: "Кровь в стуле"
+      - id: tolstyy_kisecnik.15
+        number: 15
+        text: "Слизь в стуле"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - tolstyy_kisecnik.1
+          - tolstyy_kisecnik.2
+          - tolstyy_kisecnik.3
+          - tolstyy_kisecnik.4
+          - tolstyy_kisecnik.5
+          - tolstyy_kisecnik.6
+          - tolstyy_kisecnik.7
+          - tolstyy_kisecnik.8
+          - tolstyy_kisecnik.9
+          - tolstyy_kisecnik.10
+          - tolstyy_kisecnik.11
+          - tolstyy_kisecnik.12
+          - tolstyy_kisecnik.13
+          - tolstyy_kisecnik.14
+          - tolstyy_kisecnik.15
+        thresholds:
+          - {degree: низкая, min: 2, max: 6, sex: null}
+          - {degree: средняя, min: 7, max: 11, sex: null}
+          - {degree: высокая, min: 12, max: null, sex: null}
+  - id: pecen_i_zelcnyy_puzyr
+    title: "ПЕЧЕНЬ И ЖЕЛЧНЫЙ ПУЗЫРЬ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: pecen_i_zelcnyy_puzyr.1
+        number: 1
+        text: "Горечь во рту, особенно после приема пищи"
+      - id: pecen_i_zelcnyy_puzyr.2
+        number: 2
+        text: "Ощущение дискомфорта в брюшной полости или тошноты во время потребления жирной или жареной пищи"
+      - id: pecen_i_zelcnyy_puzyr.3
+        number: 3
+        text: "Тяжесть и ощущение «переполненности», дискомфорт, боли в правом подреберье"
+      - id: pecen_i_zelcnyy_puzyr.4
+        number: 4
+        text: "Жирный блестящий кал (стеаторея)"
+      - id: pecen_i_zelcnyy_puzyr.5
+        number: 5
+        text: "Светлый кал (кал цвета глины)"
+      - id: pecen_i_zelcnyy_puzyr.6
+        number: 6
+        text: "Сухая шелушащаяся кожа, особенно на стопах (\"шершавые стопы\")"
+      - id: pecen_i_zelcnyy_puzyr.7
+        number: 7
+        text: "Приступы холецистита"
+        scale:
+          - {score: 0, label: "Никогда"}
+          - {score: 1, label: "Несколько лет назад"}
+          - {score: 2, label: "За последний год"}
+          - {score: 3, label: "За последние 3 месяца"}
+      - id: pecen_i_zelcnyy_puzyr.8
+        number: 8
+        text: "Удаление желчного пузыря"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pecen_i_zelcnyy_puzyr.9
+        number: 9
+        text: "Потребление алкоголя"
+        scale:
+          - {score: 0, label: "Меньше двух порций в неделю (или не употребляю)"}
+          - {score: 1, label: "Меньше семи порций в неделю"}
+          - {score: 2, label: "Меньше 10 порций в неделю"}
+          - {score: 3, label: "Больше 10 порций в неделю"}
+      - id: pecen_i_zelcnyy_puzyr.10
+        number: 10
+        text: "Злоупотребление алкоголем в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pecen_i_zelcnyy_puzyr.11
+        number: 11
+        text: "Гепатит в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pecen_i_zelcnyy_puzyr.12
+        number: 12
+        text: "Сильный неприятный запах пота/тела"
+      - id: pecen_i_zelcnyy_puzyr.13
+        number: 13
+        text: "Необъяснимый зуд кожи"
+      - id: pecen_i_zelcnyy_puzyr.14
+        number: 14
+        text: "Легкое возникновение синяков"
+      - id: pecen_i_zelcnyy_puzyr.15
+        number: 15
+        text: "Желтоватый оттенок белков глаз, желтушность кожных покровов"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - pecen_i_zelcnyy_puzyr.1
+          - pecen_i_zelcnyy_puzyr.2
+          - pecen_i_zelcnyy_puzyr.3
+          - pecen_i_zelcnyy_puzyr.4
+          - pecen_i_zelcnyy_puzyr.5
+          - pecen_i_zelcnyy_puzyr.6
+          - pecen_i_zelcnyy_puzyr.7
+          - pecen_i_zelcnyy_puzyr.8
+          - pecen_i_zelcnyy_puzyr.9
+          - pecen_i_zelcnyy_puzyr.10
+          - pecen_i_zelcnyy_puzyr.11
+          - pecen_i_zelcnyy_puzyr.12
+          - pecen_i_zelcnyy_puzyr.13
+          - pecen_i_zelcnyy_puzyr.14
+          - pecen_i_zelcnyy_puzyr.15
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 10, sex: null}
+          - {degree: высокая, min: 11, max: null, sex: null}
+  - id: essencialne_nutrienty
+    title: "ЭССЕНЦИАЛЬНЕ НУТРИЕНТЫ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: essencialne_nutrienty.а.1
+        number: 1
+        text: "Ломкость, расслоение ногтевой пластины, плохой рост ногтей"
+      - id: essencialne_nutrienty.а.2
+        number: 2
+        text: "У меня были переломы более 2-х костей и/или перелом шейки бедра"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.3
+        number: 3
+        text: "Наличие подтвержденной остеопении/ остеопороза"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.4
+        number: 4
+        text: "Уменьшение роста с течением жизни"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.5
+        number: 5
+        text: "Грыжи межпозвоночных дисков"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.6
+        number: 6
+        text: "Повышенная гибкость суставов"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.7
+        number: 7
+        text: "Бессонница/испытываю трудности с засыпанием"
+      - id: essencialne_nutrienty.а.8
+        number: 8
+        text: "\"Синдром беспокойных ног\""
+      - id: essencialne_nutrienty.а.9
+        number: 9
+        text: "Судороги и мышечная скованность, чувство сжатых челюстей"
+      - id: essencialne_nutrienty.а.10
+        number: 10
+        text: "Подергивания/вздрагивания тела или конечностей при засыпании"
+      - id: essencialne_nutrienty.а.11
+        number: 11
+        text: "Наличие анемии в настоящее время или в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.12
+        number: 12
+        text: "Склеры глаз с голубоватым оттенком"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.13
+        number: 13
+        text: "Белые точки на ногтях"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.14
+        number: 14
+        text: "Медленное заживление порезов/частое рубцевание"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.а.15
+        number: 15
+        text: "Снижение чувствительности к вкусам и запахам"
+      - id: essencialne_nutrienty.а.16
+        number: 16
+        text: "Простуды и респираторные инфекции (ОРЗ, ОРВИ)"
+      - id: essencialne_nutrienty.а.17
+        number: 17
+        text: "Герпетические высыпания"
+      - id: essencialne_nutrienty.а.18
+        number: 18
+        text: "Экзема или другие кожные сыпи"
+      - id: essencialne_nutrienty.б.1
+        number: 1
+        text: "Диета с ограничением/исключением жиров"
+        scale:
+          - {score: 0, label: "Никогда"}
+          - {score: 1, label: "Несколько лет назад"}
+          - {score: 2, label: "В прошлом году"}
+          - {score: 3, label: "В данный момент"}
+      - id: essencialne_nutrienty.б.2
+        number: 2
+        text: "Боль хорошо снимается аспирином"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.б.3
+        number: 3
+        text: "Сухая, зудящая, трескающаяся шелушащаяся кожа"
+      - id: essencialne_nutrienty.б.4
+        number: 4
+        text: "Быстрое утомление мышц"
+      - id: essencialne_nutrienty.б.5
+        number: 5
+        text: "Уязвимость к укусам насекомых (чаще кусают, чем других)"
+      - id: essencialne_nutrienty.б.6
+        number: 6
+        text: "Онемение, покалывание или зуд конечностей"
+      - id: essencialne_nutrienty.б.7
+        number: 7
+        text: "Хейлоз (\"трещины в углу рта\")"
+      - id: essencialne_nutrienty.б.8
+        number: 8
+        text: "Фолликулярный гиперкератоз (\"гусиная кожа\")"
+      - id: essencialne_nutrienty.б.9
+        number: 9
+        text: "Сильный свет ночью раздражает глаза"
+      - id: essencialne_nutrienty.б.10
+        number: 10
+        text: "Носовое кровотечение и/или склонность к появлению кровотечения"
+      - id: essencialne_nutrienty.б.11
+        number: 11
+        text: "Кровоточивость десен (особенно при чистке зубов)"
+      - id: essencialne_nutrienty.б.12
+        number: 12
+        text: "Я работаю в помещении"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.б.13
+        number: 13
+        text: "Я избегаю солнца/редко на нем нахожусь"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.б.14
+        number: 14
+        text: "Я живу в городе, где мало солнечных дней"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.б.15
+        number: 15
+        text: "Я очень редко ем рыбу и морепродукты"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: essencialne_nutrienty.б.16
+        number: 16
+        text: "У меня есть аутоиммунное заболевание (например, рассеянный склероз)"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+    subscales:
+      - id: а
+        title: "А. Часть 1"
+        question_ids:
+          - essencialne_nutrienty.а.1
+          - essencialne_nutrienty.а.2
+          - essencialne_nutrienty.а.3
+          - essencialne_nutrienty.а.4
+          - essencialne_nutrienty.а.5
+          - essencialne_nutrienty.а.6
+          - essencialne_nutrienty.а.7
+          - essencialne_nutrienty.а.8
+          - essencialne_nutrienty.а.9
+          - essencialne_nutrienty.а.10
+          - essencialne_nutrienty.а.11
+          - essencialne_nutrienty.а.12
+          - essencialne_nutrienty.а.13
+          - essencialne_nutrienty.а.14
+          - essencialne_nutrienty.а.15
+          - essencialne_nutrienty.а.16
+          - essencialne_nutrienty.а.17
+          - essencialne_nutrienty.а.18
+        thresholds:
+          - {degree: низкая, min: 0, max: 9, sex: null}
+          - {degree: средняя, min: 10, max: 17, sex: null}
+          - {degree: высокая, min: 18, max: null, sex: null}
+      - id: б
+        title: "Б. Часть 2"
+        question_ids:
+          - essencialne_nutrienty.б.1
+          - essencialne_nutrienty.б.2
+          - essencialne_nutrienty.б.3
+          - essencialne_nutrienty.б.4
+          - essencialne_nutrienty.б.5
+          - essencialne_nutrienty.б.6
+          - essencialne_nutrienty.б.7
+          - essencialne_nutrienty.б.8
+          - essencialne_nutrienty.б.9
+          - essencialne_nutrienty.б.10
+          - essencialne_nutrienty.б.11
+          - essencialne_nutrienty.б.12
+          - essencialne_nutrienty.б.13
+          - essencialne_nutrienty.б.14
+          - essencialne_nutrienty.б.15
+          - essencialne_nutrienty.б.16
+        thresholds:
+          - {degree: низкая, min: 5, max: 13, sex: null}
+          - {degree: средняя, min: 14, max: 21, sex: null}
+          - {degree: высокая, min: 22, max: null, sex: null}
+  - id: uglevodnyy_obmen
+    title: "УГЛЕВОДНЫЙ ОБМЕН"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: uglevodnyy_obmen.1
+        number: 1
+        text: "Пробуждение ночью после употребления сладкой пищи перед сном"
+      - id: uglevodnyy_obmen.2
+        number: 2
+        text: "Тяга к сладкому"
+      - id: uglevodnyy_obmen.3
+        number: 3
+        text: "Повышенный аппетит"
+      - id: uglevodnyy_obmen.4
+        number: 4
+        text: "Сонливость после обеда"
+      - id: uglevodnyy_obmen.5
+        number: 5
+        text: "Усталость, проходящая после приема пищи"
+      - id: uglevodnyy_obmen.6
+        number: 6
+        text: "Раздражительность, проходящая после приема пищи"
+      - id: uglevodnyy_obmen.7
+        number: 7
+        text: "Головная боль при пропуске приема пищи"
+      - id: uglevodnyy_obmen.8
+        number: 8
+        text: "Дрожь в руках при пропуске приёма пищи"
+      - id: uglevodnyy_obmen.9
+        number: 9
+        text: "Внезапное обильное потоотделение и/или кожа становится влажной и липкой"
+      - id: uglevodnyy_obmen.10
+        number: 10
+        text: "Родственники с диабетом"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "1 или 2"}
+          - {score: 2, label: "3 или 4"}
+          - {score: 3, label: "4 и больше"}
+      - id: uglevodnyy_obmen.11
+        number: 11
+        text: "Потемнение кожи в местах естественных складок/локтей/костяшек пальцев"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: uglevodnyy_obmen.12
+        number: 12
+        text: "Диабет во время беременности в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: uglevodnyy_obmen.13
+        number: 13
+        text: "Постоянная жажда"
+      - id: uglevodnyy_obmen.14
+        number: 14
+        text: "Учащенное обильное мочеиспускание"
+      - id: uglevodnyy_obmen.15
+        number: 15
+        text: "Зуд всего тела"
+      - id: uglevodnyy_obmen.16
+        number: 16
+        text: "Сниженная чувствительность пальцев рук и ног"
+      - id: uglevodnyy_obmen.17
+        number: 17
+        text: "Медленное заживление ран"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - uglevodnyy_obmen.1
+          - uglevodnyy_obmen.2
+          - uglevodnyy_obmen.3
+          - uglevodnyy_obmen.4
+          - uglevodnyy_obmen.5
+          - uglevodnyy_obmen.6
+          - uglevodnyy_obmen.7
+          - uglevodnyy_obmen.8
+          - uglevodnyy_obmen.9
+          - uglevodnyy_obmen.10
+          - uglevodnyy_obmen.11
+          - uglevodnyy_obmen.12
+          - uglevodnyy_obmen.13
+          - uglevodnyy_obmen.14
+          - uglevodnyy_obmen.15
+          - uglevodnyy_obmen.16
+          - uglevodnyy_obmen.17
+        thresholds:
+          - {degree: низкая, min: 3, max: 7, sex: null}
+          - {degree: средняя, min: 8, max: 12, sex: null}
+          - {degree: высокая, min: 13, max: null, sex: null}
+  - id: nadpocecniki
+    title: "НАДПОЧЕЧНИКИ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: nadpocecniki.1
+        number: 1
+        text: "Ночной образ жизни (сова)"
+      - id: nadpocecniki.2
+        number: 2
+        text: "Испытываю сложности с засыпанием"
+      - id: nadpocecniki.3
+        number: 3
+        text: "Испытываю сложности с пробуждением по утрам, утренняя разбитость"
+      - id: nadpocecniki.4
+        number: 4
+        text: "Обычно, самочувствие становится лучше после 18 часов"
+      - id: nadpocecniki.5
+        number: 5
+        text: "Головная боль, дрожь в руках, головокружение после занятий спортом"
+      - id: nadpocecniki.6
+        number: 6
+        text: "Возбуждение или тревога после употребления кофе"
+      - id: nadpocecniki.7
+        number: 7
+        text: "Головокружение, «звездочки в глазах» при резком вставании"
+      - id: nadpocecniki.8
+        number: 8
+        text: "Тяга к солёной пище"
+      - id: nadpocecniki.9
+        number: 9
+        text: "Автоматическое подсаливание до пробы пищи"
+      - id: nadpocecniki.10
+        number: 10
+        text: "Ощущение \"как будто избили\" на протяжении нескольких дней после интенсивных физических нагрузок"
+      - id: nadpocecniki.11
+        number: 11
+        text: "Внезапная паническая атака во время отдыха"
+      - id: nadpocecniki.12
+        number: 12
+        text: "Хронические боли без \"видимых\" причин"
+      - id: nadpocecniki.13
+        number: 13
+        text: "Потребность носить солнцезащитные очки"
+      - id: nadpocecniki.14
+        number: 14
+        text: "Темные круги вокруг глаз"
+      - id: nadpocecniki.15
+        number: 15
+        text: "Медленное заживление ран и порезов"
+      - id: nadpocecniki.16
+        number: 16
+        text: "Хроническая усталость или сонливость"
+      - id: nadpocecniki.17
+        number: 17
+        text: "Быстрая утомляемость, слабость"
+      - id: nadpocecniki.18
+        number: 18
+        text: "Повышенная возбудимость (вспышки гнева, сложно успокоиться после)"
+      - id: nadpocecniki.19
+        number: 19
+        text: "Склонность к повышению АД выше 120/80 мм рт ст"
+      - id: nadpocecniki.20
+        number: 20
+        text: "Набор веса (преимущественно  вокруг талии)"
+      - id: nadpocecniki.21
+        number: 21
+        text: "Потеря мышечной массы/силы (особенно в конечностях)"
+      - id: nadpocecniki.22
+        number: 22
+        text: "Одутловатое лунообразное красноватое лицо"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - nadpocecniki.1
+          - nadpocecniki.2
+          - nadpocecniki.3
+          - nadpocecniki.4
+          - nadpocecniki.5
+          - nadpocecniki.6
+          - nadpocecniki.7
+          - nadpocecniki.8
+          - nadpocecniki.9
+          - nadpocecniki.10
+          - nadpocecniki.11
+          - nadpocecniki.12
+          - nadpocecniki.13
+          - nadpocecniki.14
+          - nadpocecniki.15
+          - nadpocecniki.16
+          - nadpocecniki.17
+          - nadpocecniki.18
+          - nadpocecniki.19
+          - nadpocecniki.20
+          - nadpocecniki.21
+          - nadpocecniki.22
+        thresholds:
+          - {degree: низкая, min: 6, max: 11, sex: null}
+          - {degree: средняя, min: 12, max: 16, sex: null}
+          - {degree: высокая, min: 17, max: null, sex: null}
+  - id: sitovidnaa_zeleza
+    title: "ЩИТОВИДНАЯ ЖЕЛЕЗА"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: sitovidnaa_zeleza.1
+        number: 1
+        text: "Проблема с набором веса при сохранении нормального или повышенного аппетита"
+      - id: sitovidnaa_zeleza.2
+        number: 2
+        text: "Повышенная нервозность, агрессия"
+      - id: sitovidnaa_zeleza.3
+        number: 3
+        text: "Избыточная ажитация (тревога, волнение) и частая смена настроения, плаксивость"
+      - id: sitovidnaa_zeleza.4
+        number: 4
+        text: "Внутренний тремор/дрожь в руках"
+      - id: sitovidnaa_zeleza.5
+        number: 5
+        text: "Приливы/покраснение лица"
+      - id: sitovidnaa_zeleza.6
+        number: 6
+        text: "Высокий пульс в покое"
+      - id: sitovidnaa_zeleza.7
+        number: 7
+        text: "Плохая переносимость высоких температур, постоянное ощущение жара"
+      - id: sitovidnaa_zeleza.8
+        number: 8
+        text: "Ощущение/видимое увеличение шеи в объеме"
+      - id: sitovidnaa_zeleza.9
+        number: 9
+        text: "Дискомфорт при ношении водолазки/шарфа/галстука"
+      - id: sitovidnaa_zeleza.10
+        number: 10
+        text: "Сниженная инициативность, инертность, апатия"
+      - id: sitovidnaa_zeleza.11
+        number: 11
+        text: "Повышенная сонливость, легкая утомляемость"
+      - id: sitovidnaa_zeleza.12
+        number: 12
+        text: "Чувствительность к холоду, нарушение циркуляции крови в конечностях"
+      - id: sitovidnaa_zeleza.13
+        number: 13
+        text: "Выпадение/ломкость волос"
+      - id: sitovidnaa_zeleza.14
+        number: 14
+        text: "Потеря внешней трети волос на бровях"
+      - id: sitovidnaa_zeleza.15
+        number: 15
+        text: "Одутловатость лица, век"
+      - id: sitovidnaa_zeleza.16
+        number: 16
+        text: "Склонность к отекам"
+      - id: sitovidnaa_zeleza.17
+        number: 17
+        text: "Редкий пульс"
+      - id: sitovidnaa_zeleza.18
+        number: 18
+        text: "Забывчивость, нарушение концентрации внимания"
+      - id: sitovidnaa_zeleza.19
+        number: 19
+        text: "Осиплость голоса"
+      - id: sitovidnaa_zeleza.20
+        number: 20
+        text: "Склонность к запорам"
+      - id: sitovidnaa_zeleza.21
+        number: 21
+        text: "Набор веса или проблемы со снижением веса без видимых причин"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - sitovidnaa_zeleza.1
+          - sitovidnaa_zeleza.2
+          - sitovidnaa_zeleza.3
+          - sitovidnaa_zeleza.4
+          - sitovidnaa_zeleza.5
+          - sitovidnaa_zeleza.6
+          - sitovidnaa_zeleza.7
+          - sitovidnaa_zeleza.8
+          - sitovidnaa_zeleza.9
+          - sitovidnaa_zeleza.10
+          - sitovidnaa_zeleza.11
+          - sitovidnaa_zeleza.12
+          - sitovidnaa_zeleza.13
+          - sitovidnaa_zeleza.14
+          - sitovidnaa_zeleza.15
+          - sitovidnaa_zeleza.16
+          - sitovidnaa_zeleza.17
+          - sitovidnaa_zeleza.18
+          - sitovidnaa_zeleza.19
+          - sitovidnaa_zeleza.20
+          - sitovidnaa_zeleza.21
+        thresholds:
+          - {degree: низкая, min: 6, max: 10, sex: null}
+          - {degree: средняя, min: 11, max: 15, sex: null}
+          - {degree: высокая, min: 16, max: null, sex: null}
+  - id: serdecno_sosudistaa_sistema
+    title: "СЕРДЕЧНО-СОСУДИСТАЯ СИСТЕМА"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: serdecno_sosudistaa_sistema.1
+        number: 1
+        text: "Дискомфорт, затруднение дыхания при подъёме по лестнице, при другой физической нагрузке"
+      - id: serdecno_sosudistaa_sistema.2
+        number: 2
+        text: "Ощущение нехватки воздуха/одышка/тяжелое дыхание"
+      - id: serdecno_sosudistaa_sistema.3
+        number: 3
+        text: "Ощущение перхваченного дыхания на холодном воздухе"
+      - id: serdecno_sosudistaa_sistema.4
+        number: 4
+        text: "Острая потребность открывать окна в душных помещениях"
+      - id: serdecno_sosudistaa_sistema.5
+        number: 5
+        text: "Тупая боль или ощущение сдавливания в груди и/или иррадиация в левую руку"
+      - id: serdecno_sosudistaa_sistema.6
+        number: 6
+        text: "Отеки ступней и щиколоток без видимых причин (особенно, ближе к вечеру)"
+      - id: serdecno_sosudistaa_sistema.7
+        number: 7
+        text: "Ощущение очень быстрого, очень медленного или нерегулярного сердцебиения"
+      - id: serdecno_sosudistaa_sistema.8
+        number: 8
+        text: "Ночной кашель"
+      - id: serdecno_sosudistaa_sistema.9
+        number: 9
+        text: "Румянец или покраснение лица без причин"
+      - id: serdecno_sosudistaa_sistema.10
+        number: 10
+        text: "Чувствуете себя плохо, когда стоите (в ногах появляется ощущение тяжести и усталости)"
+      - id: serdecno_sosudistaa_sistema.11
+        number: 11
+        text: "Дискомфорт в ногах или слабость устраняются при поднятии ног"
+      - id: serdecno_sosudistaa_sistema.12
+        number: 12
+        text: "Холодные ноги или посиневшие руки"
+      - id: serdecno_sosudistaa_sistema.13
+        number: 13
+        text: "Пальцы на руках и ногах замерзают в холодную погоду, даже в соответствующей одежде/обуви"
+      - id: serdecno_sosudistaa_sistema.14
+        number: 14
+        text: "Наличие артериальной гипертензии"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: serdecno_sosudistaa_sistema.15
+        number: 15
+        text: "Наличие ИБС"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: serdecno_sosudistaa_sistema.16
+        number: 16
+        text: "Инфаркт/инсульт в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - serdecno_sosudistaa_sistema.1
+          - serdecno_sosudistaa_sistema.2
+          - serdecno_sosudistaa_sistema.3
+          - serdecno_sosudistaa_sistema.4
+          - serdecno_sosudistaa_sistema.5
+          - serdecno_sosudistaa_sistema.6
+          - serdecno_sosudistaa_sistema.7
+          - serdecno_sosudistaa_sistema.8
+          - serdecno_sosudistaa_sistema.9
+          - serdecno_sosudistaa_sistema.10
+          - serdecno_sosudistaa_sistema.11
+          - serdecno_sosudistaa_sistema.12
+          - serdecno_sosudistaa_sistema.13
+          - serdecno_sosudistaa_sistema.14
+          - serdecno_sosudistaa_sistema.15
+          - serdecno_sosudistaa_sistema.16
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 10, sex: null}
+          - {degree: высокая, min: 11, max: null, sex: null}
+  - id: pocki_i_mocevoy_puzyr
+    title: "ПОЧКИ И МОЧЕВОЙ ПУЗЫРЬ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: pocki_i_mocevoy_puzyr.1
+        number: 1
+        text: "Ноющая боль в пояснице"
+      - id: pocki_i_mocevoy_puzyr.2
+        number: 2
+        text: "Мешки под глазами и опухшие веки по утрам, во второй половине дня отечность становится меньше или исчезает совсем"
+      - id: pocki_i_mocevoy_puzyr.3
+        number: 3
+        text: "Песок или камни в почках сейчас или в анамнезе"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.4
+        number: 4
+        text: "Боль или жжение при мочеиспускании"
+      - id: pocki_i_mocevoy_puzyr.5
+        number: 5
+        text: "Мутная, тёмная моча (цвет \"мясных помоев\"), моча розового цвета (гематурия)"
+      - id: pocki_i_mocevoy_puzyr.6
+        number: 6
+        text: "Частое мочеиспускание"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.7
+        number: 7
+        text: "Редкое мочеиспускание"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.8
+        number: 8
+        text: "Сильный резкий запах мочи"
+      - id: pocki_i_mocevoy_puzyr.9
+        number: 9
+        text: "Наличие хронического цистита"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.10
+        number: 10
+        text: "Наличие хронического пиелонефрита"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.11
+        number: 11
+        text: "Наличие гломерулонефрита"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: pocki_i_mocevoy_puzyr.12
+        number: 12
+        text: "Кашель, поднятие тяжелых предметов, напряжение во время работы/физнагрузок сопровождаются непроизвольным мочеиспусканием"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - pocki_i_mocevoy_puzyr.1
+          - pocki_i_mocevoy_puzyr.2
+          - pocki_i_mocevoy_puzyr.3
+          - pocki_i_mocevoy_puzyr.4
+          - pocki_i_mocevoy_puzyr.5
+          - pocki_i_mocevoy_puzyr.6
+          - pocki_i_mocevoy_puzyr.7
+          - pocki_i_mocevoy_puzyr.8
+          - pocki_i_mocevoy_puzyr.9
+          - pocki_i_mocevoy_puzyr.10
+          - pocki_i_mocevoy_puzyr.11
+          - pocki_i_mocevoy_puzyr.12
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 8, sex: null}
+          - {degree: высокая, min: 9, max: null, sex: null}
+  - id: imunnaa_sistema
+    title: "ИМУННАЯ СИСТЕМА"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: imunnaa_sistema.1
+        number: 1
+        text: "Частый насморк"
+      - id: imunnaa_sistema.2
+        number: 2
+        text: "Постоянная заложенность носа"
+      - id: imunnaa_sistema.3
+        number: 3
+        text: "Предболезненное состояние в ротоносоглотке весь осенне-зимний период"
+      - id: imunnaa_sistema.4
+        number: 4
+        text: "Частота ОРВИ/гриппа"
+        scale:
+          - {score: 0, label: "1 или 2 раза за последние 2 года"}
+          - {score: 1, label: "не болел за последние 2 года"}
+          - {score: 2, label: "не болел за последние 4 года"}
+          - {score: 3, label: "не болел за последние 7 лет"}
+      - id: imunnaa_sistema.5
+        number: 5
+        text: "Симптомы гриппа/простуды длятся более 5 дней"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: imunnaa_sistema.6
+        number: 6
+        text: "Частота различных инфекций (кожные инфекции, синусит, отит, пневмония, цистит, инфекции мочевыводящей системы и др.)"
+        scale:
+          - {score: 0, label: "1 или меньше за год"}
+          - {score: 1, label: "2 или 3 раза в год"}
+          - {score: 2, label: "4 или 5 раз в год"}
+          - {score: 3, label: "6 или больше раз в год"}
+      - id: imunnaa_sistema.7
+        number: 7
+        text: "Дерматиты, фурункулы, карбункулы"
+      - id: imunnaa_sistema.8
+        number: 8
+        text: "Герпес, Мононуклеоз, вирус Эпштейна-Барр (ВЭБ), опоясывающий лишай, синдром хронической усталости (СХУ), гепатиты"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да в прошлом"}
+          - {score: 2, label: "сейчас состояние умеренной тяжести"}
+          - {score: 3, label: "сейчас тяжелое состояние"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - imunnaa_sistema.1
+          - imunnaa_sistema.2
+          - imunnaa_sistema.3
+          - imunnaa_sistema.4
+          - imunnaa_sistema.5
+          - imunnaa_sistema.6
+          - imunnaa_sistema.7
+          - imunnaa_sistema.8
+        thresholds:
+          - {degree: низкая, min: 3, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 8, sex: null}
+          - {degree: высокая, min: 9, max: null, sex: null}
+  - id: muzskoe_zdorove
+    title: "МУЖСКОЕ ЗДОРОВЬЕ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: muzskoe_zdorove.1
+        number: 1
+        text: "Диагностированные заболевания простаты"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: muzskoe_zdorove.2
+        number: 2
+        text: "Сложности с началом и завершением мочеиспускания"
+      - id: muzskoe_zdorove.3
+        number: 3
+        text: "Трудно задержать мочеиспускание"
+      - id: muzskoe_zdorove.4
+        number: 4
+        text: "Слабая струя мочи"
+      - id: muzskoe_zdorove.5
+        number: 5
+        text: "Прерывистая струя мочи при мочеиспускании"
+      - id: muzskoe_zdorove.6
+        number: 6
+        text: "Для мочеиспускания необходимо напрячься"
+      - id: muzskoe_zdorove.7
+        number: 7
+        text: "Подтекание мочи после мочеиспускания"
+      - id: muzskoe_zdorove.8
+        number: 8
+        text: "Ощущение неполного опорожнения мочевого пузыря"
+      - id: muzskoe_zdorove.9
+        number: 9
+        text: "Частая потребность в мочеиспускании (перерыв менее двух часов)"
+      - id: muzskoe_zdorove.10
+        number: 10
+        text: "Пробуждение ночью для мочеиспускания"
+      - id: muzskoe_zdorove.11
+        number: 11
+        text: "Боль или жжение при мочеиспускании"
+      - id: muzskoe_zdorove.12
+        number: 12
+        text: "Снижение сексуального влечения"
+      - id: muzskoe_zdorove.13
+        number: 13
+        text: "Снижение эрекции"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - muzskoe_zdorove.1
+          - muzskoe_zdorove.2
+          - muzskoe_zdorove.3
+          - muzskoe_zdorove.4
+          - muzskoe_zdorove.5
+          - muzskoe_zdorove.6
+          - muzskoe_zdorove.7
+          - muzskoe_zdorove.8
+          - muzskoe_zdorove.9
+          - muzskoe_zdorove.10
+          - muzskoe_zdorove.11
+          - muzskoe_zdorove.12
+          - muzskoe_zdorove.13
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 10, sex: null}
+          - {degree: высокая, min: 11, max: null, sex: null}
+  - id: zenskoe_zdorove
+    title: "ЖЕНСКОЕ ЗДОРОВЬЕ"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: zenskoe_zdorove.а.1
+        number: 1
+        text: "Депрессия во время месячных или в предменструальный период (ПМП)"
+      - id: zenskoe_zdorove.а.2
+        number: 2
+        text: "Перепады настроения, агрессия, гнев в середине и в конце цикла"
+      - id: zenskoe_zdorove.а.3
+        number: 3
+        text: "Тяга к шоколаду (сладкому) в ПМП"
+      - id: zenskoe_zdorove.а.4
+        number: 4
+        text: "Набухание/чувствительность груди в ПМП"
+      - id: zenskoe_zdorove.а.5
+        number: 5
+        text: "Ощущение одутловатости, вздутия живота, отеков в ПМП"
+      - id: zenskoe_zdorove.а.6
+        number: 6
+        text: "Стабильный набор веса в ПМП и сброс с началом менструации"
+      - id: zenskoe_zdorove.а.7
+        number: 7
+        text: "Высыпания, жирность кожи перед началом цикла"
+      - id: zenskoe_zdorove.а.8
+        number: 8
+        text: "Повышенный аппетит в ПМП"
+      - id: zenskoe_zdorove.а.9
+        number: 9
+        text: "Боли/дискомфорт в пояснице, внизу живота в первые дни цикла"
+      - id: zenskoe_zdorove.а.10
+        number: 10
+        text: "Обильная менструация"
+      - id: zenskoe_zdorove.а.11
+        number: 11
+        text: "Скудная менструация"
+      - id: zenskoe_zdorove.а.12
+        number: 12
+        text: "Нерегулярная менструация (3-6 раз в год)"
+      - id: zenskoe_zdorove.а.13
+        number: 13
+        text: "Укорочение (более 35 дней)/удлинение цикла (менее 25 дней)"
+      - id: zenskoe_zdorove.а.14
+        number: 14
+        text: "Менструация без беременности отсутствует 6 мес и более"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.а.15
+        number: 15
+        text: "Кровотечение между менструациями"
+      - id: zenskoe_zdorove.б.1
+        number: 1
+        text: "Затрудненное (напряженное) мочеиспускание"
+      - id: zenskoe_zdorove.б.2
+        number: 2
+        text: "Зуд или жжение во влагалище во время или без полового акта"
+      - id: zenskoe_zdorove.б.3
+        number: 3
+        text: "Выделения из влагалища"
+      - id: zenskoe_zdorove.б.4
+        number: 4
+        text: "Болезненный половой акт (диспанеурия)"
+      - id: zenskoe_zdorove.б.5
+        number: 5
+        text: "Сухость влагалища"
+      - id: zenskoe_zdorove.б.6
+        number: 6
+        text: "Избыточные жировые отложения в области бёдер и ягодиц"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.б.7
+        number: 7
+        text: "Избыточный рост жестких волос на лице и теле"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.б.8
+        number: 8
+        text: "Наличие эндометриоза"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.б.9
+        number: 9
+        text: "Миома матки"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.б.10
+        number: 10
+        text: "Фиброзно-кистозная мастопатия"
+        scale:
+          - {score: 0, label: "Не"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.б.11
+        number: 11
+        text: "Снижение либидо"
+      - id: zenskoe_zdorove.в.1
+        number: 1
+        text: "Менструация отсутствует 6 мес и более"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.2
+        number: 2
+        text: "Приливы"
+      - id: zenskoe_zdorove.в.3
+        number: 3
+        text: "Болезненный половой акт (диспанеурия)"
+      - id: zenskoe_zdorove.в.4
+        number: 4
+        text: "Сильная потливость по ночам"
+      - id: zenskoe_zdorove.в.5
+        number: 5
+        text: "Ночные позывы к мочеиспусканию"
+      - id: zenskoe_zdorove.в.6
+        number: 6
+        text: "Зуд или жжение во влагалище во время или без полового акта"
+      - id: zenskoe_zdorove.в.7
+        number: 7
+        text: "Выделения из влагалища"
+      - id: zenskoe_zdorove.в.8
+        number: 8
+        text: "Сухость влагалища"
+      - id: zenskoe_zdorove.в.9
+        number: 9
+        text: "Истончение кожи"
+      - id: zenskoe_zdorove.в.10
+        number: 10
+        text: "Подтекание мочи при кашле, физической нагрузке"
+      - id: zenskoe_zdorove.в.11
+        number: 11
+        text: "Избыточные жировые отложения в области бёдер и ягодиц"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.12
+        number: 12
+        text: "Избыточный рост жестких волос на лице и теле"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.13
+        number: 13
+        text: "Наличие эндометриоза"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.14
+        number: 14
+        text: "Миома матки"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.15
+        number: 15
+        text: "Фиброзно-кистозная мастопатия"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: zenskoe_zdorove.в.16
+        number: 16
+        text: "Снижение либидо"
+    subscales:
+      - id: а
+        title: "А. Репродуктивный период, часть 1"
+        question_ids:
+          - zenskoe_zdorove.а.1
+          - zenskoe_zdorove.а.2
+          - zenskoe_zdorove.а.3
+          - zenskoe_zdorove.а.4
+          - zenskoe_zdorove.а.5
+          - zenskoe_zdorove.а.6
+          - zenskoe_zdorove.а.7
+          - zenskoe_zdorove.а.8
+          - zenskoe_zdorove.а.9
+          - zenskoe_zdorove.а.10
+          - zenskoe_zdorove.а.11
+          - zenskoe_zdorove.а.12
+          - zenskoe_zdorove.а.13
+          - zenskoe_zdorove.а.14
+          - zenskoe_zdorove.а.15
+        thresholds:
+          - {degree: низкая, min: 6, max: 12, sex: null}
+          - {degree: средняя, min: 13, max: 18, sex: null}
+          - {degree: высокая, min: 19, max: null, sex: null}
+      - id: б
+        title: "Б. Репродуктивный период, часть 2"
+        question_ids:
+          - zenskoe_zdorove.б.1
+          - zenskoe_zdorove.б.2
+          - zenskoe_zdorove.б.3
+          - zenskoe_zdorove.б.4
+          - zenskoe_zdorove.б.5
+          - zenskoe_zdorove.б.6
+          - zenskoe_zdorove.б.7
+          - zenskoe_zdorove.б.8
+          - zenskoe_zdorove.б.9
+          - zenskoe_zdorove.б.10
+          - zenskoe_zdorove.б.11
+        thresholds:
+          - {degree: низкая, min: 6, max: 10, sex: null}
+          - {degree: средняя, min: 11, max: 16, sex: null}
+          - {degree: высокая, min: 17, max: null, sex: null}
+      - id: в
+        title: "В. Менопауза"
+        question_ids:
+          - zenskoe_zdorove.в.1
+          - zenskoe_zdorove.в.2
+          - zenskoe_zdorove.в.3
+          - zenskoe_zdorove.в.4
+          - zenskoe_zdorove.в.5
+          - zenskoe_zdorove.в.6
+          - zenskoe_zdorove.в.7
+          - zenskoe_zdorove.в.8
+          - zenskoe_zdorove.в.9
+          - zenskoe_zdorove.в.10
+          - zenskoe_zdorove.в.11
+          - zenskoe_zdorove.в.12
+          - zenskoe_zdorove.в.13
+          - zenskoe_zdorove.в.14
+          - zenskoe_zdorove.в.15
+          - zenskoe_zdorove.в.16
+        thresholds:
+          - {degree: низкая, min: 2, max: 4, sex: null}
+          - {degree: средняя, min: 5, max: 10, sex: null}
+          - {degree: высокая, min: 11, max: null, sex: null}
+  - id: narusenie_sna
+    title: "НАРУШЕНИЕ СНА"
+    part: клиническая
+    core: true
+    scale:
+      - {score: 0, label: "не актуально"}
+      - {score: 1, label: "иногда актуально; 1-3 раза в месяц"}
+      - {score: 2, label: "средне актуально; 1-3 раза в неделю"}
+      - {score: 3, label: "сильно актуально; ежедневно"}
+    questions:
+      - id: narusenie_sna.1
+        number: 1
+        text: "Диагностированная проблема со сном"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: narusenie_sna.2
+        number: 2
+        text: "Громкий храп/эпизоды апноэ во время сна"
+      - id: narusenie_sna.3
+        number: 3
+        text: "Плохое самочувствие, ощущение разбитости, невыспанности по утрам"
+      - id: narusenie_sna.4
+        number: 4
+        text: "Ощущение сонливости в течение дня"
+      - id: narusenie_sna.5
+        number: 5
+        text: "Есть необходимость прилечь отдохнуть днем"
+      - id: narusenie_sna.6
+        number: 6
+        text: "Долго пытаюсь заснуть, более 30 минут"
+      - id: narusenie_sna.7
+        number: 7
+        text: "Употребление снотворных"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 1, label: "Да"}
+      - id: narusenie_sna.8
+        number: 8
+        text: "Пробуждение посреди ночи"
+      - id: narusenie_sna.9
+        number: 9
+        text: "Сложно заснуть после пробуждения ночью"
+      - id: narusenie_sna.10
+        number: 10
+        text: "Снятся тревожные сны по ночам"
+      - id: narusenie_sna.11
+        number: 11
+        text: "Отход ко сну после 24 часов"
+      - id: narusenie_sna.12
+        number: 12
+        text: "Использование телевизора, планшета, мобильного телефона или другого электронного устройства, лежа в постели перед сном"
+      - id: narusenie_sna.13
+        number: 13
+        text: "Часто сбивается режим сна (в выходные и/или не фиксирован в будни)"
+      - id: narusenie_sna.14
+        number: 14
+        text: "В кровати со мной партнер, маленькие дети, животные, которые мешают спать и иногда будят"
+      - id: narusenie_sna.15
+        number: 15
+        text: "Я создаю правильные условия для своего сна (беруши, маска, блекаут, матрас, прохлада и тд.)"
+        scale:
+          - {score: 0, label: "Да"}
+          - {score: 1, label: "Нет"}
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - narusenie_sna.1
+          - narusenie_sna.2
+          - narusenie_sna.3
+          - narusenie_sna.4
+          - narusenie_sna.5
+          - narusenie_sna.6
+          - narusenie_sna.7
+          - narusenie_sna.8
+          - narusenie_sna.9
+          - narusenie_sna.10
+          - narusenie_sna.11
+          - narusenie_sna.12
+          - narusenie_sna.13
+          - narusenie_sna.14
+          - narusenie_sna.15
+        thresholds:
+          - {degree: низкая, min: 2, max: 5, sex: null}
+          - {degree: средняя, min: 6, max: 10, sex: null}
+          - {degree: высокая, min: 11, max: null, sex: null}
+  - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa
+    title: "СИСТЕМНОЕ ВОСПАЛЕНИЕ / УРОВЕНЬ ОКИСЛИТЕЛЬНОГО СТРЕССА"
+    part: дополнительная
+    core: false
+    scale:
+      - {score: 0, label: "нет"}
+      - {score: 1, label: "да"}
+    questions:
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.1
+        number: 1
+        text: "Я постоянно испытываю усталость"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.2
+        number: 2
+        text: "Я сплю меньше 7-8 часов в сутки"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.3
+        number: 3
+        text: "Я часто нахожусь в состоянии стресса"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.4
+        number: 4
+        text: "Я чувствителен/льна к парфюмерии, дыму или химикатам и испарениям"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.5
+        number: 5
+        text: "Я регулярно испытываю глубокую боль в мышцах или суставах"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.6
+        number: 6
+        text: "Я курю/регулярно оказываюсь пассивным курильщиком"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.7
+        number: 7
+        text: "Я пью более 3 порций алкоголя в неделю"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.8
+        number: 8
+        text: "Я не занимаюсь физическими упражнениями регулярно или моя физическая активность составляет менее 1 часа в день"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.9
+        number: 9
+        text: "Я подвержен/а сезонным аллергиям и аллергиям, вызванным экологическими факторами (смог)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.10
+        number: 10
+        text: "Я подвержен/а пищевой аллергии или чувствителен/льна к некоторым продуктам; чувствую себя не очень хорошо после еды (вялость, головные боли, спутанность сознания)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.11
+        number: 11
+        text: "Я ем жареные блюда, маргарин или много животных жиров (жирное мясо, сыры)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.12
+        number: 12
+        text: "Я употребляю продукты из муки высшего сорта и сахар более двух раз в неделю"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.13
+        number: 13
+        text: "Я ем меньше 5 ярко окрашенных овощей и фруктов каждый день"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.14
+        number: 14
+        text: "Я не принимаю комплексы витаминов с антиоксидантами"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.15
+        number: 15
+        text: "Я подвергаюсь воздействию пестицидов, токсичных химикатов, громких шумов, тяжелых металлов"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.1
+        number: 1
+        text: "Я часто простужаюсь и \"подхватываю инфекции\""
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.2
+        number: 2
+        text: "Я имею в анамнезе хронические инфекции, такие как гепатит"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.3
+        number: 3
+        text: "Афтозный стоматит"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.4
+        number: 4
+        text: "Герпес"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.5
+        number: 5
+        text: "Синусит, ринит"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.6
+        number: 6
+        text: "Бронхит или астма"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.7
+        number: 7
+        text: "Дерматиты (экзема, угри, сыпи)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.8
+        number: 8
+        text: "Артрит (остеоартрит / дегенеративный – износ и старение)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.9
+        number: 9
+        text: "Аутоиммунные заболевания (ревматоидный артрит, волчанка, АИТ)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.10
+        number: 10
+        text: "Колит или воспалительные заболевания кишечника"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.11
+        number: 11
+        text: "Синдром раздраженного кишечника (спастическая толстая кишка)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.12
+        number: 12
+        text: "Невриты (воспаления нервов, радикулиты, либо нарушения поведения, аутизм)"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.13
+        number: 13
+        text: "Сердечнососудистые заболевания или перенесен инфаркт"
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.14
+        number: 14
+        text: "Индекс массы тела"
+        scale:
+          - {score: 0, label: "ниже 25"}
+          - {score: 1, label: "выше 25"}
+      - id: sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.15
+        number: 15
+        text: "В моей семье или у меня были случаи болезней Паркинсона или Альцгеймера"
+    subscales:
+      - id: а
+        title: "А. Часть 1"
+        question_ids:
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.1
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.2
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.3
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.4
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.5
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.6
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.7
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.8
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.9
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.10
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.11
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.12
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.13
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.14
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.а.15
+        thresholds:
+          - {degree: высокая, min: 14, max: null, sex: null}
+      - id: б
+        title: "Б. Часть 2"
+        question_ids:
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.1
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.2
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.3
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.4
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.5
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.6
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.7
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.8
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.9
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.10
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.11
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.12
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.13
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.14
+          - sistemnoe_vospalenie_uroven_okislitelnogo_stressa.б.15
+        thresholds:
+          - {degree: высокая, min: 14, max: null, sex: null}
+  - id: korotkiy_oprosnik_po_ocenke_intoksikacii
+    title: "КОРОТКИЙ ОПРОСНИК ПО ОЦЕНКЕ ИНТОКСИКАЦИИ"
+    part: дополнительная
+    core: false
+    scale:
+      - {score: 0, label: "нет"}
+      - {score: 1, label: "да"}
+    questions:
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.1
+        number: 1
+        text: "У меня есть пищевые аллергии или чувствительность к некоторым продуктам"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.2
+        number: 2
+        text: "Для меня характерны запоры и стул раз в два дня или реже"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.3
+        number: 3
+        text: "У меня небольшие по объему мочеиспускания и всего несколько раз в день, моча темная и имеет резкий запах"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.4
+        number: 4
+        text: "Я практически никогда обильно не покрываюсь потом"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.5
+        number: 5
+        text: "У меня есть утомляемость/мышечные боли/головные боли"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.6
+        number: 6
+        text: "У меня есть проблемы с концентрацией внимания и памятью"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.7
+        number: 7
+        text: "Я быстро устаю"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.8
+        number: 8
+        text: "Я пью нефильтрованную водопроводную воду или воду из пластиковых бутылок"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.9
+        number: 9
+        text: "Я сдаю свои вещи в химчистку"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.10
+        number: 10
+        text: "Я работаю или живу в панельном здании с плохой вентиляцией или не открывающимися окнами"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.11
+        number: 11
+        text: "Я живу в большом городе или промышленной зоне"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.12
+        number: 12
+        text: "Я регулярно использую бытовые или садовые химикаты или мой дом проходил обработку против насекомых"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.13
+        number: 13
+        text: "У меня есть «серебряные» пломбы в зубах (ртутная амальгама)"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.14
+        number: 14
+        text: "Я ем крупную хищную рыбу чаще, чем раз в неделю"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.15
+        number: 15
+        text: "Я часто сталкиваюсь с одним из следующих запахов, и он меня раздражает: пары бензина или дизельного топлива, духи, запах новой машины, магазины тканей, химчистка, лак для волос, мыло, бытовая химия, табачный дым, хлорированная вода"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.16
+        number: 16
+        text: "У меня возникает негативная реакция, когда я употребляю в пищу продукты, содержащие глутамат натрия, а также консерванты; есть реакция на аспартам, красное вино или даже небольшое количество другого алкоголя, на сыр, бананы, шоколад, чеснок, лук"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.17
+        number: 17
+        text: "Когда я пью напитки с кофеином, я чувствую нервозность, ощущаю усиление боли в мышцах и суставах, или у меня возникают симптомы гипогликемии (тревожность, учащенное сердцебиение, потооделение, головокружение)"
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.18
+        number: 18
+        text: "Я регулярно принимаю сильнодействующие препараты – против головной боли, изжоги, тошноты, аллергии, диареи, противозачаточные средства, и др."
+      - id: korotkiy_oprosnik_po_ocenke_intoksikacii.19
+        number: 19
+        text: "У меня в анамнезе рак груди, или рак легких от курения, или другие типы рака"
+    subscales:
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.1
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.2
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.3
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.4
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.5
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.6
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.7
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.8
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.9
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.10
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.11
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.12
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.13
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.14
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.15
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.16
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.17
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.18
+          - korotkiy_oprosnik_po_ocenke_intoksikacii.19
+        thresholds:
+          - {degree: высокая, min: 9, max: null, sex: null}
+  - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi
+    title: "БОЛЬШОЙ ОПРОСНИК ПО ОЦЕНКЕ ИНТОКСИКАЦИИ (QEESI)"
+    part: дополнительная
+    core: false
+    scale:
+      - {score: 0, label: "не вызывает проблем"}
+      - {score: 5, label: "умеренные симптомы"}
+      - {score: 10, label: "симптомы, нарушающие дееспособность"}
+    questions:
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.1
+        number: 1
+        text: "Выхлопы дизельного или газового двигателя"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.2
+        number: 2
+        text: "Табачный дым"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.3
+        number: 3
+        text: "Инсектициды"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.4
+        number: 4
+        text: "Бензин (например, на АЗС при заправке бензобака)"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.5
+        number: 5
+        text: "Краски или растворитель для краски"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.6
+        number: 6
+        text: "Чистящие средства, дизенфицирующие средства, отбеливатель, средства для ванных комнат, средства для пола"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.7
+        number: 7
+        text: "Определенные духи, освежители воздуха или другие ароматы"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.8
+        number: 8
+        text: "Свежий гудрон или асфальт"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.9
+        number: 9
+        text: "Лак для ногтей, жидкость для снятия лака или лак для волос"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.10
+        number: 10
+        text: "Новые домашние принадлежности, такие как новое ковровое покрытие, новая пластиковая занавеска для душа или интерьер нового автомобиля"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.1
+        number: 1
+        text: "Хлорированная вопроводная вода"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.2
+        number: 2
+        text: "Определенные продукты, такие как конфеты, пицца, молоко, жирная пища, мясо барбекю, лук, чеснок, острая пища или пищевые добавки, такие как глутамат натрия"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.3
+        number: 3
+        text: "Необычные пристрастия или употребление любой пищи, как если бы вы были зависимы от нее; или плохо себя чувствуете, если пропустите прием пищи"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.4
+        number: 4
+        text: "Плохое самочувствие после еды"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.5
+        number: 5
+        text: "Кофеин (кофе, чай, энергетические напитки, шоколад)"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.6
+        number: 6
+        text: "Чувство недомогания, если вы пьете или едите меньше обычного количества кофе, чая, газированных напитков с кофеином, шоколада или совсем не употребляете его"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.7
+        number: 7
+        text: "Алкогольные напитки в небольшом количестве, например одно пиво или бокал вина"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.8
+        number: 8
+        text: "Ткани, металлические украшения, кремы, косметика или другие предметы, которые касаются вашей кожи"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.9
+        number: 9
+        text: "Непереносимость или аллергические реакции на какие-либо лекарства (такие как антибиотики, анестетики, обезболивающие, рентгеноконтрастные красители, вакцины или противозачаточне таблетки), на импланты, протезы, презервативы, иные медицинские, хирургические или стоматологические материалы или процедуры"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.10
+        number: 10
+        text: "Любые классические аллергические реакции (астма, назальные симптомы, крапивница, анафилаксия или экзема) при воздействии таких аллергенов, как: деревья, травы, пыль, плесень, шерсть животных, укусы насекомых или определенные продукты"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.1
+        number: 1
+        text: "Проблемы с мышцами или суставами, такие как боль, спазмы, скованность или слабость"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.2
+        number: 2
+        text: "Проблемы с жжением или раздражением глаз, проблемы с дыхательными путями или дыханием, такие как, одышка, кашель или наличие большого количества слизи, постназальный дренаж, распираторные инфекции"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.3
+        number: 3
+        text: "Проблемы с сердцем, такие как учащенное или нерегулярное сердцебиение, паузы, дискомфорт в груди"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.4
+        number: 4
+        text: "Проблемы с желудком или пищеварительным трактом, такие как боль или спазмы в животе, вздутие живота или метеоризм, тошнота, диарея, запор"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.5
+        number: 5
+        text: "Трудности с концентрацией внимания или запоминанием вещей, ощущение пространства или трудности с принятием решений"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.6
+        number: 6
+        text: "Проблемы с настроением, такие как чувство напряжения или нервозности, раздражительности, депрессии, приступы плаксивости или ярости или потеря мотивации делать то, что раньше вас интересовало"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.7
+        number: 7
+        text: "Проблемы с равновесиеем или координацией, онемением или покалыванием в конечностях или с фокусировкой зрения"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.8
+        number: 8
+        text: "Проблемы с гловой, такие как головные боли, чувство давления или \"переполненности\" в лице или в голове"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.9
+        number: 9
+        text: "Проблемы с кожей, такие как сыпь, крапивница или сухость кожи"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.10
+        number: 10
+        text: "Проблемы с мочевыводящими путями или гениталиями, такие как боль в области таза, частое или неотложное мочеиспускание (для женщин: дискомфорт или другие проблемы с менструальным циклом)"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.1
+        number: 1
+        text: "Вы курите табак раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.2
+        number: 2
+        text: "Вы употребляете алкоголные напитки, пиво или вино один раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.3
+        number: 3
+        text: "Вы употребляете напитки с кофеином один раз в неделю или чаще"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.4
+        number: 4
+        text: "Используете ли вы регулярно (раз в неделю и чаще) духи, лак дл волос или другие ароматизированные средства личной гигиены"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.5
+        number: 5
+        text: "Был ли ваш дом или ваше рабочее место обработано от насекомых за последний год"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.6
+        number: 6
+        text: "На вашей нынешней работы или в вашем хобби вы регулярно (раз в неделю или чаще) подвергаетесь воздействию каких-либо химикатов, дыма или паров"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.7
+        number: 7
+        text: "Курит ли вы или кто-то в вашем доме, кроме вас самих"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.8
+        number: 8
+        text: "Испольуется ли у вас дома для приготовления пищи газовая или пропановая плита"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.9
+        number: 9
+        text: "Используется ли ароматизированный кондиционер для белья для стирки вашей одежды или постельного белья"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.10
+        number: 10
+        text: "Приниматете ли вы регулярно (раз в ределю и чаще) что-либо из следующего: стероидные препараты, такие как преднизолон; обезболивающие, лекарства от депрессии, беспокойства или растройства настроения; лекарства для сна, наркотики"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 1, label: "да"}
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.1
+        number: 1
+        text: "Насколько ваша чувствительность к химическим веществам влияет на ваше питание"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.2
+        number: 2
+        text: "Насколько ваша чувствительность к химическим веществам влияет на вашу способность работать или ходить на учебу"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.3
+        number: 3
+        text: "Насколько ваша чувствительность к химическим веществам влияет на то, как вы обставляете свой дом"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.4
+        number: 4
+        text: "Насколько ваша чувствительность к химическим веществам влияет на ваш выбор одежды"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.5
+        number: 5
+        text: "Насколько ваша чувствительность к химическим веществам влияет на вашу способность путешествовать по другим городам или водить машину"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.6
+        number: 6
+        text: "Насколько ваша чувствительность к химическим веществам влияет на ваш выбор средств личной гигиены, например дезодорынтов, средст макияжа"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.7
+        number: 7
+        text: "Насколько ваша чувствительность к химическим веществам влияет на вашу способность быть рядом с другими и получать удовольствие от общественной деятельности, например, ходить на собрания, в церковь, в рестораны и пр."
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.8
+        number: 8
+        text: "Насколько ваша чувствительность к химическим веществам влияет на ваш выбор хобби или отдыха"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.9
+        number: 9
+        text: "Насколько ваша чувствительность к химическим веществам влияет на ваши отношения с супругом/ой, семьей"
+      - id: bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.10
+        number: 10
+        text: "Насколько ваша чувствительность к химическим веществам влияет на вашу способность убирать дом, гладить, стричь газон или выполнять другие рутинные дела"
+    subscales:
+      - id: а
+        title: "А. Химическое воздействие"
+        question_ids:
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.1
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.2
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.3
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.4
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.5
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.6
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.7
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.8
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.9
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.а.10
+        thresholds:
+          - {degree: низкая, min: 0, max: 19, sex: null}
+          - {degree: средняя, min: 20, max: 39, sex: null}
+          - {degree: высокая, min: 40, max: null, sex: null}
+      - id: б
+        title: "Б. Иное воздействие"
+        question_ids:
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.1
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.2
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.3
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.4
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.5
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.6
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.7
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.8
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.9
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.б.10
+        thresholds:
+          - {degree: низкая, min: 0, max: 11, sex: null}
+          - {degree: средняя, min: 12, max: 24, sex: null}
+          - {degree: высокая, min: 25, max: null, sex: null}
+      - id: в
+        title: "В. Симптомы"
+        question_ids:
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.1
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.2
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.3
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.4
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.5
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.6
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.7
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.8
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.9
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.в.10
+        thresholds:
+          - {degree: низкая, min: 0, max: 19, sex: null}
+          - {degree: средняя, min: 20, max: 39, sex: null}
+          - {degree: высокая, min: 40, max: null, sex: null}
+      - id: г
+        title: "Г. Индекс маскировки"
+        question_ids:
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.1
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.2
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.3
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.4
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.5
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.6
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.7
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.8
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.9
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.г.10
+        thresholds:
+          - {degree: низкая, min: 0, max: 3, sex: null}
+          - {degree: средняя, min: 4, max: 5, sex: null}
+          - {degree: высокая, min: 6, max: null, sex: null}
+      - id: д
+        title: "Д. Влияние на жизнь"
+        question_ids:
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.1
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.2
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.3
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.4
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.5
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.6
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.7
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.8
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.9
+          - bolsoy_oprosnik_po_ocenke_intoksikacii_qeesi.д.10
+        thresholds:
+          - {degree: низкая, min: 0, max: 11, sex: null}
+          - {degree: средняя, min: 12, max: 23, sex: null}
+          - {degree: высокая, min: 24, max: null, sex: null}
+  - id: oprosnik_candida
+    title: "ОПРОСНИК CANDIDA"
+    part: дополнительная
+    core: false
+    scale:
+      - {score: 3, label: "слабые"}
+      - {score: 6, label: "средние"}
+      - {score: 9, label: "сильные"}
+    questions:
+      - id: oprosnik_candida.а.1
+        number: 1
+        text: "Применяли ли вы какие-либо антибиотики длительно в последний год (не менее месяца)"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 35, label: "Да"}
+      - id: oprosnik_candida.а.2
+        number: 2
+        text: "Применяли ли вы какие-либо антибиотики короткими курсами, но не менее 4 курсов за год"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 35, label: "Да"}
+      - id: oprosnik_candida.а.3
+        number: 3
+        text: "Применяли ли вы однократно (1 курс) антибиотики в течение года"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 6, label: "Да"}
+      - id: oprosnik_candida.а.4
+        number: 4
+        text: "Имеются ли у вас хронический простатит, вагинит или другие воспалительные заболевания мочеполовой системы"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 25, label: "Да"}
+      - id: oprosnik_candida.а.5
+        number: 5
+        text: "Количество беременностей"
+        scale:
+          - {score: 0, label: "не было"}
+          - {score: 3, label: "одна"}
+          - {score: 5, label: "две и более"}
+      - id: oprosnik_candida.а.6
+        number: 6
+        text: "Употребляли противозачаточные препараты"
+        scale:
+          - {score: 0, label: "не употреблял(а)"}
+          - {score: 8, label: "от 6 до 24 месяцев"}
+          - {score: 15, label: "более 24 месяцев"}
+      - id: oprosnik_candida.а.7
+        number: 7
+        text: "Вы употребляли преднизолон или другие кортизон-содержащие препараты"
+        scale:
+          - {score: 0, label: "не употреблял(а)"}
+          - {score: 6, label: "до 2-х недель"}
+          - {score: 15, label: "от 2-х недель"}
+      - id: oprosnik_candida.а.8
+        number: 8
+        text: "Имеется ли у вас повышенная чувствительность к парфюмерным запахам, бытовой химии, пестицидам"
+        scale:
+          - {score: 0, label: "нет"}
+          - {score: 5, label: "средние симптомы"}
+          - {score: 20, label: "сильные симптомы"}
+      - id: oprosnik_candida.а.9
+        number: 9
+        text: "Эти симптомы ухудшаются при нахождении в душных, влажных местах, в присутствии плесени и грибка"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 20, label: "Да"}
+      - id: oprosnik_candida.а.10
+        number: 10
+        text: "Имеете ли вы какие-либо грибковые поражения стоп, ногтей или кожи"
+        scale:
+          - {score: 10, label: "Средней тяжести"}
+          - {score: 20, label: "Сильные"}
+      - id: oprosnik_candida.а.11
+        number: 11
+        text: "У вас имеется выраженная тяга к сладкому"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 10, label: "Да"}
+      - id: oprosnik_candida.а.12
+        number: 12
+        text: "У вас имеется выраженная тяга к мучному"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 10, label: "Да"}
+      - id: oprosnik_candida.а.13
+        number: 13
+        text: "У вас имеется выраженная тяга к алкоголю"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 10, label: "Да"}
+      - id: oprosnik_candida.а.14
+        number: 14
+        text: "У вас имеется выраженная тяга к табаку"
+        scale:
+          - {score: 0, label: "Нет"}
+          - {score: 10, label: "Да"}
+      - id: oprosnik_candida.б.1
+        number: 1
+        text: "Хроническая усталость и/или сонливость"
+      - id: oprosnik_candida.б.2
+        number: 2
+        text: "Ощущение потери энергии"
+      - id: oprosnik_candida.б.3
+        number: 3
+        text: "Плохая память"
+      - id: oprosnik_candida.б.4
+        number: 4
+        text: "Депрессия"
+      - id: oprosnik_candida.б.5
+        number: 5
+        text: "Чувство нереальности происходящего"
+      - id: oprosnik_candida.б.6
+        number: 6
+        text: "Неспособность принимать решения"
+      - id: oprosnik_candida.б.7
+        number: 7
+        text: "Онемение, жжение, покалывание в теле"
+      - id: oprosnik_candida.б.8
+        number: 8
+        text: "Боль в мышцах или слабость"
+      - id: oprosnik_candida.б.9
+        number: 9
+        text: "Боль и/или припухлость в суставах"
+      - id: oprosnik_candida.б.10
+        number: 10
+        text: "Боли в животе"
+      - id: oprosnik_candida.б.11
+        number: 11
+        text: "Запоры"
+      - id: oprosnik_candida.б.12
+        number: 12
+        text: "Диарея"
+      - id: oprosnik_candida.б.13
+        number: 13
+        text: "Вздутие живота, отрыжка, кишечные газы"
+      - id: oprosnik_candida.б.14
+        number: 14
+        text: "Периодическое жжение, зуд или выделения из влагалища"
+      - id: oprosnik_candida.б.15
+        number: 15
+        text: "Стойкое жжение или зуд во влагалище"
+      - id: oprosnik_candida.б.16
+        number: 16
+        text: "Простатит"
+      - id: oprosnik_candida.б.17
+        number: 17
+        text: "Импотенция"
+      - id: oprosnik_candida.б.18
+        number: 18
+        text: "Снижение сексуального влечения"
+      - id: oprosnik_candida.б.19
+        number: 19
+        text: "Эндометриоз и бесплодие"
+      - id: oprosnik_candida.б.20
+        number: 20
+        text: "Судороги и/или нарушения менструального цикла"
+      - id: oprosnik_candida.б.21
+        number: 21
+        text: "Предменструальный синдром"
+      - id: oprosnik_candida.б.22
+        number: 22
+        text: "Приступы тревоги и плача"
+      - id: oprosnik_candida.б.23
+        number: 23
+        text: "Холодные руки или ноги и/или зябкость"
+      - id: oprosnik_candida.б.24
+        number: 24
+        text: "Тряска или раздражительность, когда голодны"
+      - id: oprosnik_candida.в.1
+        number: 1
+        text: "Сонливость"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.2
+        number: 2
+        text: "Раздражительность"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.3
+        number: 3
+        text: "Проблемы с координацией движений"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.4
+        number: 4
+        text: "Проблемы с концентрацией внимания"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.5
+        number: 5
+        text: "Частые перепады настроения"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.6
+        number: 6
+        text: "Головная боль"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.7
+        number: 7
+        text: "Головокружение/потеря равновесия"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.8
+        number: 8
+        text: "Давление выше ушей, ощущение отека головы"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.9
+        number: 9
+        text: "Тенденция к легкому образованию синяков"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.10
+        number: 10
+        text: "Хроническая сыпь или зуд"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.11
+        number: 11
+        text: "Онемение, покалывание"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.12
+        number: 12
+        text: "Несварение или изжога"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.13
+        number: 13
+        text: "Пищевая чувствительность или непереносимость"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.14
+        number: 14
+        text: "Слизь в стуле"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.15
+        number: 15
+        text: "Ректальный зуд"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.16
+        number: 16
+        text: "Сухость во рту или горле"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.17
+        number: 17
+        text: "Сыпь или волдыри во рту"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.18
+        number: 18
+        text: "Плохой запах изо рта"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.19
+        number: 19
+        text: "Плохой запах от ног, тела, волос независимо от мытья"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.20
+        number: 20
+        text: "Заложенность носа или отечность носа"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.21
+        number: 21
+        text: "Зуд в носу"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.22
+        number: 22
+        text: "Ангина"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.23
+        number: 23
+        text: "Ларингит, грубый голос"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.24
+        number: 24
+        text: "Кашель или хронический бронхит"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.25
+        number: 25
+        text: "Боль или чувство сдавливания в груди"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.26
+        number: 26
+        text: "Хрипы или одышка"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.27
+        number: 27
+        text: "Частое мочеиспускание"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.28
+        number: 28
+        text: "Жжение при мочеиспускании"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.29
+        number: 29
+        text: "Пятна перед глазами или хаотичные видения"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.30
+        number: 30
+        text: "Жжение или слезотечение из глаз"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.31
+        number: 31
+        text: "Рецидивирующие инфекции или выделения из ушной раковины"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+      - id: oprosnik_candida.в.32
+        number: 32
+        text: "Боль в ушах или снижение слуха"
+        scale:
+          - {score: 1, label: "слабые"}
+          - {score: 2, label: "средние"}
+          - {score: 3, label: "сильные"}
+    subscales:
+    # Секции считаются отдельно, но степень выносится по общей
+    # сумме: порог 141/181 недостижим для секции «Прочие симптомы»
+    # (её максимум 96). Максимум по всем секциям — 548.
+      - id: а
+        title: "А. История"
+        question_ids:
+          - oprosnik_candida.а.1
+          - oprosnik_candida.а.2
+          - oprosnik_candida.а.3
+          - oprosnik_candida.а.4
+          - oprosnik_candida.а.5
+          - oprosnik_candida.а.6
+          - oprosnik_candida.а.7
+          - oprosnik_candida.а.8
+          - oprosnik_candida.а.9
+          - oprosnik_candida.а.10
+          - oprosnik_candida.а.11
+          - oprosnik_candida.а.12
+          - oprosnik_candida.а.13
+          - oprosnik_candida.а.14
+        thresholds: []
+      - id: б
+        title: "Б. Главные симптомы"
+        question_ids:
+          - oprosnik_candida.б.1
+          - oprosnik_candida.б.2
+          - oprosnik_candida.б.3
+          - oprosnik_candida.б.4
+          - oprosnik_candida.б.5
+          - oprosnik_candida.б.6
+          - oprosnik_candida.б.7
+          - oprosnik_candida.б.8
+          - oprosnik_candida.б.9
+          - oprosnik_candida.б.10
+          - oprosnik_candida.б.11
+          - oprosnik_candida.б.12
+          - oprosnik_candida.б.13
+          - oprosnik_candida.б.14
+          - oprosnik_candida.б.15
+          - oprosnik_candida.б.16
+          - oprosnik_candida.б.17
+          - oprosnik_candida.б.18
+          - oprosnik_candida.б.19
+          - oprosnik_candida.б.20
+          - oprosnik_candida.б.21
+          - oprosnik_candida.б.22
+          - oprosnik_candida.б.23
+          - oprosnik_candida.б.24
+        thresholds: []
+      - id: в
+        title: "В. Прочие симптомы"
+        question_ids:
+          - oprosnik_candida.в.1
+          - oprosnik_candida.в.2
+          - oprosnik_candida.в.3
+          - oprosnik_candida.в.4
+          - oprosnik_candida.в.5
+          - oprosnik_candida.в.6
+          - oprosnik_candida.в.7
+          - oprosnik_candida.в.8
+          - oprosnik_candida.в.9
+          - oprosnik_candida.в.10
+          - oprosnik_candida.в.11
+          - oprosnik_candida.в.12
+          - oprosnik_candida.в.13
+          - oprosnik_candida.в.14
+          - oprosnik_candida.в.15
+          - oprosnik_candida.в.16
+          - oprosnik_candida.в.17
+          - oprosnik_candida.в.18
+          - oprosnik_candida.в.19
+          - oprosnik_candida.в.20
+          - oprosnik_candida.в.21
+          - oprosnik_candida.в.22
+          - oprosnik_candida.в.23
+          - oprosnik_candida.в.24
+          - oprosnik_candida.в.25
+          - oprosnik_candida.в.26
+          - oprosnik_candida.в.27
+          - oprosnik_candida.в.28
+          - oprosnik_candida.в.29
+          - oprosnik_candida.в.30
+          - oprosnik_candida.в.31
+          - oprosnik_candida.в.32
+        thresholds: []
+      - id: всего
+        title: "Всего по опроснику"
+        question_ids:
+          - oprosnik_candida.а.1
+          - oprosnik_candida.а.2
+          - oprosnik_candida.а.3
+          - oprosnik_candida.а.4
+          - oprosnik_candida.а.5
+          - oprosnik_candida.а.6
+          - oprosnik_candida.а.7
+          - oprosnik_candida.а.8
+          - oprosnik_candida.а.9
+          - oprosnik_candida.а.10
+          - oprosnik_candida.а.11
+          - oprosnik_candida.а.12
+          - oprosnik_candida.а.13
+          - oprosnik_candida.а.14
+          - oprosnik_candida.б.1
+          - oprosnik_candida.б.2
+          - oprosnik_candida.б.3
+          - oprosnik_candida.б.4
+          - oprosnik_candida.б.5
+          - oprosnik_candida.б.6
+          - oprosnik_candida.б.7
+          - oprosnik_candida.б.8
+          - oprosnik_candida.б.9
+          - oprosnik_candida.б.10
+          - oprosnik_candida.б.11
+          - oprosnik_candida.б.12
+          - oprosnik_candida.б.13
+          - oprosnik_candida.б.14
+          - oprosnik_candida.б.15
+          - oprosnik_candida.б.16
+          - oprosnik_candida.б.17
+          - oprosnik_candida.б.18
+          - oprosnik_candida.б.19
+          - oprosnik_candida.б.20
+          - oprosnik_candida.б.21
+          - oprosnik_candida.б.22
+          - oprosnik_candida.б.23
+          - oprosnik_candida.б.24
+          - oprosnik_candida.в.1
+          - oprosnik_candida.в.2
+          - oprosnik_candida.в.3
+          - oprosnik_candida.в.4
+          - oprosnik_candida.в.5
+          - oprosnik_candida.в.6
+          - oprosnik_candida.в.7
+          - oprosnik_candida.в.8
+          - oprosnik_candida.в.9
+          - oprosnik_candida.в.10
+          - oprosnik_candida.в.11
+          - oprosnik_candida.в.12
+          - oprosnik_candida.в.13
+          - oprosnik_candida.в.14
+          - oprosnik_candida.в.15
+          - oprosnik_candida.в.16
+          - oprosnik_candida.в.17
+          - oprosnik_candida.в.18
+          - oprosnik_candida.в.19
+          - oprosnik_candida.в.20
+          - oprosnik_candida.в.21
+          - oprosnik_candida.в.22
+          - oprosnik_candida.в.23
+          - oprosnik_candida.в.24
+          - oprosnik_candida.в.25
+          - oprosnik_candida.в.26
+          - oprosnik_candida.в.27
+          - oprosnik_candida.в.28
+          - oprosnik_candida.в.29
+          - oprosnik_candida.в.30
+          - oprosnik_candida.в.31
+          - oprosnik_candida.в.32
+        thresholds:
+          - {degree: низкая, min: null, max: 40, sex: м}
+          - {degree: низкая, min: null, max: 60, sex: ж}
+          - {degree: средняя, min: 41, max: 140, sex: м}
+          - {degree: средняя, min: 61, max: 180, sex: ж}
+          - {degree: высокая, min: 141, max: null, sex: м}
+          - {degree: высокая, min: 181, max: null, sex: ж}
+  - id: dass_oprosnik_depressia_trevoznost_stress
+    title: "DASS - ОПРОСНИК ДЕПРЕССИЯ, ТРЕВОЖНОСТЬ, СТРЕСС"
+    part: дополнительная
+    core: false
+    scale:
+      - {score: 0, label: "не имеет ко мне отношения"}
+      - {score: 1, label: "относится ко мне в какой-то степени"}
+      - {score: 2, label: "относится ко мне в значительной степени"}
+      - {score: 3, label: "применимо ко мне очень часто или большую часть времени"}
+    questions:
+      - id: dass_oprosnik_depressia_trevoznost_stress.1
+        number: 1
+        text: "Меня расстраивали довольно банальные вещи"
+      - id: dass_oprosnik_depressia_trevoznost_stress.2
+        number: 2
+        text: "Я чувствовал сухость во рту"
+      - id: dass_oprosnik_depressia_trevoznost_stress.3
+        number: 3
+        text: "Кажется, я вообще не испытывал никаких положительных эмоций"
+      - id: dass_oprosnik_depressia_trevoznost_stress.4
+        number: 4
+        text: "У меня возникло затруднение дыхания (например, чрезмерно учащенное дыхание, одышка при отсутствии физических нагрузок)"
+      - id: dass_oprosnik_depressia_trevoznost_stress.5
+        number: 5
+        text: "Я просто не мог начать что-то делать"
+      - id: dass_oprosnik_depressia_trevoznost_stress.6
+        number: 6
+        text: "Я был склонен чрезмерно реагировать на ситуации"
+      - id: dass_oprosnik_depressia_trevoznost_stress.7
+        number: 7
+        text: "Чувство шаткости, неуверенности (например, ноги подкашиваются)"
+      - id: dass_oprosnik_depressia_trevoznost_stress.8
+        number: 8
+        text: "Мне было трудно расслабиться"
+      - id: dass_oprosnik_depressia_trevoznost_stress.9
+        number: 9
+        text: "Я попадал в ситуации, которые меня сильно тревожили, когда они закончились, я испытал большое облегчение"
+      - id: dass_oprosnik_depressia_trevoznost_stress.10
+        number: 10
+        text: "Я чувствовал, что мне нечего ждать"
+      - id: dass_oprosnik_depressia_trevoznost_stress.11
+        number: 11
+        text: "Я довольно легко расстраивался"
+      - id: dass_oprosnik_depressia_trevoznost_stress.12
+        number: 12
+        text: "Я чувствовал, что трачу много «нервной энергии»"
+      - id: dass_oprosnik_depressia_trevoznost_stress.13
+        number: 13
+        text: "Мне было грустно и тоскливо"
+      - id: dass_oprosnik_depressia_trevoznost_stress.14
+        number: 14
+        text: "Я становился нетерпеливым, когда что-то задерживало меня каким-либо образом (например, лифты, светофоры, меня заставляли ждать)"
+      - id: dass_oprosnik_depressia_trevoznost_stress.15
+        number: 15
+        text: "У меня было чувство слабости, дурноты"
+      - id: dass_oprosnik_depressia_trevoznost_stress.16
+        number: 16
+        text: "Я чувствовал, что потерял интерес практически ко всему"
+      - id: dass_oprosnik_depressia_trevoznost_stress.17
+        number: 17
+        text: "Я чувствовал, что ничего не стою как человек"
+      - id: dass_oprosnik_depressia_trevoznost_stress.18
+        number: 18
+        text: "Я чувствовал себя довольно обидчивым"
+      - id: dass_oprosnik_depressia_trevoznost_stress.19
+        number: 19
+        text: "Я заметно потел (например, руки) при отсутствии высоких температур или физических нагрузок"
+      - id: dass_oprosnik_depressia_trevoznost_stress.20
+        number: 20
+        text: "Мне было страшно без видимой причины"
+      - id: dass_oprosnik_depressia_trevoznost_stress.21
+        number: 21
+        text: "Я чувствовал, что жизнь бесполезна"
+      - id: dass_oprosnik_depressia_trevoznost_stress.22
+        number: 22
+        text: "Мне было трудно успокоиться"
+      - id: dass_oprosnik_depressia_trevoznost_stress.23
+        number: 23
+        text: "У меня были трудности с глотанием"
+      - id: dass_oprosnik_depressia_trevoznost_stress.24
+        number: 24
+        text: "Мне казалось, что я не получаю никакого удовольствия от того, чем занимаюсь"
+      - id: dass_oprosnik_depressia_trevoznost_stress.25
+        number: 25
+        text: "Я ощущал работу своего сердца при отсутствии физических нагрузок (например, ощущение учащения пульса, отсутствие ритма сердца)"
+      - id: dass_oprosnik_depressia_trevoznost_stress.26
+        number: 26
+        text: "Я чувствовал себя подавленным и грустным"
+      - id: dass_oprosnik_depressia_trevoznost_stress.27
+        number: 27
+        text: "Я понял, что был очень раздражительным"
+      - id: dass_oprosnik_depressia_trevoznost_stress.28
+        number: 28
+        text: "Я чувствовал, что близок к панике"
+      - id: dass_oprosnik_depressia_trevoznost_stress.29
+        number: 29
+        text: "Мне было трудно успокоиться после того, как что-то меня расстроило"
+      - id: dass_oprosnik_depressia_trevoznost_stress.30
+        number: 30
+        text: "Я боялся, что меня выбьет из колеи какая-нибудь банальная, но незнакомая задача"
+      - id: dass_oprosnik_depressia_trevoznost_stress.31
+        number: 31
+        text: "Я не мог ни в чем проявлять энтузиазм"
+      - id: dass_oprosnik_depressia_trevoznost_stress.32
+        number: 32
+        text: "Мне было трудно противостоять отвлекающим факторам, когда я был занят делом"
+      - id: dass_oprosnik_depressia_trevoznost_stress.33
+        number: 33
+        text: "Я находился в состоянии нервного напряжения"
+      - id: dass_oprosnik_depressia_trevoznost_stress.34
+        number: 34
+        text: "Я чувствовал себя никчемным"
+      - id: dass_oprosnik_depressia_trevoznost_stress.35
+        number: 35
+        text: "Я был нетерпим ко всему, что мешало мне заниматься тем, чем я занимался"
+      - id: dass_oprosnik_depressia_trevoznost_stress.36
+        number: 36
+        text: "Я испугался"
+      - id: dass_oprosnik_depressia_trevoznost_stress.37
+        number: 37
+        text: "Я не видел ничего в будущем, на которое можно было бы надеяться"
+      - id: dass_oprosnik_depressia_trevoznost_stress.38
+        number: 38
+        text: "Я чувствовал, что жизнь бессмысленна"
+      - id: dass_oprosnik_depressia_trevoznost_stress.39
+        number: 39
+        text: "Я начал волноваться"
+      - id: dass_oprosnik_depressia_trevoznost_stress.40
+        number: 40
+        text: "Меня беспокоили ситуации, в которых я мог запаниковать и выставить себя дураком"
+      - id: dass_oprosnik_depressia_trevoznost_stress.41
+        number: 41
+        text: "У меня возникла дрожь (например, в руках)"
+      - id: dass_oprosnik_depressia_trevoznost_stress.42
+        number: 42
+        text: "Мне было трудно проявить инициативу"
+    subscales:
+    # DASS: пороги не выставлены намеренно.
+    # На листе ключа три строки порогов — «Депрессия», «Тревожность»,
+    # «Стресс», — и каждая относится к своей подшкале из 14 утверждений,
+    # а не к сумме по всем 42. Применённая к сумме, любая из них даёт
+    # заведомо неверную степень, поэтому блок отдаёт сумму без степени.
+    #
+    # Чтобы включить разделение: замените подгруппу «весь» на три подгруппы
+    # со списками вопросов и порогами ниже. Правится здесь, без изменений
+    # в коде. Перед этим нужны данные от коуча: на скрытом листе
+    # «DASS (показатели)» каждый вопрос отнесён сразу к двум подшкалам
+    # (формулы вида =B{r}+D{r}), а у «Стресса» тяжёлая степень повторяет
+    # умеренную (19-25), из-за чего баллы 26-33 не попадают никуда.
+    # Депрессия: нормальный 0..9; средний 10..13; умеренный 14..20; тяжелый 21..27; очень тяжелый 28..
+    # Стресс: нормальный 0..14; средний 15..18; умеренный 19..25; тяжелый 19..25; очень тяжелый 34..
+    # Тревожность: нормальный 0..7; средний 8..9; умеренный 10..14; тяжелый 15..19; очень тяжелый 20..
+      - id: весь
+        title: "Весь блок"
+        question_ids:
+          - dass_oprosnik_depressia_trevoznost_stress.1
+          - dass_oprosnik_depressia_trevoznost_stress.2
+          - dass_oprosnik_depressia_trevoznost_stress.3
+          - dass_oprosnik_depressia_trevoznost_stress.4
+          - dass_oprosnik_depressia_trevoznost_stress.5
+          - dass_oprosnik_depressia_trevoznost_stress.6
+          - dass_oprosnik_depressia_trevoznost_stress.7
+          - dass_oprosnik_depressia_trevoznost_stress.8
+          - dass_oprosnik_depressia_trevoznost_stress.9
+          - dass_oprosnik_depressia_trevoznost_stress.10
+          - dass_oprosnik_depressia_trevoznost_stress.11
+          - dass_oprosnik_depressia_trevoznost_stress.12
+          - dass_oprosnik_depressia_trevoznost_stress.13
+          - dass_oprosnik_depressia_trevoznost_stress.14
+          - dass_oprosnik_depressia_trevoznost_stress.15
+          - dass_oprosnik_depressia_trevoznost_stress.16
+          - dass_oprosnik_depressia_trevoznost_stress.17
+          - dass_oprosnik_depressia_trevoznost_stress.18
+          - dass_oprosnik_depressia_trevoznost_stress.19
+          - dass_oprosnik_depressia_trevoznost_stress.20
+          - dass_oprosnik_depressia_trevoznost_stress.21
+          - dass_oprosnik_depressia_trevoznost_stress.22
+          - dass_oprosnik_depressia_trevoznost_stress.23
+          - dass_oprosnik_depressia_trevoznost_stress.24
+          - dass_oprosnik_depressia_trevoznost_stress.25
+          - dass_oprosnik_depressia_trevoznost_stress.26
+          - dass_oprosnik_depressia_trevoznost_stress.27
+          - dass_oprosnik_depressia_trevoznost_stress.28
+          - dass_oprosnik_depressia_trevoznost_stress.29
+          - dass_oprosnik_depressia_trevoznost_stress.30
+          - dass_oprosnik_depressia_trevoznost_stress.31
+          - dass_oprosnik_depressia_trevoznost_stress.32
+          - dass_oprosnik_depressia_trevoznost_stress.33
+          - dass_oprosnik_depressia_trevoznost_stress.34
+          - dass_oprosnik_depressia_trevoznost_stress.35
+          - dass_oprosnik_depressia_trevoznost_stress.36
+          - dass_oprosnik_depressia_trevoznost_stress.37
+          - dass_oprosnik_depressia_trevoznost_stress.38
+          - dass_oprosnik_depressia_trevoznost_stress.39
+          - dass_oprosnik_depressia_trevoznost_stress.40
+          - dass_oprosnik_depressia_trevoznost_stress.41
+          - dass_oprosnik_depressia_trevoznost_stress.42
+        thresholds: []

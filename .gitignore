@@ -8,10 +8,16 @@ registry.json
 out/
 reports/
 
+# Рабочее пространство исполнения планов
+.superpowers/
+
 # Окружение
 .venv/
 __pycache__/
 *.pyc
 .env
+
+# Черновик сборки опросника — не источник правды, не коммитится
+knowledge/questionnaire.draft.yaml
 
 .DS_Store

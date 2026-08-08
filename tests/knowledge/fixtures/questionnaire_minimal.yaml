@@ -1,0 +1,27 @@
+version: "1.0"
+blocks:
+  - id: obraz_zhizni
+    title: Образ жизни
+    part: организационная
+    core: true
+    scale:
+      - {score: 0, label: Да}
+      - {score: 1, label: Нет}
+    questions:
+      - id: obraz_zhizni.1
+        number: 1
+        text: Ежедневная утренняя разминка/зарядка
+      - id: obraz_zhizni.2
+        number: 2
+        text: Регулярные занятия спортом
+        scale:
+          - {score: 0, label: Два и больше в неделю}
+          - {score: 1, label: Один раз в неделю}
+          - {score: 2, label: Один или два раза в месяц}
+          - {score: 3, label: Никогда}
+    subscales:
+      - id: весь
+        title: Весь блок
+        question_ids: [obraz_zhizni.1, obraz_zhizni.2]
+        thresholds:
+          - {degree: высокая, min: 5, max: null, sex: null}

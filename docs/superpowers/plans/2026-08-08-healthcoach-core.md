@@ -121,7 +121,7 @@ git commit -m "chore: каркас проекта на Python 3.12 и uv"
 - Consumes: ничего
 - Produces:
   - `ScaleOption(score: int, label: str)`
-  - `Question(id: str, number: int, text: str, scale: tuple[ScaleOption, ...] | None)`
+  - `Question(id: str, number: int, text: str, scale: tuple[ScaleOption, ...] | None, block_scale: tuple[ScaleOption, ...])` — `block_scale` заполняется загрузчиком, чтобы `options()` работал без обратной ссылки на блок
   - `Threshold(degree: str, min: int | None, max: int | None, sex: str | None)`
   - `Subscale(id: str, title: str, question_ids: tuple[str, ...], thresholds: tuple[Threshold, ...])`
   - `Block(id: str, title: str, part: str, core: bool, scale: tuple[ScaleOption, ...], questions: tuple[Question, ...], subscales: tuple[Subscale, ...])`
@@ -427,8 +427,10 @@ git commit -m "feat: модель спецификации опросника с
 
 **Files:**
 - Create: `src/healthcoach/knowledge/validation.py`
+- Create: `src/healthcoach/knowledge/import_xlsx.py`
 - Create: `tools/import_questionnaire.py`
 - Create: `tests/knowledge/test_validation.py`
+- Create: `tests/knowledge/test_import_xlsx.py`
 
 **Interfaces:**
 - Consumes: `Questionnaire`, `Subscale`, `Threshold`, `QuestionnaireError` из задачи 2
@@ -437,6 +439,11 @@ git commit -m "feat: модель спецификации опросника с
   - `validate_questionnaire(q: Questionnaire) -> list[Problem]`
   - `parse_threshold_range(text: str) -> tuple[int | None, int | None]`
   - `RangeParseError(Exception)`
+  - `slugify(title: str) -> str`
+  - `split_inline_scale(text: str) -> tuple[str, list[dict]]`
+  - `is_section_heading(text: str) -> str | None`
+
+**Почему разбор живёт в пакете, а не в скрипте.** `slugify` и `split_inline_scale` — чистые функции с неочевидным поведением: первая транслитерирует кириллицу, вторая отделяет шкалу, вписанную в текст вопроса переводами строки (так устроены блоки «Образ жизни» и «Женское здоровье» в исходном файле). Их надо тестировать, а код внутри `tools/` под тесты не попадает. Поэтому они лежат в `healthcoach.knowledge.import_xlsx`, а скрипт остаётся тонкой обёрткой над `openpyxl`.
 
 **Зачем валидатор.** В исходном xlsx на листе «РЕЗУЛЬТАТ КЛЮЧ» у блока «Опросник Candida» пороги заданы как `<40` (низкая), `41-140` (средняя), `<140` (высокая) для мужчин и `<60` / `61-180` / `<180` для женщин. Высокая степень с верхней границей, равной верхней границе средней, — почти наверняка опечатка: должно быть `>140` и `>180`. Валидатор ловит такие случаи: пересечения диапазонов, разрывы между ними и отсутствие открытого верхнего порога. Импорт печатает находки, коуч решает.
 
@@ -562,6 +569,41 @@ def test_degrees_checked_per_sex_independently():
         ]
     )
     assert validate_questionnaire(q) == []
+
+
+def test_unknown_degree_name_is_reported():
+    q = _questionnaire(
+        [
+            Threshold("странная", 1, 5, None),
+            Threshold("высокая", 6, None, None),
+        ]
+    )
+    problems = validate_questionnaire(q)
+    assert any("не входит в известный порядок" in p.message for p in problems)
+
+
+def test_dass_masculine_degree_names_are_recognised():
+    """Названия градаций DASS на листе ключа — в мужском роде и через 'е'."""
+    q = _questionnaire(
+        [
+            Threshold("Нормальный", 0, 9, None),
+            Threshold("Средний", 10, 13, None),
+            Threshold("Умеренный", 14, 20, None),
+            Threshold("Тяжелый", 21, 27, None),
+            Threshold("Очень тяжелый", 28, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
+
+
+def test_degree_matching_ignores_case_and_yo():
+    q = _questionnaire(
+        [
+            Threshold("НИЗКАЯ", 1, 5, None),
+            Threshold("Тяжёлая", 6, None, None),
+        ]
+    )
+    assert validate_questionnaire(q) == []
 ```
 
 - [ ] **Step 2: Запустить тесты и убедиться, что они падают**
@@ -590,7 +632,27 @@ _RANGE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 _GREATER = re.compile(r"^\s*>\s*(\d+)\s*$")
 _LESS = re.compile(r"^\s*<\s*(\d+)\s*$")
 
-_DEGREE_ORDER = ("низкая", "средняя", "умеренная", "высокая", "тяжёлая", "очень тяжёлая")
+_DEGREE_ORDER = (
+    "нормальный",
+    "низкая",
+    "средняя",
+    "средний",
+    "умеренная",
+    "умеренный",
+    "высокая",
+    "тяжелая",
+    "тяжелый",
+    "очень тяжелая",
+    "очень тяжелый",
+)
+"""Порядок степеней от лёгкой к тяжёлой.
+
+Женские формы — для блоков опросника («степень отклонения»), мужские —
+для DASS («показатель»). В одной подгруппе используется одна семья названий,
+поэтому общий плоский список сохраняет относительный порядок внутри каждой.
+"""
+
+_DEGREE_INDEX = {name: i for i, name in enumerate(_DEGREE_ORDER)}
 
 
 class RangeParseError(Exception):
@@ -618,18 +680,37 @@ def parse_threshold_range(text: str) -> tuple[int | None, int | None]:
     raise RangeParseError(f"не удалось разобрать диапазон {text!r}")
 
 
+def _normalize_degree(degree: str) -> str:
+    """Привести название степени к виду, в котором оно ищется в порядке."""
+    return degree.strip().casefold().replace("ё", "е")
+
+
+def _degree_rank(degree: str) -> int | None:
+    """Позиция степени в порядке, либо None если название незнакомо."""
+    return _DEGREE_INDEX.get(_normalize_degree(degree))
+
+
 def _sort_key(threshold: Threshold) -> tuple[int, int]:
-    order = (
-        _DEGREE_ORDER.index(threshold.degree)
-        if threshold.degree in _DEGREE_ORDER
-        else len(_DEGREE_ORDER)
-    )
+    rank = _degree_rank(threshold.degree)
+    order = rank if rank is not None else len(_DEGREE_ORDER)
     lower = threshold.min if threshold.min is not None else -10**9
     return order, lower
 
 
 def _check_group(where: str, thresholds: list[Threshold]) -> list[Problem]:
     problems: list[Problem] = []
+
+    for threshold in thresholds:
+        if _degree_rank(threshold.degree) is None:
+            problems.append(
+                Problem(
+                    where,
+                    f"степень {threshold.degree!r} не входит в известный порядок "
+                    f"({', '.join(_DEGREE_ORDER)}); сортировка степеней в этой "
+                    f"подгруппе ненадёжна, проверьте написание",
+                )
+            )
+
     ordered = sorted(thresholds, key=_sort_key)
 
     for earlier, later in zip(ordered, ordered[1:]):
@@ -708,9 +789,142 @@ def validate_questionnaire(questionnaire: Questionnaire) -> list[Problem]:
 uv run pytest tests/knowledge/test_validation.py -v
 ```
 
-Ожидается: 12 PASS (6 параметризованных плюс 6 обычных).
+Ожидается: 15 PASS (6 параметризованных плюс 9 обычных).
 
-- [ ] **Step 5: Написать инструмент импорта**
+- [ ] **Step 5: Написать падающие тесты для разбора**
+
+Файл `tests/knowledge/test_import_xlsx.py`:
+
+```python
+from healthcoach.knowledge.import_xlsx import (
+    is_section_heading,
+    slugify,
+    split_inline_scale,
+)
+
+
+def test_slugify_transliterates_cyrillic():
+    assert slugify("Образ жизни") == "obraz_zizni"
+    assert slugify("ЖЕЛУДОК  и П/Ж") == "zeludok_i_p_z"
+
+
+def test_slugify_is_stable_and_bounded():
+    assert slugify("  Питание  ") == slugify("Питание")
+    assert not slugify("Питание").startswith("_")
+    assert not slugify("Питание").endswith("_")
+
+
+def test_split_inline_scale_extracts_options():
+    text = (
+        "Регулярные занятия спортом\n"
+        "0 - Два и больше в неделю\n"
+        "1 - Один раз в неделю\n"
+        "2 - Один или два раза в месяц\n"
+        "3 - Никогда"
+    )
+    question, options = split_inline_scale(text)
+    assert question == "Регулярные занятия спортом"
+    assert [o["score"] for o in options] == [0, 1, 2, 3]
+    assert options[0]["label"] == "Два и больше в неделю"
+
+
+def test_split_inline_scale_handles_en_dash():
+    _, options = split_inline_scale("Вопрос\n0 – Нет\n1 – Да")
+    assert [o["label"] for o in options] == ["Нет", "Да"]
+
+
+def test_split_inline_scale_without_scale_returns_empty():
+    question, options = split_inline_scale("Отрыжка вскоре после еды")
+    assert question == "Отрыжка вскоре после еды"
+    assert options == []
+
+
+def test_split_inline_scale_joins_multiline_question():
+    question, options = split_inline_scale("Первая строка\nвторая строка\n0 - Нет")
+    assert question == "Первая строка вторая строка"
+    assert len(options) == 1
+
+
+def test_is_section_heading_recognises_numbered_and_plain():
+    assert is_section_heading("1. ПИТАНИЕ") == "ПИТАНИЕ"
+    assert is_section_heading("КЛИНИЧЕСКАЯ ЧАСТЬ") == "КЛИНИЧЕСКАЯ ЧАСТЬ"
+    assert is_section_heading("14. ЖЕНСКОЕ ЗДОРОВЬЕ") == "ЖЕНСКОЕ ЗДОРОВЬЕ"
+
+
+def test_is_section_heading_rejects_ordinary_text():
+    assert is_section_heading("Изжога или обратный заброс") is None
+    assert is_section_heading("Сумма всех баллов в данном блоке") is None
+    assert is_section_heading("") is None
+```
+
+- [ ] **Step 6: Реализовать разбор и убедиться, что тесты проходят**
+
+Файл `src/healthcoach/knowledge/import_xlsx.py`:
+
+```python
+"""Чистые функции разбора исходного xlsx-опросника.
+
+Живут в пакете, а не в скрипте, потому что их поведение неочевидно
+и должно быть закреплено тестами.
+"""
+
+from __future__ import annotations
+
+import re
+
+_SECTION = re.compile(r"^\s*(?:\d+\.\s*)?([А-ЯЁ][А-ЯЁ \-/()]{4,})\s*$")
+_INLINE_SCALE = re.compile(r"^\s*(\d)\s*[-–—]\s*(.+)$")
+
+_TRANSLIT = str.maketrans(
+    {
+        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+        "ж": "z", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+        "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+        "ф": "f", "х": "h", "ц": "c", "ч": "c", "ш": "s", "щ": "s", "ъ": "",
+        "ы": "y", "ь": "", "э": "e", "ю": "u", "я": "a",
+    }
+)
+
+
+def slugify(title: str) -> str:
+    """Превратить русское название блока в латинский идентификатор."""
+    latin = title.strip().lower().translate(_TRANSLIT)
+    return re.sub(r"[^a-z0-9]+", "_", latin).strip("_")
+
+
+def split_inline_scale(text: str) -> tuple[str, list[dict]]:
+    """Отделить шкалу, вписанную в текст вопроса переводами строки.
+
+    Возвращает текст вопроса и список вариантов. Если шкалы нет,
+    список пуст и применяется шкала блока.
+    """
+    question_lines: list[str] = []
+    options: list[dict] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if (m := _INLINE_SCALE.match(line)) is not None:
+            options.append({"score": int(m.group(1)), "label": m.group(2).strip()})
+        else:
+            question_lines.append(line.strip())
+    return " ".join(question_lines), options
+
+
+def is_section_heading(text: str) -> str | None:
+    """Название секции, если строка им является, иначе None."""
+    if not text:
+        return None
+    match = _SECTION.match(text)
+    return match.group(1).strip() if match else None
+```
+
+```bash
+uv run pytest tests/knowledge/test_import_xlsx.py -v
+```
+
+Ожидается: 8 PASS. Транслитерация намеренно грубая — идентификаторы должны быть стабильными и различимыми, а не красивыми; при коллизии двух блоков поправить вручную в YAML.
+
+- [ ] **Step 7: Написать инструмент импорта**
 
 Файл `tools/import_questionnaire.py`:
 
@@ -730,38 +944,19 @@ uv run pytest tests/knowledge/test_validation.py -v
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 from openpyxl import load_workbook
 
+from healthcoach.knowledge.import_xlsx import (
+    is_section_heading,
+    slugify,
+    split_inline_scale,
+)
+
 SHEET_QUESTIONS = "ОПРОСНИК"
 SHEET_KEY = "РЕЗУЛЬТАТ КЛЮЧ"
-
-_SECTION = re.compile(r"^\s*(?:\d+\.\s*)?([А-ЯЁ][А-ЯЁ \-/()]{4,})\s*$")
-_INLINE_SCALE = re.compile(r"^\s*(\d)\s*[-–]\s*(.+)$")
-
-
-def slugify(title: str) -> str:
-    table = str.maketrans(
-        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
-        "abvgdeezziyklmnoprstufhccss_y_eua",
-    )
-    return re.sub(r"[^a-z0-9]+", "_", title.strip().lower().translate(table)).strip("_")
-
-
-def split_inline_scale(text: str) -> tuple[str, list[dict]]:
-    """Отделить шкалу, вписанную в текст вопроса переводами строки."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    question_lines: list[str] = []
-    options: list[dict] = []
-    for line in lines:
-        if (m := _INLINE_SCALE.match(line)) is not None:
-            options.append({"score": int(m.group(1)), "label": m.group(2).strip()})
-        else:
-            question_lines.append(line.strip())
-    return " ".join(question_lines), options
 
 
 def main(xlsx: Path, out: Path) -> None:
@@ -776,8 +971,9 @@ def main(xlsx: Path, out: Path) -> None:
         b = row[1].value
         h = row[7].value
 
-        if isinstance(a, str) and _SECTION.match(a) and not b:
-            title = _SECTION.match(a).group(1).strip().capitalize()
+        heading = is_section_heading(a) if isinstance(a, str) else None
+        if heading and not b:
+            title = heading.capitalize()
             current = slugify(title)
             lines += [
                 f"  - id: {current}",
@@ -822,7 +1018,7 @@ if __name__ == "__main__":
     main(Path(sys.argv[1]), Path(sys.argv[2]))
 ```
 
-- [ ] **Step 6: Прогнать импорт и убедиться, что черновик читается**
+- [ ] **Step 8: Прогнать импорт и убедиться, что черновик читается**
 
 ```bash
 uv run python tools/import_questionnaire.py \
@@ -832,10 +1028,12 @@ head -40 knowledge/questionnaire.draft.yaml
 
 Ожидается: файл создан, в нём видны блоки и вопросы с пометками `ПРОВЕРИТЬ`. Черновик **не коммитим** — он рабочий материал; в репозиторий пойдёт доведённый вручную `knowledge/questionnaire.yaml` в следующей задаче.
 
-- [ ] **Step 7: Коммит**
+- [ ] **Step 9: Коммит**
 
 ```bash
-git add src/healthcoach/knowledge/validation.py tools/import_questionnaire.py tests/knowledge/test_validation.py
+git add src/healthcoach/knowledge/validation.py src/healthcoach/knowledge/import_xlsx.py \
+        tools/import_questionnaire.py \
+        tests/knowledge/test_validation.py tests/knowledge/test_import_xlsx.py
 git commit -m "feat: валидатор порогов опросника и разовый импорт из xlsx"
 ```
 
@@ -1245,6 +1443,59 @@ def test_target_without_optimal_raises(tmp_path):
     )
     with pytest.raises(ReferenceError, match="оптимум"):
         load_references(tmp_path)
+
+
+def test_non_numeric_interval_bound_names_file_and_analyte(tmp_path):
+    """Латинская O вместо нуля — типичная опечатка при ручной правке."""
+    (tmp_path / "ferritin_broken.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: [6O, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "ferritin_broken.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_condition_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_condition.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - условие: 5\n"
+        "        оптимум: [60, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_condition.yaml" in message
+    assert "ферритин" in message
+
+
+def test_malformed_interval_shape_names_file_and_analyte(tmp_path):
+    (tmp_path / "broken_shape.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: 60\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_shape.yaml" in message
+    assert "ферритин" in message
 ```
 
 Файл `knowledge/references/ferritin.yaml`:
@@ -1340,6 +1591,13 @@ class Target:
 
 @dataclass(frozen=True)
 class Analyte:
+    """Показатель с целевыми коридорами коуча.
+
+    Порядок `targets` задаёт приоритет: побеждает первое целевое значение,
+    чьё условие подошло. Частные условия пишутся выше, запасное без условия —
+    последним.
+    """
+
     id: str
     name: str
     synonyms: tuple[str, ...]
@@ -1380,23 +1638,44 @@ def _interval(raw, where: str) -> Interval | None:
     if raw is None:
         return None
     if not isinstance(raw, list) or len(raw) != 2:
-        raise ReferenceError(f"{where}: интервал должен быть списком из двух значений")
+        raise ReferenceError(
+            f"{where}: интервал должен быть списком из двух значений, получено {raw!r}"
+        )
     low, high = raw
-    return Interval(
-        low=None if low is None else float(low),
-        high=None if high is None else float(high),
-    )
+    try:
+        return Interval(
+            low=None if low is None else float(low),
+            high=None if high is None else float(high),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReferenceError(
+            f"{where}: границы интервала должны быть числами, получено {raw!r}"
+        ) from exc
 
 
-def _condition(raw: dict | None) -> Condition:
-    raw = raw or {}
+def _condition(raw: dict | None, where: str) -> Condition:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ReferenceError(f"{where}: 'условие' должно быть словарём, получено {raw!r}")
+
     age = raw.get("возраст")
     if age is not None and (not isinstance(age, list) or len(age) != 2):
-        raise ReferenceError("условие: 'возраст' должен быть списком [от, до]")
+        raise ReferenceError(
+            f"{where}: 'возраст' должен быть списком [от, до], получено {age!r}"
+        )
+    try:
+        age_min = None if age is None or age[0] is None else int(age[0])
+        age_max = None if age is None or age[1] is None else int(age[1])
+    except (TypeError, ValueError) as exc:
+        raise ReferenceError(
+            f"{where}: границы возраста должны быть целыми числами, получено {age!r}"
+        ) from exc
+
     return Condition(
         sex=raw.get("пол"),
-        age_min=None if age is None or age[0] is None else int(age[0]),
-        age_max=None if age is None or age[1] is None else int(age[1]),
+        age_min=age_min,
+        age_max=age_max,
         cycle_phase=raw.get("фаза_цикла"),
     )
 
@@ -1407,7 +1686,7 @@ def _target(raw: dict, where: str) -> Target:
     optimal = _interval(raw["оптимум"], where)
     assert optimal is not None
     return Target(
-        condition=_condition(raw.get("условие")),
+        condition=_condition(raw.get("условие"), where),
         optimal=optimal,
         deficient=_interval(raw.get("дефицит"), where),
         excessive=_interval(raw.get("избыток"), where),
@@ -1455,7 +1734,7 @@ def load_references(directory: Path) -> References:
         try:
             analytes.extend(_analyte(a) for a in raw.get("показатели", ()))
             derived.extend(_derived(d) for d in raw.get("производные", ()))
-        except (KeyError, TypeError) as exc:
+        except (ReferenceError, KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ReferenceError(f"{path.name}: {exc}") from exc
 
     ids = [a.id for a in analytes] + [d.id for d in derived]
@@ -1477,7 +1756,7 @@ def load_references(directory: Path) -> References:
 uv run pytest tests/knowledge/test_references_model.py -v
 ```
 
-Ожидается: 7 PASS.
+Ожидается: 10 PASS.
 
 - [ ] **Step 5: Коммит**
 
@@ -1804,16 +2083,27 @@ git commit -m "feat: сверка измерений с целевыми кор�
 ### Task 7: Производные показатели
 
 **Files:**
+- Create: `src/healthcoach/knowledge/formula.py`
 - Create: `src/healthcoach/scoring/derived.py`
 - Create: `knowledge/references/derived.yaml`
+- Modify: `src/healthcoach/scoring/references.py` — добавить `STATUS_NOT_COMPUTED`, сделать `AnalyteVerdict.value` необязательным
+- Modify: `src/healthcoach/knowledge/references.py` — проверять формулу при загрузке
 - Create: `tests/scoring/test_derived.py`
+- Modify: `tests/knowledge/test_references_model.py` — тест на битую формулу в базе знаний
 
 **Interfaces:**
 - Consumes: `References`, `Derived`, `Interval` из задачи 5; `Measurement`, `AnalyteVerdict` из задачи 6
 - Produces:
   - `evaluate_formula(formula: str, values: dict[str, float]) -> float`
-  - `FormulaError(Exception)`
+  - `validate_formula(formula: str) -> tuple[str, ...]` — проверить форму, не вычисляя, вернуть имена операндов
+  - `FormulaError(Exception)`, `MissingOperand(FormulaError)`
+  - `STATUS_NOT_COMPUTED = "не удалось вычислить"`
+  - `AnalyteVerdict.value: float | None`
   - `compute_derived(refs: References, measurements: list[Measurement]) -> list[AnalyteVerdict]`
+
+**Где живёт разбор формул.** Мини-язык формул — часть формата базы знаний, поэтому он лежит в слое `knowledge`, а не в `scoring`. Это позволяет `load_references` проверять формулы при загрузке, не заставляя `knowledge` импортировать `scoring` и не переворачивая зависимость между слоями.
+
+**Что молчит, а что говорит.** Молча пропускается ровно один случай — не хватает измерения для операнда (`MissingOperand`): это не пробел в данных, а несобранный набор анализов. Опечатка в формуле ловится при загрузке базы знаний и называет файл и показатель. Деление на ноль от реальных данных даёт вердикт `"не удалось вычислить"` со значением `None`.
 
 **Про безопасность формул.** Формулы разбираются через `ast` с белым списком узлов: только имена, числа и четыре арифметических действия. Никакого `eval` над произвольной строкой — база знаний это данные, а данные не должны уметь выполнять код. Кириллические идентификаторы в формулах допустимы: `кальций / калий` — корректное выражение Python.
 
@@ -1826,6 +2116,7 @@ from pathlib import Path
 
 import pytest
 
+from healthcoach.knowledge.formula import MissingOperand, validate_formula
 from healthcoach.knowledge.references import Interval, load_references
 from healthcoach.scoring.derived import FormulaError, compute_derived, evaluate_formula
 from healthcoach.scoring.references import Measurement
@@ -1886,6 +2177,57 @@ def test_derived_skipped_when_operand_absent():
     assert compute_derived(
         load_references(REFS), [Measurement("кальций", 10.0, "мг/дл")]
     ) == []
+
+
+def test_missing_operand_has_its_own_type():
+    """Только этот случай пропускается молча, поэтому у него отдельный тип."""
+    with pytest.raises(MissingOperand):
+        evaluate_formula("кальций / калий", {"кальций": 10.0})
+
+
+def test_validate_formula_returns_operand_names():
+    assert validate_formula("кальций / калий") == ("кальций", "калий")
+
+
+def test_validate_formula_rejects_syntax_error():
+    with pytest.raises(FormulaError, match="не разобрана"):
+        validate_formula("кальций /")
+
+
+def test_validate_formula_rejects_call():
+    with pytest.raises(FormulaError, match="недопустимая конструкция"):
+        validate_formula("__import__('os').system('ls')")
+
+
+def test_division_by_zero_gives_verdict_not_silence():
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [Measurement("кальций", 10.0, "мг/дл"), Measurement("калий", 0.0, "ммоль/л")],
+    )
+    assert verdict.analyte_id == "кальций_калий"
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "деление на ноль" in verdict.note
+```
+
+В `tests/knowledge/test_references_model.py` добавить тест на битую формулу в базе знаний:
+
+```python
+def test_broken_formula_names_file_and_derived(tmp_path):
+    (tmp_path / "broken_formula.yaml").write_text(
+        "производные:\n"
+        "  - id: плохой\n"
+        "    название: Плохой\n"
+        "    формула: 'кальций /'\n"
+        "    оптимум: [1, 2]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_formula.yaml" in message
+    assert "плохой" in message
 ```
 
 Файл `knowledge/references/derived.yaml`:
@@ -1922,26 +2264,22 @@ uv run pytest tests/scoring/test_derived.py -v
 
 Ожидается: FAIL с `ModuleNotFoundError: No module named 'healthcoach.scoring.derived'`.
 
-- [ ] **Step 3: Реализовать вычисление производных**
+- [ ] **Step 3: Реализовать разбор формул и вычисление производных**
 
-Файл `src/healthcoach/scoring/derived.py`:
+Файл `src/healthcoach/knowledge/formula.py`:
 
 ```python
-"""Производные показатели: соотношения и индексы."""
+"""Мини-язык формул базы знаний.
+
+Формулы приходят из данных, поэтому разбираются деревом с белым списком
+узлов: имена, числа, четыре арифметических действия и унарный минус.
+Никакого eval — данные не должны уметь выполнять код.
+"""
 
 from __future__ import annotations
 
 import ast
 import operator
-
-from healthcoach.knowledge.references import References
-from healthcoach.scoring.references import (
-    STATUS_ABOVE,
-    STATUS_BELOW,
-    STATUS_WITHIN,
-    AnalyteVerdict,
-    Measurement,
-)
 
 _OPS = {
     ast.Add: operator.add,
@@ -1950,23 +2288,49 @@ _OPS = {
     ast.Div: operator.truediv,
 }
 
+_VALIDATION_PLACEHOLDER = 1.0
+"""Подставляется вместо операнда, когда проверяется только форма формулы."""
+
 
 class FormulaError(Exception):
     """Формулу производного показателя невозможно вычислить."""
 
 
-def _eval(node: ast.AST, values: dict[str, float]) -> float:
+class MissingOperand(FormulaError):
+    """Не хватает измерения для одного из операндов формулы.
+
+    Единственный случай, в котором производный показатель пропускается
+    молча: это не пробел в данных, а просто несобранный набор анализов.
+    """
+
+
+def _parse(formula: str) -> ast.Expression:
+    try:
+        return ast.parse(formula, mode="eval")
+    except SyntaxError as exc:
+        raise FormulaError(f"формула не разобрана: {formula!r}") from exc
+
+
+def _walk(node: ast.AST, values: dict[str, float] | None, names: list[str]) -> float:
+    """Обойти дерево формулы.
+
+    При `values is None` идёт проверка формы: имена операндов собираются
+    в `names`, вместо значений подставляется единица, измерения не нужны.
+    """
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        left = _eval(node.left, values)
-        right = _eval(node.right, values)
+        left = _walk(node.left, values, names)
+        right = _walk(node.right, values, names)
         if isinstance(node.op, ast.Div) and right == 0:
             raise FormulaError("деление на ноль")
         return _OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -_eval(node.operand, values)
+        return -_walk(node.operand, values, names)
     if isinstance(node, ast.Name):
+        names.append(node.id)
+        if values is None:
+            return _VALIDATION_PLACEHOLDER
         if node.id not in values:
-            raise FormulaError(f"нет значения для операнда {node.id!r}")
+            raise MissingOperand(f"нет значения для операнда {node.id!r}")
         return values[node.id]
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return float(node.value)
@@ -1975,11 +2339,79 @@ def _eval(node: ast.AST, values: dict[str, float]) -> float:
 
 def evaluate_formula(formula: str, values: dict[str, float]) -> float:
     """Вычислить формулу. Разрешены только имена, числа и арифметика."""
+    return _walk(_parse(formula).body, values, [])
+
+
+def validate_formula(formula: str) -> tuple[str, ...]:
+    """Проверить форму формулы, не вычисляя её, и вернуть имена операндов."""
+    names: list[str] = []
+    _walk(_parse(formula).body, None, names)
+    return tuple(names)
+```
+
+В `src/healthcoach/scoring/references.py` добавить константу рядом с остальными статусами и сделать значение вердикта необязательным:
+
+```python
+STATUS_NOT_COMPUTED = "не удалось вычислить"
+```
+
+```python
+    value: float | None
+```
+
+В `src/healthcoach/knowledge/references.py` добавить импорт и проверять формулу при загрузке:
+
+```python
+from healthcoach.knowledge.formula import FormulaError, validate_formula
+```
+
+```python
+def _derived(raw: dict) -> Derived:
+    where = f"производный {raw['id']!r}"
+    optimal = _interval(raw["оптимум"], where)
+    assert optimal is not None
+    formula = str(raw["формула"])
     try:
-        tree = ast.parse(formula, mode="eval")
-    except SyntaxError as exc:
-        raise FormulaError(f"формула не разобрана: {formula!r}") from exc
-    return _eval(tree.body, values)
+        validate_formula(formula)
+    except FormulaError as exc:
+        raise ReferenceError(f"{where}: {exc}") from exc
+    return Derived(
+        id=str(raw["id"]),
+        name=str(raw["название"]),
+        formula=formula,
+        optimal=optimal,
+        note=raw.get("заметка"),
+    )
+```
+
+Файл `src/healthcoach/scoring/derived.py`:
+
+```python
+"""Производные показатели: соотношения и индексы."""
+
+from __future__ import annotations
+
+from healthcoach.knowledge.formula import (
+    FormulaError,
+    MissingOperand,
+    evaluate_formula,
+)
+from healthcoach.knowledge.references import References
+from healthcoach.scoring.references import (
+    STATUS_ABOVE,
+    STATUS_BELOW,
+    STATUS_NOT_COMPUTED,
+    STATUS_WITHIN,
+    AnalyteVerdict,
+    Measurement,
+)
+
+__all__ = [
+    "FormulaError",
+    "MissingOperand",
+    "compute_derived",
+    "evaluate_formula",
+]
 
 
 def compute_derived(
@@ -1988,7 +2420,8 @@ def compute_derived(
     """Посчитать производные показатели по имеющимся измерениям.
 
     Производный, для которого не хватает операндов, пропускается молча —
-    это не пробел в данных, а просто несобранный набор анализов.
+    это не пробел в данных, а просто несобранный набор анализов. Любая
+    другая ошибка вычисления даёт вердикт: молча не теряется ничего.
     """
     values: dict[str, float] = {}
     for measurement in measurements:
@@ -2000,7 +2433,22 @@ def compute_derived(
     for derived in references.derived:
         try:
             value = evaluate_formula(derived.formula, values)
-        except FormulaError:
+        except MissingOperand:
+            continue
+        except FormulaError as exc:
+            verdicts.append(
+                AnalyteVerdict(
+                    analyte_id=derived.id,
+                    title=derived.name,
+                    value=None,
+                    units="",
+                    status=STATUS_NOT_COMPUTED,
+                    target=derived.optimal,
+                    lab_range=None,
+                    note=str(exc),
+                    rule_missing=True,
+                )
+            )
             continue
 
         if derived.optimal.contains(value):
@@ -2033,7 +2481,7 @@ def compute_derived(
 uv run pytest tests/scoring/test_derived.py -v
 ```
 
-Ожидается: 9 PASS.
+Ожидается: 14 PASS в `test_derived.py` и 11 в `test_references_model.py`.
 
 - [ ] **Step 5: Коммит**
 
@@ -2047,13 +2495,18 @@ git commit -m "feat: производные показатели с безопа
 ### Task 8: Сборка единого списка находок
 
 **Files:**
+- Create: `src/healthcoach/knowledge/degrees.py`
 - Create: `src/healthcoach/scoring/findings.py`
+- Modify: `src/healthcoach/knowledge/validation.py` — перевести на общий словарь степеней
+- Create: `tests/knowledge/test_degrees.py`
 - Create: `tests/scoring/test_findings.py`
+
+**Словарь степеней — один на всех.** `DEGREE_ORDER` (порядок от лёгкой к тяжёлой, нужен валидатору для проверки пересечений и разрывов) и `DEGREE_SEVERITY` (тяжесть для сортировки находок) живут в `knowledge/degrees.py`. Обе структуры содержат женские и мужские формы: женские — для блоков опросника, мужские — для DASS, где градации на листе ключа названы «Нормальный, Средний, Умеренный, Тяжелый, Очень тяжелый». Сравнение игнорирует регистр и различие е/ё. Две независимые копии этого словаря уже расходились однажды, поэтому тест проверяет, что обе структуры покрывают один и тот же набор названий.
 
 **Interfaces:**
 - Consumes: `SubscaleScore` из задачи 4; `AnalyteVerdict`, `Subject`, `Measurement` из задачи 6; `compute_derived` из задачи 7; `Questionnaire` и `References` из задач 2 и 5
 - Produces:
-  - `Finding(kind, subject_id, title, value, units, status, target, lab_range, note, rule_missing)` где `kind` ∈ `{"показатель", "производный", "опросник"}`
+  - `Finding(kind, subject_id, title, value, units, status, target, lab_range, note, rule_missing)` где `kind` ∈ `{"показатель", "производный", "опросник"}`, а `value` — `float | None` (`None` у производного, который не удалось вычислить)
   - `collect_findings(questionnaire, references, answers, measurements, subject) -> list[Finding]`
 
 **Порядок.** Находки сортируются по значимости: сначала требующие внимания (дефицит, избыток, высокая степень), затем умеренные отклонения, затем норма, и в самом конце — то, для чего правило не задано. Это порядок, в котором их удобно читать и коучу, и модели.
@@ -2202,6 +2655,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from healthcoach.knowledge.degrees import degree_severity
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.scoring.derived import compute_derived
@@ -2211,6 +2665,7 @@ from healthcoach.scoring.references import (
     STATUS_BELOW,
     STATUS_DEFICIT,
     STATUS_EXCESS,
+    STATUS_NOT_COMPUTED,
     STATUS_NO_RULE,
     STATUS_UNIT_MISMATCH,
     STATUS_WITHIN,
@@ -2229,19 +2684,28 @@ STATUS_NORMAL = "в пределах нормы"
 _SEVERITY = {
     STATUS_DEFICIT: 0,
     STATUS_EXCESS: 0,
-    "высокая": 0,
-    "тяжёлая": 0,
-    "очень тяжёлая": 0,
     STATUS_BELOW: 1,
     STATUS_ABOVE: 1,
-    "средняя": 1,
-    "умеренная": 1,
-    "низкая": 2,
     STATUS_WITHIN: 3,
     STATUS_NORMAL: 3,
     STATUS_UNIT_MISMATCH: 4,
+    STATUS_NOT_COMPUTED: 4,
     STATUS_NO_RULE: 5,
 }
+
+_SEVERITY_UNKNOWN = 1
+"""Незнакомый статус не прячется среди нормальных находок."""
+
+
+def _severity(status: str) -> int:
+    """Тяжесть статуса: у степеней она берётся из общего словаря."""
+    known = _SEVERITY.get(status)
+    if known is not None:
+        return known
+    from_degree = degree_severity(status)
+    if from_degree is not None:
+        return from_degree
+    return _SEVERITY_UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -2249,7 +2713,7 @@ class Finding:
     kind: str
     subject_id: str
     title: str
-    value: float
+    value: float | None
     units: str
     status: str
     target: Interval | None
@@ -2314,7 +2778,7 @@ def collect_findings(
     for verdict in compute_derived(references, measurements):
         findings.append(_from_verdict(verdict, KIND_DERIVED))
 
-    findings.sort(key=lambda f: (_SEVERITY.get(f.status, 3), f.kind, f.title))
+    findings.sort(key=lambda f: (_severity(f.status), f.kind, f.title))
     return findings
 ```
 
