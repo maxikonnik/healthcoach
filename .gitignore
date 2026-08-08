@@ -17,4 +17,7 @@ __pycache__/
 *.pyc
 .env
 
+# Черновик сборки опросника — не источник правды, не коммитится
+knowledge/questionnaire.draft.yaml
+
 .DS_Store

@@ -23,6 +23,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from healthcoach.knowledge.degrees import degree_rank, degree_severity
 from healthcoach.knowledge.import_xlsx import slugify, split_inline_scale
 from healthcoach.knowledge.validation import parse_threshold_range
 
@@ -75,12 +76,28 @@ CANDIDA_TOP_FIX = {"м": 141, "ж": 181}
 заканчивается на 140 (180), поэтому высокая начинается со следующего балла.
 """
 
-DASS_NOTE = """    # DASS: три подшкалы (депрессия, тревожность, стресс) пока не разделены.
-    # На скрытом листе «DASS (показатели)» формулы относят каждый вопрос сразу
-    # к двум подшкалам из трёх — в каждой оказывается 28 вопросов вместо 14.
-    # Пороги подшкал прочитаны и приведены ниже закомментированными; чтобы
-    # включить разделение, замените подгруппу «весь» на три подгруппы с их
-    # списками вопросов. Правится здесь, без изменений в коде."""
+DASS_THRESHOLDS_DEFERRED = True
+"""Пороги DASS не выставляются: они относятся к подшкалам, а не к сумме.
+
+На листе ключа три строки — «Депрессия», «Тревожность», «Стресс», каждая
+для своей 14-вопросной подшкалы. Пока подшкалы не разделены, любая из них,
+применённая к сумме по 42 утверждениям, даёт заведомо неверную степень.
+Разделение отложено коучем: разметка на скрытом листе относит каждый вопрос
+сразу к двум подшкалам, а у «Стресса» тяжёлая степень повторяет умеренную.
+"""
+
+DASS_NOTE = """    # DASS: пороги не выставлены намеренно.
+    # На листе ключа три строки порогов — «Депрессия», «Тревожность»,
+    # «Стресс», — и каждая относится к своей подшкале из 14 утверждений,
+    # а не к сумме по всем 42. Применённая к сумме, любая из них даёт
+    # заведомо неверную степень, поэтому блок отдаёт сумму без степени.
+    #
+    # Чтобы включить разделение: замените подгруппу «весь» на три подгруппы
+    # со списками вопросов и порогами ниже. Правится здесь, без изменений
+    # в коде. Перед этим нужны данные от коуча: на скрытом листе
+    # «DASS (показатели)» каждый вопрос отнесён сразу к двум подшкалам
+    # (формулы вида =B{r}+D{r}), а у «Стресса» тяжёлая степень повторяет
+    # умеренную (19-25), из-за чего баллы 26-33 не попадают никуда."""
 
 DASS_DEGREES = (
     ("нормальный", 3),
@@ -422,6 +439,11 @@ def _emit(blocks: list[dict], thresholds: dict[str, list[dict]]) -> str:
                 # Пороги вынесены в подгруппу «всего»; секции дают только сумму.
                 lines.append("        thresholds: []")
                 continue
+            if DASS_THRESHOLDS_DEFERRED and block["id"].startswith("dass"):
+                # Пороги на листе ключа — это пороги подшкал, а не суммы по
+                # 42 утверждениям; см. DASS_NOTE и DASS_THRESHOLDS_DEFERRED.
+                lines.append("        thresholds: []")
+                continue
             found = _match_thresholds(block, subscale, thresholds)
             if "qeesi" in block["id"]:
                 # Верхние границы 100 и 10 — потолок шкалы, а не порог: они
@@ -499,6 +521,22 @@ def main() -> int:
                 if not question["scale"]:
                     question["scale"] = list(subscale["scale"])
 
+        # Подгруппа без собственной шкалы (H-колонка пуста для неё) молча
+        # получает шкалу блока, унаследованную от другой подгруппы — это тот
+        # самый механизм, что подставил Candida-секции А чужую шкалу 3/6/9.
+        # Безопасно только пока у каждого вопроса подгруппы есть инлайн-шкала.
+        for subscale in block["subscales"]:
+            if subscale["scale"]:
+                continue
+            missing = [q["number"] for q in subscale["questions"] if not q["scale"]]
+            if not missing:
+                continue
+            unscaled.append(
+                f"{block['id']}/{subscale['id']}: своей шкалы нет, а у вопросов "
+                f"{missing} нет инлайн-шкалы — подгруппа молча унаследует шкалу "
+                f"другой подгруппы блока"
+            )
+
         for subscale in block["subscales"]:
             for question in subscale["questions"]:
                 if not question["scale"] and not block["scale"]:
@@ -510,6 +548,21 @@ def main() -> int:
 
     thresholds = _read_thresholds(workbook[SHEET_KEY])
 
+    # Названия степеней здесь — независимая копия словаря healthcoach.knowledge
+    # .degrees; имя, которого нет в DEGREE_ORDER/DEGREE_SEVERITY, тихо получит
+    # неизвестную тяжесть при сортировке находок. Проверяем перед записью.
+    degree_names = {name for name, _ in DASS_DEGREES}
+    for rows in thresholds.values():
+        degree_names.update(t["degree"] for t in rows)
+    unknown_degrees = sorted(
+        name
+        for name in degree_names
+        if degree_rank(name) is None or degree_severity(name) is None
+    )
+    if unknown_degrees:
+        print("НЕИЗВЕСТНАЯ СТЕПЕНЬ:", unknown_degrees)
+        return 1
+
     out = root / "knowledge" / "questionnaire.yaml"
     out.write_text(_emit(blocks, thresholds), encoding="utf-8")
 
@@ -519,7 +572,8 @@ def main() -> int:
         f"{b['id']}/{s['id']}"
         for b in blocks
         for s in b["subscales"]
-        if not _match_thresholds(b, s, thresholds)
+        if (DASS_THRESHOLDS_DEFERRED and b["id"].startswith("dass"))
+        or not _match_thresholds(b, s, thresholds)
     ]
 
     print(f"записано: {out}")

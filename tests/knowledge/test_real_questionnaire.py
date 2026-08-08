@@ -209,3 +209,27 @@ def test_sex_specific_thresholds_exist_where_the_key_defines_them():
     q = _questionnaire()
     by_id = {s.id: s for s in q.block("oprosnik_candida").subscales}
     assert {t.sex for t in by_id["всего"].thresholds} == {"м", "ж"}
+
+
+def test_dass_has_no_thresholds_until_the_subscales_are_split():
+    """Пороги DASS относятся к подшкалам из 14 утверждений, а не к сумме по 42."""
+    q = _questionnaire()
+    block = q.block("dass_oprosnik_depressia_trevoznost_stress")
+    assert len(block.questions) == 42
+    for subscale in block.subscales:
+        assert subscale.thresholds == ()
+
+
+def test_dass_sum_is_reported_without_a_degree():
+    """Сумма видна коучу, но степень не выставляется — иначе она была бы неверной."""
+    q = _questionnaire()
+    block = q.block("dass_oprosnik_depressia_trevoznost_stress")
+    answers = {question.id: 1 for question in block.questions}
+    (scored,) = [
+        s
+        for s in score_questionnaire(q, answers, sex="ж")
+        if s.block_id == block.id
+    ]
+    assert scored.score == 42
+    assert scored.degree is None
+    assert scored.degree_missing == "пороги не заданы"

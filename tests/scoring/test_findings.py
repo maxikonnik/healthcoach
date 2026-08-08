@@ -218,6 +218,28 @@ def test_unscored_sorts_below_real_findings():
     assert findings[-1].status == "степень не выставлена"
 
 
+def test_dass_reaches_the_coach_as_unscored_not_normal():
+    """Раньше 42 балла по DASS выводились как «очень тяжелый»."""
+    from pathlib import Path
+
+    from healthcoach.knowledge.questionnaire import load_questionnaire
+
+    spec = Path(__file__).parents[2] / "knowledge" / "questionnaire.yaml"
+    q = load_questionnaire(spec)
+    block = q.block("dass_oprosnik_depressia_trevoznost_stress")
+    findings = collect_findings(
+        q,
+        load_references(REFS),
+        answers={question.id: 1 for question in block.questions},
+        measurements=[],
+        subject=SUBJECT,
+    )
+    (finding,) = [f for f in findings if f.subject_id.startswith(block.id)]
+    assert finding.value == 42
+    assert finding.status == "степень не выставлена"
+    assert finding.rule_missing is True
+
+
 def _block_without_thresholds() -> Block:
     questions = tuple(
         Question(
