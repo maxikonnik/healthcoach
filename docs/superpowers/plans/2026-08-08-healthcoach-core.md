@@ -2495,8 +2495,13 @@ git commit -m "feat: производные показатели с безопа
 ### Task 8: Сборка единого списка находок
 
 **Files:**
+- Create: `src/healthcoach/knowledge/degrees.py`
 - Create: `src/healthcoach/scoring/findings.py`
+- Modify: `src/healthcoach/knowledge/validation.py` — перевести на общий словарь степеней
+- Create: `tests/knowledge/test_degrees.py`
 - Create: `tests/scoring/test_findings.py`
+
+**Словарь степеней — один на всех.** `DEGREE_ORDER` (порядок от лёгкой к тяжёлой, нужен валидатору для проверки пересечений и разрывов) и `DEGREE_SEVERITY` (тяжесть для сортировки находок) живут в `knowledge/degrees.py`. Обе структуры содержат женские и мужские формы: женские — для блоков опросника, мужские — для DASS, где градации на листе ключа названы «Нормальный, Средний, Умеренный, Тяжелый, Очень тяжелый». Сравнение игнорирует регистр и различие е/ё. Две независимые копии этого словаря уже расходились однажды, поэтому тест проверяет, что обе структуры покрывают один и тот же набор названий.
 
 **Interfaces:**
 - Consumes: `SubscaleScore` из задачи 4; `AnalyteVerdict`, `Subject`, `Measurement` из задачи 6; `compute_derived` из задачи 7; `Questionnaire` и `References` из задач 2 и 5
@@ -2650,6 +2655,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from healthcoach.knowledge.degrees import degree_severity
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.scoring.derived import compute_derived
@@ -2678,20 +2684,28 @@ STATUS_NORMAL = "в пределах нормы"
 _SEVERITY = {
     STATUS_DEFICIT: 0,
     STATUS_EXCESS: 0,
-    "высокая": 0,
-    "тяжёлая": 0,
-    "очень тяжёлая": 0,
     STATUS_BELOW: 1,
     STATUS_ABOVE: 1,
-    "средняя": 1,
-    "умеренная": 1,
-    "низкая": 2,
     STATUS_WITHIN: 3,
     STATUS_NORMAL: 3,
     STATUS_UNIT_MISMATCH: 4,
     STATUS_NOT_COMPUTED: 4,
     STATUS_NO_RULE: 5,
 }
+
+_SEVERITY_UNKNOWN = 1
+"""Незнакомый статус не прячется среди нормальных находок."""
+
+
+def _severity(status: str) -> int:
+    """Тяжесть статуса: у степеней она берётся из общего словаря."""
+    known = _SEVERITY.get(status)
+    if known is not None:
+        return known
+    from_degree = degree_severity(status)
+    if from_degree is not None:
+        return from_degree
+    return _SEVERITY_UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -2764,7 +2778,7 @@ def collect_findings(
     for verdict in compute_derived(references, measurements):
         findings.append(_from_verdict(verdict, KIND_DERIVED))
 
-    findings.sort(key=lambda f: (_SEVERITY.get(f.status, 3), f.kind, f.title))
+    findings.sort(key=lambda f: (_severity(f.status), f.kind, f.title))
     return findings
 ```
 
