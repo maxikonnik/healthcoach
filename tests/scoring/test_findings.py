@@ -184,3 +184,60 @@ def test_dass_normal_degree_is_not_treated_as_severe():
         subject=SUBJECT,
     )
     assert [f.status for f in findings] == ["ниже целевого", "Нормальный"]
+
+
+def test_unscored_subscale_is_not_called_normal():
+    """548 из 548 не должны выводиться как «в пределах нормы»."""
+    block = _block_without_thresholds()
+    q = Questionnaire(version="1.0", blocks=(block,))
+    findings = collect_findings(
+        q,
+        load_references(REFS),
+        answers={f"bez.{i}": 2 for i in range(1, 4)},
+        measurements=[],
+        subject=SUBJECT,
+    )
+    (finding,) = findings
+    assert finding.status == "степень не выставлена"
+    assert finding.rule_missing is True
+    assert finding.note == "пороги не заданы"
+    assert finding.value == 6
+
+
+def test_unscored_sorts_below_real_findings():
+    block = _block_without_thresholds()
+    q = Questionnaire(version="1.0", blocks=(block,))
+    findings = collect_findings(
+        q,
+        load_references(REFS),
+        answers={f"bez.{i}": 2 for i in range(1, 4)},
+        measurements=[Measurement("ферритин", 18, "нг/мл")],
+        subject=SUBJECT,
+    )
+    assert findings[0].status == "дефицит"
+    assert findings[-1].status == "степень не выставлена"
+
+
+def _block_without_thresholds() -> Block:
+    questions = tuple(
+        Question(
+            id=f"bez.{i}", number=i, text=f"Вопрос {i}", scale=None, block_scale=SCALE
+        )
+        for i in range(1, 4)
+    )
+    return Block(
+        id="bez",
+        title="Без порогов",
+        part="клиническая",
+        core=True,
+        scale=SCALE,
+        questions=questions,
+        subscales=(
+            Subscale(
+                id="весь",
+                title="Весь блок",
+                question_ids=tuple(q.id for q in questions),
+                thresholds=(),
+            ),
+        ),
+    )

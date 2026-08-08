@@ -129,3 +129,59 @@ def test_answer_for_unknown_question_raises():
     q = _questionnaire()
     with pytest.raises(ScoringError, match="нет в спецификации"):
         score_questionnaire(q, {"выдуманный.1": 1}, sex="ж")
+
+
+def test_missing_thresholds_are_not_reported_as_normal():
+    block = _block(())
+    q = Questionnaire(version="1.0", blocks=(block,))
+    answers = {f"zheludok.{i}": 3 for i in range(1, 7)}
+    (result,) = score_questionnaire(q, answers, sex="ж")
+    assert result.degree is None
+    assert result.degree_missing == "пороги не заданы"
+
+
+def test_no_thresholds_for_this_sex_is_reported():
+    block = _block(
+        (
+            Threshold("низкая", 0, 5, "м"),
+            Threshold("высокая", 6, None, "м"),
+        )
+    )
+    q = Questionnaire(version="1.0", blocks=(block,))
+    answers = {f"zheludok.{i}": 3 for i in range(1, 7)}
+    (result,) = score_questionnaire(q, answers, sex="ж")
+    assert result.degree is None
+    assert "нет порогов для пола" in result.degree_missing
+
+
+def test_below_lowest_band_has_no_missing_reason():
+    """Единственный случай, в котором отсутствие степени означает норму."""
+    q = _questionnaire()
+    answers = {f"zheludok.{i}": 0 for i in range(1, 7)}
+    answers["zheludok.1"] = 3
+    (result,) = score_questionnaire(q, answers, sex="ж")
+    assert result.degree is None
+    assert result.degree_missing is None
+
+
+def test_sparse_subscale_reports_why():
+    q = _questionnaire()
+    answers = {"zheludok.1": 3, "zheludok.2": 3}
+    (result,) = score_questionnaire(q, answers, sex="ж")
+    assert result.degree_missing == "отвечено 2 из 6 вопросов"
+
+
+def test_sex_is_normalised_at_the_entry_point():
+    q = _questionnaire()
+    answers = {f"zheludok.{i}": 2 for i in range(1, 7)}
+    upper = score_questionnaire(q, answers, sex="Ж")
+    lower = score_questionnaire(q, answers, sex="ж")
+    assert [s.degree for s in upper] == [s.degree for s in lower]
+
+
+def test_unknown_sex_raises():
+    from healthcoach.knowledge.sex import SexError
+
+    q = _questionnaire()
+    with pytest.raises(SexError):
+        score_questionnaire(q, {"zheludok.1": 1}, sex="муж")

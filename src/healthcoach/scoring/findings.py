@@ -29,6 +29,7 @@ KIND_DERIVED = "производный"
 KIND_QUESTIONNAIRE = "опросник"
 
 STATUS_NORMAL = "в пределах нормы"
+STATUS_UNSCORED = "степень не выставлена"
 
 _SEVERITY = {
     STATUS_DEFICIT: 0,
@@ -39,6 +40,7 @@ _SEVERITY = {
     STATUS_NORMAL: 3,
     STATUS_UNIT_MISMATCH: 4,
     STATUS_NOT_COMPUTED: 4,
+    STATUS_UNSCORED: 4,
     STATUS_NO_RULE: 5,
 }
 
@@ -102,6 +104,16 @@ def collect_findings(
             if scored.subscale_id == "весь"
             else f"{scored.block_title} — {scored.subscale_title}"
         )
+        if scored.degree is not None:
+            status, note, rule_missing = scored.degree, None, False
+        elif scored.degree_missing is None:
+            status, note, rule_missing = STATUS_NORMAL, None, False
+        else:
+            status, note, rule_missing = (
+                STATUS_UNSCORED,
+                scored.degree_missing,
+                True,
+            )
         findings.append(
             Finding(
                 kind=KIND_QUESTIONNAIRE,
@@ -109,15 +121,11 @@ def collect_findings(
                 title=title,
                 value=scored.score,
                 units="баллов",
-                status=scored.degree or STATUS_NORMAL,
+                status=status,
                 target=None,
                 lab_range=None,
-                note=(
-                    None
-                    if scored.answered == scored.total
-                    else f"отвечено {scored.answered} из {scored.total} вопросов"
-                ),
-                rule_missing=False,
+                note=note,
+                rule_missing=rule_missing,
             )
         )
 

@@ -6,6 +6,7 @@ from healthcoach.knowledge.formula import (
     FormulaError,
     MissingOperand,
     evaluate_formula,
+    validate_formula,
 )
 from healthcoach.knowledge.references import References
 from healthcoach.scoring.references import (
@@ -22,6 +23,7 @@ __all__ = [
     "MissingOperand",
     "compute_derived",
     "evaluate_formula",
+    "validate_formula",
 ]
 
 
@@ -35,13 +37,48 @@ def compute_derived(
     другая ошибка вычисления даёт вердикт: молча не теряется ничего.
     """
     values: dict[str, float] = {}
+    unusable: dict[str, str] = {}
+
     for measurement in measurements:
         analyte = references.resolve(measurement.analyte_id)
         key = analyte.id if analyte is not None else measurement.analyte_id
+
+        if analyte is not None and (
+            measurement.units.strip().casefold() != analyte.units.strip().casefold()
+        ):
+            unusable[key] = (
+                f"{analyte.name}: референс задан в единицах {analyte.units!r}, "
+                f"измерение пришло в {measurement.units!r}"
+            )
+        if key in values and values[key] != measurement.value:
+            unusable[key] = (
+                f"{key}: два разных измерения — {values[key]} и {measurement.value}"
+            )
         values[key] = measurement.value
 
     verdicts: list[AnalyteVerdict] = []
     for derived in references.derived:
+        blocked = [
+            unusable[name]
+            for name in dict.fromkeys(validate_formula(derived.formula))
+            if name in unusable
+        ]
+        if blocked:
+            verdicts.append(
+                AnalyteVerdict(
+                    analyte_id=derived.id,
+                    title=derived.name,
+                    value=None,
+                    units="",
+                    status=STATUS_NOT_COMPUTED,
+                    target=derived.optimal,
+                    lab_range=None,
+                    note="; ".join(blocked),
+                    rule_missing=True,
+                )
+            )
+            continue
+
         try:
             value = evaluate_formula(derived.formula, values)
         except MissingOperand:

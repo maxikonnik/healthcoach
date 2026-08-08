@@ -95,3 +95,32 @@ def test_division_by_zero_gives_verdict_not_silence():
     assert verdict.value is None
     assert verdict.rule_missing is True
     assert "деление на ноль" in verdict.note
+
+
+def test_unit_mismatch_blocks_the_derived_value():
+    """Калий в мг/дл вместо ммоль/л давал уверенное неверное соотношение."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 16.0, "мг/дл"),
+        ],
+    )
+    assert verdict.analyte_id == "кальций_калий"
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "ммоль/л" in verdict.note
+
+
+def test_conflicting_measurements_block_the_derived_value():
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 4.0, "ммоль/л"),
+            Measurement("калий", 5.0, "ммоль/л"),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert "два разных измерения" in verdict.note

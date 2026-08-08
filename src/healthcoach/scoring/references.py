@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from healthcoach.knowledge.references import Analyte, Interval, References, Target
+from healthcoach.knowledge.sex import normalize_sex
 
 STATUS_DEFICIT = "дефицит"
 STATUS_BELOW = "ниже целевого"
@@ -21,6 +22,9 @@ class Subject:
     sex: str
     age: int
     cycle_phase: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "sex", normalize_sex(self.sex))
 
 
 @dataclass(frozen=True)
