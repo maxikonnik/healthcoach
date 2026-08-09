@@ -59,9 +59,30 @@ def test_confirming_a_measurement_sticks(repositories):
     stored = snapshots.add_measurement(
         snapshot.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
     )
-    snapshots.confirm_measurement(stored.id)
+    assert snapshots.confirm_measurement(stored.id, snapshot.id) is True
     (read_back,) = snapshots.measurements(snapshot.id)
     assert read_back.confirmed is True
+
+
+def test_confirmation_does_not_reach_another_snapshot(repositories):
+    """Иначе подтверждение из одного среза меняло бы данные другого клиента."""
+    code, snapshots = repositories
+    mine = snapshots.create(code, date(2026, 9, 1))
+    other = snapshots.create(code, date(2026, 10, 1))
+    stored = snapshots.add_measurement(
+        other.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
+    )
+
+    assert snapshots.confirm_measurement(stored.id, mine.id) is False
+    (untouched,) = snapshots.measurements(other.id)
+    assert untouched.confirmed is False
+
+
+def test_confirming_a_measurement_that_does_not_exist_reports_failure(repositories):
+    """Молчаливый успех на несуществующий идентификатор скрывал бы опечатку."""
+    code, snapshots = repositories
+    snapshot = snapshots.create(code, date(2026, 9, 1))
+    assert snapshots.confirm_measurement(99999, snapshot.id) is False
 
 
 def test_history_spans_snapshots_and_sorts_by_sampling_date(repositories):

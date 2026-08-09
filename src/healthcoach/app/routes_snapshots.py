@@ -14,6 +14,7 @@ from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.units import UnitError, convert_to_reference
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.storage.snapshots import StoredMeasurement
 
 UNRESOLVED = ""
 """analyte_id нераспознанного показателя: он хранится, но не трактуется."""
@@ -21,7 +22,7 @@ UNRESOLVED = ""
 
 @dataclass(frozen=True)
 class Row:
-    measurement: object
+    measurement: StoredMeasurement
     title: str
     problem: str | None
 
@@ -39,9 +40,12 @@ def build_router(context: Context, templates) -> APIRouter:
         rows: list[Row] = []
         for measurement in repo.snapshots.measurements(snapshot_id):
             if not measurement.analyte_id:
-                rows.append(
-                    Row(measurement, measurement.raw_name, "показатель не распознан")
-                )
+                resolution = resolve_analyte(context.references, measurement.raw_name)
+                problem = "показатель не распознан"
+                if resolution.is_ambiguous:
+                    candidates = ", ".join(a.name for a in resolution.candidates)
+                    problem = f"название подходит нескольким показателям: {candidates}"
+                rows.append(Row(measurement, measurement.raw_name, problem))
                 continue
             analyte = context.references.analyte(measurement.analyte_id)
             if analyte is None:
@@ -82,13 +86,29 @@ def build_router(context: Context, templates) -> APIRouter:
     async def upload_answers(
         request: Request, snapshot_id: int, file: UploadFile = File(...)
     ):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+
         payload = await file.read()
         try:
             imported = parse_answers(context.questionnaire, payload)
         except AnswersError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Код клиента лежит в самом файле. Не сверить его — значит позволить
+        # анкете одного человека определить рекомендации другому: в папке
+        # загрузок у коуча лежат файлы всех клиентов, и различаются они
+        # только именем.
+        if imported.client_code != snapshot.client_code:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"файл заполнен клиентом {imported.client_code!r}, "
+                    f"а срез принадлежит {snapshot.client_code!r}"
+                ),
+            )
+
         with context.session() as repo:
-            snapshot = _snapshot_or_404(repo, snapshot_id)
             repo.snapshots.save_answers(snapshot_id, imported.answers)
             return _page(request, repo, snapshot, imported=imported)
 
@@ -135,7 +155,11 @@ def build_router(context: Context, templates) -> APIRouter:
     def confirm(snapshot_id: int, measurement_id: int):
         with context.session() as repo:
             _snapshot_or_404(repo, snapshot_id)
-            repo.snapshots.confirm_measurement(measurement_id)
+            if not repo.snapshots.confirm_measurement(measurement_id, snapshot_id):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"в срезе {snapshot_id} нет показателя {measurement_id}",
+                )
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
@@ -150,9 +174,9 @@ def build_router(context: Context, templates) -> APIRouter:
         with context.session() as repo:
             snapshot = _snapshot_or_404(repo, snapshot_id)
             measurements = [
-                Measurement(m.analyte_id, m.value, m.units)
+                Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
                 for m in repo.snapshots.measurements(snapshot_id)
-                if m.confirmed and m.analyte_id
+                if m.confirmed
             ]
             answers = repo.snapshots.answers(snapshot_id)
 

@@ -125,11 +125,20 @@ class SnapshotRepository:
         ).fetchall()
         return [_measurement(row) for row in rows]
 
-    def confirm_measurement(self, measurement_id: int) -> None:
-        self._connection.execute(
-            "UPDATE measurements SET confirmed = 1 WHERE id = ?", (measurement_id,)
+    def confirm_measurement(self, measurement_id: int, snapshot_id: int) -> bool:
+        """Подтвердить измерение этого среза. False — такого измерения нет.
+
+        Срез обязателен: без него подтверждение по одному лишь идентификатору
+        затрагивало бы измерение любого другого клиента, а несуществующий
+        идентификатор проходил бы как успех.
+        """
+        cursor = self._connection.execute(
+            "UPDATE measurements SET confirmed = 1 "
+            "WHERE id = ? AND snapshot_id = ?",
+            (measurement_id, snapshot_id),
         )
         self._connection.commit()
+        return cursor.rowcount == 1
 
     def history(self, client_code: str, analyte_id: str) -> list[StoredMeasurement]:
         """Все измерения показателя по клиенту, по дате забора."""

@@ -186,6 +186,94 @@ def test_upload_reports_skipped_but_not_the_blocks_never_shown(client):
     assert candida.questions[0].id not in page
 
 
+def test_answers_of_another_client_are_refused(client):
+    """В папке загрузок у коуча лежат файлы всех клиентов, различаются именем."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post("/clients", data={"full_name": "Петров Пётр"})
+
+    block = context.questionnaire.block("obraz_zizni")
+    answers = {q.id: min(o.score for o in q.options()) for q in block.questions}
+    core = [b.id for b in context.questionnaire.blocks if b.core]
+    body = {
+        "версия": PAYLOAD_VERSION,
+        "клиент": "CL-0002",
+        "спецификация": context.questionnaire.version,
+        "блоки": core,
+        "ответы": answers,
+    }
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/answers",
+        files={"file": ("ответы.json", payload, "application/json")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "CL-0002" in response.text
+    assert _stored_answers(context, snapshot_id) == {}
+
+
+def test_confirmation_does_not_reach_another_snapshot(client):
+    """Идентификатор среза в адресе обязан что-то значить."""
+    test_client, context = client
+    first = _snapshot(test_client)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-10-01"})
+    second = first + 1
+
+    test_client.post(
+        f"/snapshots/{second}/measurements",
+        data={
+            "raw_name": "Ферритин",
+            "value": "18",
+            "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, second)
+
+    response = test_client.post(
+        f"/snapshots/{first}/measurements/{stored.id}/confirm", follow_redirects=False
+    )
+    assert response.status_code == 404
+    (untouched,) = _measurements(context, second)
+    assert untouched.confirmed is False
+
+
+def test_confirming_a_measurement_that_does_not_exist_is_404(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements/99999/confirm", follow_redirects=False
+    )
+    assert response.status_code == 404
+
+
+def test_confirmed_unrecognised_measurement_reaches_the_findings(client):
+    """Подтверждённый показатель не может исчезнуть из картины без следа."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин",
+            "value": "12",
+            "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    assert stored.analyte_id == ""
+
+    before = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Гомоцистеин" not in before
+
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+    after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Гомоцистеин" in after
+    assert "правило не задано" in after
+
+
 def test_broken_answers_upload_is_reported(client):
     test_client, _ = client
     snapshot_id = _snapshot(test_client)

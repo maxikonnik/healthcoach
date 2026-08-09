@@ -32,6 +32,9 @@ class Measurement:
     analyte_id: str
     value: float
     units: str
+    label: str = ""
+    """Как показатель назван в бланке. Нужен нераспознанным: их
+    analyte_id пуст, и без подписи находка была бы безымянной."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,7 @@ def _status(target: Target, value: float) -> str:
 def _unresolved(measurement: Measurement, status: str) -> AnalyteVerdict:
     return AnalyteVerdict(
         analyte_id=measurement.analyte_id,
-        title=measurement.analyte_id,
+        title=measurement.label or measurement.analyte_id,
         value=measurement.value,
         units=measurement.units,
         status=status,

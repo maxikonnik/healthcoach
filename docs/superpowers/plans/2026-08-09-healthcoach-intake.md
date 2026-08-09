@@ -281,7 +281,7 @@ git commit -m "feat: схема базы и открытие с проверко
   - `ClientRepository(connection)` с методами `add(full_name, contacts=None, note=None) -> Client`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
   - `Snapshot(id: int, client_code: str, taken_on: date, note: str | None)`
   - `StoredMeasurement(id: int, analyte_id: str, raw_name: str, value: float, units: str, taken_on: date, confirmed: bool)`
-  - `SnapshotRepository(connection)` с методами `create(client_code, taken_on, note=None) -> Snapshot`, `get(snapshot_id) -> Snapshot | None`, `for_client(client_code) -> list[Snapshot]`, `add_measurement(...) -> StoredMeasurement`, `measurements(snapshot_id) -> list[StoredMeasurement]`, `confirm_measurement(measurement_id) -> None`, `history(client_code, analyte_id) -> list[StoredMeasurement]`, `save_answers(snapshot_id, answers) -> None`, `answers(snapshot_id) -> Answers`
+  - `SnapshotRepository(connection)` с методами `create(client_code, taken_on, note=None) -> Snapshot`, `get(snapshot_id) -> Snapshot | None`, `for_client(client_code) -> list[Snapshot]`, `add_measurement(...) -> StoredMeasurement`, `measurements(snapshot_id) -> list[StoredMeasurement]`, `confirm_measurement(measurement_id, snapshot_id) -> bool`, `history(client_code, analyte_id) -> list[StoredMeasurement]`, `save_answers(snapshot_id, answers) -> None`, `answers(snapshot_id) -> Answers`
 
 **Граница реестра.** `SnapshotRepository` не имеет доступа к таблице `identities` и оперирует только кодами клиентов. `ClientRepository` — единственное место, где ФИО и контакты покидают базу. Это та же граница, что `public_view()` у справочника специалистов; тест проверяет, что в модуле срезов слово `identities` не встречается.
 
@@ -396,7 +396,7 @@ def test_confirming_a_measurement_sticks(repositories):
     stored = snapshots.add_measurement(
         snapshot.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
     )
-    snapshots.confirm_measurement(stored.id)
+    assert snapshots.confirm_measurement(stored.id, snapshot.id) is True
     (read_back,) = snapshots.measurements(snapshot.id)
     assert read_back.confirmed is True
 
@@ -678,11 +678,20 @@ class SnapshotRepository:
         ).fetchall()
         return [_measurement(row) for row in rows]
 
-    def confirm_measurement(self, measurement_id: int) -> None:
-        self._connection.execute(
-            "UPDATE measurements SET confirmed = 1 WHERE id = ?", (measurement_id,)
+    def confirm_measurement(self, measurement_id: int, snapshot_id: int) -> bool:
+        """Подтвердить измерение этого среза. False — такого измерения нет.
+
+        Срез обязателен: без него подтверждение по одному лишь идентификатору
+        затрагивало бы измерение любого другого клиента, а несуществующий
+        идентификатор проходил бы как успех.
+        """
+        cursor = self._connection.execute(
+            "UPDATE measurements SET confirmed = 1 "
+            "WHERE id = ? AND snapshot_id = ?",
+            (measurement_id, snapshot_id),
         )
         self._connection.commit()
+        return cursor.rowcount == 1
 
     def history(self, client_code: str, analyte_id: str) -> list[StoredMeasurement]:
         """Все измерения показателя по клиенту, по дате забора."""
@@ -2422,6 +2431,10 @@ git commit -m "feat: каркас приложения, карточка кли�
 - Produces:
   - Маршруты: `GET /snapshots/{id}`, `POST /snapshots/{id}/answers` (загрузка файла), `POST /snapshots/{id}/measurements` (ручной ввод), `POST /snapshots/{id}/measurements/{mid}/confirm`, `GET /snapshots/{id}/findings`
 
+**Ворота сверки держатся на двух проверках.** Подтверждение привязано к срезу: `confirm_measurement` меняет строку только если она принадлежит этому срезу, иначе 404. Без этого идентификатор среза в адресе ничего бы не значил, и подтверждение затрагивало бы измерение другого клиента. Загрузка ответов сверяет код клиента из файла с кодом клиента среза: в папке загрузок у коуча лежат анкеты всех клиентов, и различаются они только именем файла.
+
+**Подтверждённый показатель не исчезает из находок.** Даже нераспознанный: он доходит до находок со статусом «правило не задано» и подписью из бланка. Иначе коуч видит «подтверждено» на экране и ничего — в находках, и считает, что показатель учтён.
+
 **Как работает ввод показателя.** Коуч вводит название так, как оно написано в бланке, значение, единицы и дату забора. Система распознаёт показатель и пересчитывает единицы. Если название не распознано или единицы не сопоставлены — измерение **всё равно сохраняется**, но помечается, и на экране видно почему. Находки считаются только по подтверждённым измерениям: это те самые ворота сверки из спецификации.
 
 **Работа с базой.** Каждое обращение к базе — внутри `with context.session() as repo:`. Обработчики синхронные, FastAPI выполняет их в пуле потоков, общее соединение падало бы с `ProgrammingError` (см. задачу 7). Внутри одного обработчика открывается одна сессия, а не по одной на каждое чтение.
@@ -2804,6 +2817,7 @@ from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.units import UnitError, convert_to_reference
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.storage.snapshots import StoredMeasurement
 
 UNRESOLVED = ""
 """analyte_id нераспознанного показателя: он хранится, но не трактуется."""
@@ -2811,7 +2825,7 @@ UNRESOLVED = ""
 
 @dataclass(frozen=True)
 class Row:
-    measurement: object
+    measurement: StoredMeasurement
     title: str
     problem: str | None
 
@@ -2829,9 +2843,12 @@ def build_router(context: Context, templates) -> APIRouter:
         rows: list[Row] = []
         for measurement in repo.snapshots.measurements(snapshot_id):
             if not measurement.analyte_id:
-                rows.append(
-                    Row(measurement, measurement.raw_name, "показатель не распознан")
-                )
+                resolution = resolve_analyte(context.references, measurement.raw_name)
+                problem = "показатель не распознан"
+                if resolution.is_ambiguous:
+                    candidates = ", ".join(a.name for a in resolution.candidates)
+                    problem = f"название подходит нескольким показателям: {candidates}"
+                rows.append(Row(measurement, measurement.raw_name, problem))
                 continue
             analyte = context.references.analyte(measurement.analyte_id)
             if analyte is None:
@@ -2872,13 +2889,29 @@ def build_router(context: Context, templates) -> APIRouter:
     async def upload_answers(
         request: Request, snapshot_id: int, file: UploadFile = File(...)
     ):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+
         payload = await file.read()
         try:
             imported = parse_answers(context.questionnaire, payload)
         except AnswersError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Код клиента лежит в самом файле. Не сверить его — значит позволить
+        # анкете одного человека определить рекомендации другому: в папке
+        # загрузок у коуча лежат файлы всех клиентов, и различаются они
+        # только именем.
+        if imported.client_code != snapshot.client_code:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"файл заполнен клиентом {imported.client_code!r}, "
+                    f"а срез принадлежит {snapshot.client_code!r}"
+                ),
+            )
+
         with context.session() as repo:
-            snapshot = _snapshot_or_404(repo, snapshot_id)
             repo.snapshots.save_answers(snapshot_id, imported.answers)
             return _page(request, repo, snapshot, imported=imported)
 
@@ -2925,7 +2958,11 @@ def build_router(context: Context, templates) -> APIRouter:
     def confirm(snapshot_id: int, measurement_id: int):
         with context.session() as repo:
             _snapshot_or_404(repo, snapshot_id)
-            repo.snapshots.confirm_measurement(measurement_id)
+            if not repo.snapshots.confirm_measurement(measurement_id, snapshot_id):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"в срезе {snapshot_id} нет показателя {measurement_id}",
+                )
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
@@ -2940,9 +2977,9 @@ def build_router(context: Context, templates) -> APIRouter:
         with context.session() as repo:
             snapshot = _snapshot_or_404(repo, snapshot_id)
             measurements = [
-                Measurement(m.analyte_id, m.value, m.units)
+                Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
                 for m in repo.snapshots.measurements(snapshot_id)
-                if m.confirmed and m.analyte_id
+                if m.confirmed
             ]
             answers = repo.snapshots.answers(snapshot_id)
 
@@ -2984,7 +3021,7 @@ from healthcoach.app import routes_clients, routes_snapshots
 uv run pytest tests/app/ -v
 ```
 
-Ожидается: 21 PASS.
+Ожидается: 25 PASS.
 
 - [ ] **Step 7: Прогнать весь набор**
 
@@ -2992,7 +3029,7 @@ uv run pytest tests/app/ -v
 uv run pytest -q
 ```
 
-Ожидается: 243 проходящих.
+Ожидается: 252 проходящих.
 
 - [ ] **Step 8: Пройти сквозной путь руками**
 
