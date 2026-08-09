@@ -86,6 +86,39 @@ def test_missing_units_do_not_leave_a_trailing_blank_message():
     assert prepared.problem == "единицы не сопоставлены: не указаны"
 
 
+def test_unit_needing_a_factor_is_not_canonicalised_without_a_number(tmp_path):
+    """Регресс: ветка `value is None` канонизировала единицы через ту же
+    проверку, что и числовая ветка (`convert_to_reference` без исключения),
+    и «Кальций <5.0 мг/дл» получал бы units='ммоль/л' — подпись референса —
+    хотя число ещё не пересчитано и не будет: `set_value` впишет то, что
+    коуч наберёт на форме, подписанной этими самыми единицами. Коуч увидел
+    бы форму «ммоль/л» и вписал бы число из бланка в мг/дл как будто оно уже
+    в ммоль/л. Без числа для умножения единицы, которым нужен множитель,
+    обязаны остаться подписью бланка, а не референса — как для по-настоящему
+    несопоставленных единиц.
+    """
+    (tmp_path / "test.yaml").write_text(
+        "показатели:\n"
+        "  - id: тест\n"
+        "    название: Тестовый показатель\n"
+        "    единицы: ед2\n"
+        "    пересчёт:\n"
+        "      - из: ед1\n"
+        "        множитель: 2.0\n"
+        "    целевые:\n"
+        "      - оптимум: [1, 100]\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    table = _table(LabRow("Тестовый показатель", "<10", "ед1", "", "строка"))
+
+    (prepared,) = prepare_measurements(references, table)
+    assert prepared.analyte_id == "тест"
+    assert prepared.value is None
+    assert prepared.units == "ед1"
+    assert "единицы" in prepared.problem
+
+
 def test_conversion_factor_is_actually_applied(tmp_path):
     """Регресс, доказанный мутацией: тест на алиас `мкг/л -> нг/мл` (1:1)
     проходил бы, даже если результат `convert_to_reference` отбрасывался —

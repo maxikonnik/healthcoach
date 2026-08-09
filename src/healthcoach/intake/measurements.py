@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from healthcoach.intake.lab_table import LabTable, parse_number
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.references import References
-from healthcoach.knowledge.units import UnitError, convert_to_reference
+from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
 
 UNRESOLVED = ""
 """Идентификатор нераспознанного показателя: хранится, но не трактуется."""
@@ -60,10 +60,19 @@ def prepare_measurements(
                 # Числа нет, но единицы всё равно стоит сверить: коуч
                 # иначе впишет число вручную, не зная, что единицы тоже
                 # разойдутся с референсом.
-                try:
-                    convert_to_reference(resolution.analyte, 1.0, row.units)
+                #
+                # Канонизировать можно только при совпадении по равенству
+                # или объявленному синониму (units_match) — не через
+                # convert_to_reference. Единицы, которым нужен множитель
+                # (объявленный «пересчёт»), пересчитывать здесь нечем: числа
+                # ещё нет, коуч впишет его позже в форму, подписанную
+                # написанием бланка. Подменить подпись на единицы референса
+                # молча значило бы, что set_value запишет число коуча как
+                # будто оно уже пересчитано — так пришедший mg/dL превратился
+                # бы в число, помеченное mmol/L, без всякого умножения.
+                if units_match(resolution.analyte, row.units):
                     units = resolution.analyte.units
-                except UnitError:
+                else:
                     problem = _unit_problem(row.units)
             else:
                 try:

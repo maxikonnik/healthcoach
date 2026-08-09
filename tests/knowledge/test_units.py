@@ -155,10 +155,12 @@ def test_units_match_rejects_unknown_units():
     assert units_match(ferritin, "пмоль/л") is False
 
 
-def test_units_match_agrees_with_convert_to_reference():
-    """Единственное правило сопоставления единиц в проекте: если
-    `convert_to_reference` считает единицы сопоставленными (или отвергает
-    их), `units_match` обязан дать тот же ответ — на нём и построен."""
+def test_units_match_agrees_with_convert_to_reference_for_units_needing_no_arithmetic():
+    """Для единиц референса и объявленных синонимов оба правила согласны:
+    `units_match` — True, `convert_to_reference` — переводит без изменения
+    числа. Показатель без объявленного `пересчёт` — ферритин — годится для
+    этого сравнения: у него только референсные единицы и синонимы, ничего,
+    что требовало бы множителя."""
     ferritin = load_references(REFS).analyte("ферритин")
     for units, expected in [
         ("нг/мл", True),
@@ -174,6 +176,33 @@ def test_units_match_agrees_with_convert_to_reference():
         else:
             with pytest.raises(UnitError):
                 convert_to_reference(ferritin, 1.0, units)
+
+
+def test_units_match_is_stricter_than_convert_to_reference_for_a_declared_conversion(
+    tmp_path,
+):
+    """Регресс: первая версия `units_match` буквально вызывала
+    `convert_to_reference` и потому принимала и единицы, объявленные как
+    требующие множителя (`пересчёт`), — а три вызывающих места сравнивают
+    `measurement.value` с коридором без всякого умножения. Единица из
+    `analyte.conversions` обязана остаться несопоставленной для `units_match`,
+    хотя `convert_to_reference` её принимает и пересчитывает."""
+    (tmp_path / "calcium.yaml").write_text(
+        "показатели:\n"
+        "  - id: кальций\n"
+        "    название: Кальций\n"
+        "    единицы: ммоль/л\n"
+        "    пересчёт:\n"
+        "      - из: мг/дл\n"
+        "        множитель: 0.2495\n"
+        "    целевые:\n"
+        "      - оптимум: [2.3, 2.5]\n",
+        encoding="utf-8",
+    )
+    calcium = load_references(tmp_path).analyte("кальций")
+
+    assert units_match(calcium, "мг/дл") is False
+    assert convert_to_reference(calcium, 10.0, "мг/дл") == pytest.approx(2.495)
 
 
 def test_shared_predicate_used_by_scoring_and_snapshot_routes():

@@ -113,6 +113,50 @@ def test_unit_mismatch_blocks_the_derived_value():
     assert "ммоль/л" in verdict.note
 
 
+def test_a_unit_needing_a_declared_factor_blocks_the_derived_value_unconverted(
+    tmp_path,
+):
+    """Тот же регресс, что и в scoring/test_reference_matching.py, но на
+    производном: 10.0 мг/дл кальция без пересчёта (нужен ×0.2495) дал бы
+    отношение 10.0 / 4.0 = 2.5 — «в целевом» для коридора [2.0, 2.5] —
+    хотя настоящее отношение 2.495 / 4.0 = 0.624 — далеко от него.
+    `compute_derived` обязан отказаться считать, а не подставить число как
+    есть."""
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: кальций\n"
+        "    название: Кальций\n"
+        "    единицы: ммоль/л\n"
+        "    пересчёт:\n"
+        "      - из: мг/дл\n"
+        "        множитель: 0.2495\n"
+        "    целевые:\n"
+        "      - оптимум: [2.3, 2.5]\n"
+        "  - id: калий\n"
+        "    название: Калий\n"
+        "    единицы: ммоль/л\n"
+        "    целевые:\n"
+        "      - оптимум: [4.0, 4.5]\n"
+        "производные:\n"
+        "  - id: кальций_калий\n"
+        "    название: Кальций/Калий\n"
+        "    формула: кальций / калий\n"
+        "    оптимум: [2.0, 2.5]\n",
+        encoding="utf-8",
+    )
+    (verdict,) = compute_derived(
+        load_references(tmp_path),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 4.0, "ммоль/л"),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "ммоль/л" in verdict.note
+
+
 def test_declared_unit_synonym_does_not_block_the_derived_value(tmp_path):
     """Регресс: compute_derived сравнивал единицы прямым равенством строк и
     не знал про объявленные синонимы — измерение в объявленном синониме
