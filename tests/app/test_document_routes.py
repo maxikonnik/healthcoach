@@ -280,7 +280,7 @@ def test_failed_upload_leaves_no_row_and_no_file(client):
     with context.session() as repo:
         assert repo.documents.for_snapshot(snapshot_id) == []
     folder = context.documents_dir / str(snapshot_id)
-    assert not folder.exists() or list(folder.iterdir()) == []
+    assert not folder.exists()
 
 
 def test_failed_upload_of_an_unreadable_pdf_leaves_no_row_and_no_file(client):
@@ -298,7 +298,32 @@ def test_failed_upload_of_an_unreadable_pdf_leaves_no_row_and_no_file(client):
     with context.session() as repo:
         assert repo.documents.for_snapshot(snapshot_id) == []
     folder = context.documents_dir / str(snapshot_id)
-    assert not folder.exists() or list(folder.iterdir()) == []
+    assert not folder.exists()
+
+
+def test_unexpected_error_from_read_document_still_cleans_up(client, monkeypatch):
+    """read_document документирует единый тип ошибки, но не гарантирует
+    его: сорвись что-то незаявленное, временный файл не должен остаться
+    висеть без строки в базе, которая дала бы коучу его увидеть или
+    удалить."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+
+    def _boom(_path, _engine=None):
+        raise RuntimeError("что-то пошло не так")
+
+    monkeypatch.setattr("healthcoach.app.routes_documents.read_document", _boom)
+
+    with pytest.raises(RuntimeError):
+        test_client.post(
+            f"/snapshots/{snapshot_id}/documents",
+            files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+        )
+
+    with context.session() as repo:
+        assert repo.documents.for_snapshot(snapshot_id) == []
+    folder = context.documents_dir / str(snapshot_id)
+    assert not folder.exists()
 
 
 def test_error_message_names_the_coachs_filename_once(client):

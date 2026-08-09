@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -53,10 +54,17 @@ def build_router(context: Context, templates) -> APIRouter:
         try:
             read = read_document(staging_path, context.ocr)
         except DocumentError as exc:
-            staging_path.unlink(missing_ok=True)
+            _discard_staging(staging_path, folder)
             raise HTTPException(
                 status_code=400, detail=_coach_facing(exc, staging_path, file)
             ) from exc
+        except Exception:
+            # read_document документирует единый тип ошибки, но обещание —
+            # не гарантия: сорвись что-то незаявленное, временный файл всё
+            # равно не должен остаться висеть без строки в базе, которая
+            # дала бы коучу его увидеть или удалить.
+            _discard_staging(staging_path, folder)
+            raise
 
         prepared = prepare_measurements(context.references, read.table)
 
@@ -145,6 +153,19 @@ def build_router(context: Context, templates) -> APIRouter:
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     return router
+
+
+def _discard_staging(staging_path: Path, folder: Path) -> None:
+    """Убрать временный файл неудачной загрузки и, если это была
+    единственная попытка для этого среза, пустую папку за ним следом.
+
+    `rmdir` отказывает на непустой папке — ничего не задев, если в ней уже
+    лежит документ прежней успешной загрузки или чужая параллельная
+    загрузка успела дописать свой файл первой.
+    """
+    staging_path.unlink(missing_ok=True)
+    with suppress(OSError):
+        folder.rmdir()
 
 
 def _coach_facing(exc: DocumentError, staging_path: Path, file: UploadFile) -> str:
