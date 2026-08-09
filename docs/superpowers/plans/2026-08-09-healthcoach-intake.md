@@ -97,7 +97,8 @@ def test_reopening_keeps_data(tmp_path):
     path = tmp_path / "db.sqlite"
     with open_database(path) as connection:
         connection.execute(
-            "INSERT INTO identities (code, full_name, contacts, note) VALUES (?, ?, ?, ?)",
+            "INSERT INTO identities (code, full_name, sex, birth_date, contacts, note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             ("CL-0001", "Иванова Мария", "@masha", None),
         )
         connection.commit()
@@ -275,13 +276,13 @@ git commit -m "feat: схема базы и открытие с проверко
 - Create: `tests/storage/test_snapshots.py`
 
 **Interfaces:**
-- Consumes: `open_database`, `StorageError` из задачи 1; `Measurement` из `healthcoach.scoring.references`; `Answers` из `healthcoach.scoring.questionnaire`
+- Consumes: `open_database`, `StorageError` из задачи 1. **Больше ничего:** `storage` не импортирует `scoring` — это соседние слои, а не надстройка. Свой `Answers = dict[str, int]` объявляется локально; структурно он совпадает с одноимённым псевдонимом в `scoring`, поэтому словарь передаётся в `collect_findings` напрямую.
 - Produces:
   - `Client(code: str, full_name: str, contacts: str | None, note: str | None)`
-  - `ClientRepository(connection)` с методами `add(full_name, contacts=None, note=None) -> Client`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
+  - `ClientRepository(connection)` с методами `add(full_name, sex, birth_date, contacts=None, note=None) -> Client`, `update(code, sex, birth_date, contacts=None, note=None) -> bool`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
   - `Snapshot(id: int, client_code: str, taken_on: date, note: str | None)`
   - `StoredMeasurement(id: int, analyte_id: str, raw_name: str, value: float, units: str, taken_on: date, confirmed: bool)`
-  - `SnapshotRepository(connection)` с методами `create(client_code, taken_on, note=None) -> Snapshot`, `get(snapshot_id) -> Snapshot | None`, `for_client(client_code) -> list[Snapshot]`, `add_measurement(...) -> StoredMeasurement`, `measurements(snapshot_id) -> list[StoredMeasurement]`, `confirm_measurement(measurement_id) -> None`, `history(client_code, analyte_id) -> list[StoredMeasurement]`, `save_answers(snapshot_id, answers) -> None`, `answers(snapshot_id) -> Answers`
+  - `SnapshotRepository(connection)` с методами `create(client_code, taken_on, note=None) -> Snapshot`, `get(snapshot_id) -> Snapshot | None`, `for_client(client_code) -> list[Snapshot]`, `add_measurement(...) -> StoredMeasurement`, `measurements(snapshot_id) -> list[StoredMeasurement]`, `confirm_measurement(measurement_id, snapshot_id) -> bool`, `history(client_code, analyte_id) -> list[StoredMeasurement]`, `save_answers(snapshot_id, answers) -> None`, `answers(snapshot_id) -> Answers`
 
 **Граница реестра.** `SnapshotRepository` не имеет доступа к таблице `identities` и оперирует только кодами клиентов. `ClientRepository` — единственное место, где ФИО и контакты покидают базу. Это та же граница, что `public_view()` у справочника специалистов; тест проверяет, что в модуле срезов слово `identities` не встречается.
 
@@ -349,7 +350,7 @@ from healthcoach.storage.snapshots import SnapshotRepository
 def repositories(tmp_path):
     with open_database(tmp_path / "db.sqlite") as connection:
         clients = ClientRepository(connection)
-        client = clients.add("Иванова Мария")
+        client = clients.add("Иванова Мария", "ж", date(1990, 5, 17))
         yield client.code, SnapshotRepository(connection)
 
 
@@ -396,7 +397,7 @@ def test_confirming_a_measurement_sticks(repositories):
     stored = snapshots.add_measurement(
         snapshot.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
     )
-    snapshots.confirm_measurement(stored.id)
+    assert snapshots.confirm_measurement(stored.id, snapshot.id) is True
     (read_back,) = snapshots.measurements(snapshot.id)
     assert read_back.confirmed is True
 
@@ -435,6 +436,26 @@ def test_snapshot_module_never_touches_the_identity_table():
     source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
     assert "identities" not in source
     assert "full_name" not in source
+
+
+def test_snapshot_module_does_not_delegate_to_the_client_repository():
+    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта.
+
+    Проверка по дереву импортов, а не по строкам: делегирование не содержало бы
+    ни слова 'identities', ни 'full_name', и текстовый страж его пропустил бы.
+    """
+    import ast
+
+    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+
+    leaking = {name for name in imported if "storage.clients" in name}
+    assert not leaking, f"модуль срезов импортирует {sorted(leaking)}"
 ```
 
 - [ ] **Step 3: Запустить тесты и убедиться, что они падают**
@@ -507,7 +528,8 @@ class ClientRepository:
             raise ValueError("ФИО клиента не может быть пустым")
         code = self.next_code()
         self._connection.execute(
-            "INSERT INTO identities (code, full_name, contacts, note) VALUES (?, ?, ?, ?)",
+            "INSERT INTO identities (code, full_name, sex, birth_date, contacts, note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (code, full_name.strip(), contacts, note),
         )
         self._connection.commit()
@@ -658,11 +680,20 @@ class SnapshotRepository:
         ).fetchall()
         return [_measurement(row) for row in rows]
 
-    def confirm_measurement(self, measurement_id: int) -> None:
-        self._connection.execute(
-            "UPDATE measurements SET confirmed = 1 WHERE id = ?", (measurement_id,)
+    def confirm_measurement(self, measurement_id: int, snapshot_id: int) -> bool:
+        """Подтвердить измерение этого среза. False — такого измерения нет.
+
+        Срез обязателен: без него подтверждение по одному лишь идентификатору
+        затрагивало бы измерение любого другого клиента, а несуществующий
+        идентификатор проходил бы как успех.
+        """
+        cursor = self._connection.execute(
+            "UPDATE measurements SET confirmed = 1 "
+            "WHERE id = ? AND snapshot_id = ?",
+            (measurement_id, snapshot_id),
         )
         self._connection.commit()
+        return cursor.rowcount == 1
 
     def history(self, client_code: str, analyte_id: str) -> list[StoredMeasurement]:
         """Все измерения показателя по клиенту, по дате забора."""
@@ -700,7 +731,7 @@ class SnapshotRepository:
 uv run pytest tests/storage/ -v
 ```
 
-Ожидается: 13 PASS (5 по клиентам, 8 по срезам).
+Ожидается: 14 PASS (5 по клиентам, 9 по срезам).
 
 - [ ] **Step 7: Прогнать весь набор**
 
@@ -708,7 +739,7 @@ uv run pytest tests/storage/ -v
 uv run pytest -q
 ```
 
-Ожидается: 151 проходящих.
+Ожидается: 157 проходящих.
 
 - [ ] **Step 8: Коммит**
 
@@ -1210,7 +1241,7 @@ def resolve_analyte(references: References, raw_name: str) -> Resolution:
 uv run pytest tests/intake/test_resolve.py -v
 ```
 
-Ожидается: 15 PASS (9 параметризованных плюс 6 обычных).
+Ожидается: 13 PASS (9 параметризованных плюс 4 обычных).
 
 - [ ] **Step 5: Коммит**
 
@@ -1366,7 +1397,9 @@ from collections.abc import Sequence
 
 from healthcoach.knowledge.questionnaire import Block, Questionnaire
 
-PAYLOAD_VERSION = "1.0"
+PAYLOAD_VERSION = "1.1"
+"""1.1 добавила ключ «блоки»: без него нельзя отличить вопрос, который
+клиент пропустил, от вопроса, который ему не показывали."""
 
 
 class QuestionnaireHtmlError(Exception):
@@ -1440,11 +1473,14 @@ function restore() {
 }
 
 function download() {
+  // Ключи в двойных кавычках намеренно: страница сама объявляет формат,
+  // который потом разбирает импорт, и тест ищет это объявление в тексте файла.
   const payload = {
-    'версия': PAYLOAD_VERSION,
-    'клиент': CLIENT_CODE,
-    'спецификация': SPEC_VERSION,
-    'ответы': collect(),
+    "версия": PAYLOAD_VERSION,
+    "клиент": CLIENT_CODE,
+    "спецификация": SPEC_VERSION,
+    "блоки": SHOWN_BLOCKS,
+    "ответы": collect(),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)],
                         { type: 'application/json' });
@@ -1511,10 +1547,12 @@ def render_questionnaire(
             parts.extend(_render_question(q, subscale.title) for q in questions)
         sections.append("\n".join(parts))
 
+    shown = [block.id for block in blocks]
     script = (
         f"const CLIENT_CODE = {json.dumps(client_code, ensure_ascii=False)};\n"
         f"const SPEC_VERSION = {json.dumps(questionnaire.version)};\n"
         f"const PAYLOAD_VERSION = {json.dumps(PAYLOAD_VERSION)};\n"
+        f"const SHOWN_BLOCKS = {json.dumps(shown, ensure_ascii=False)};\n"
         f"{_SCRIPT}"
     )
 
@@ -1581,7 +1619,7 @@ git commit -m "feat: автономный HTML-опросник с сохран�
 **Interfaces:**
 - Consumes: `Questionnaire` из `healthcoach.knowledge.questionnaire`; `PAYLOAD_VERSION` из `healthcoach.intake.questionnaire_html`
 - Produces:
-  - `ImportedAnswers(client_code: str, answers: dict[str, int], skipped: tuple[str, ...])`
+  - `ImportedAnswers(client_code: str, shown_blocks: tuple[str, ...], answers: dict[str, int], skipped: tuple[str, ...], not_asked: tuple[str, ...])` — `skipped` это вопросы, которые клиент видел и оставил пустыми; `not_asked` — вопросы блоков, которых ему не отправляли. Смешивать их нельзя: необязательных вопросов в спецификации больше двух сотен, и в общем списке они превращают его в шум.
   - `parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> ImportedAnswers`
   - `AnswersError(Exception)`
 
@@ -1722,7 +1760,9 @@ class AnswersError(Exception):
 class ImportedAnswers:
     client_code: str
     answers: dict[str, int]
+    shown_blocks: tuple[str, ...]
     skipped: tuple[str, ...]
+    not_asked: tuple[str, ...]
 
 
 def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> ImportedAnswers:
@@ -1761,10 +1801,28 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
     if not isinstance(raw_answers, dict):
         raise AnswersError("в файле ответов нет объекта 'ответы'")
 
+    raw_blocks = body.get("блоки")
+    if not isinstance(raw_blocks, list) or not all(
+        isinstance(b, str) for b in raw_blocks
+    ):
+        raise AnswersError("в файле ответов нет списка 'блоки' со строками")
+
+    known_blocks = {block.id for block in questionnaire.blocks}
+    unknown = [b for b in raw_blocks if b not in known_blocks]
+    if unknown:
+        raise AnswersError(
+            f"в спецификации нет блоков {sorted(unknown)}; "
+            f"вероятно, опросник собран по другой версии"
+        )
+    shown_blocks = tuple(raw_blocks)
+
     scales: dict[str, set[int]] = {}
+    asked: set[str] = set()
     for block in questionnaire.blocks:
         for question in block.questions:
             scales[question.id] = {o.score for o in question.options()}
+            if block.id in shown_blocks:
+                asked.add(question.id)
 
     answers: dict[str, int] = {}
     for question_id, score in raw_answers.items():
@@ -1785,11 +1843,19 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
             )
         answers[question_id] = score
 
-    skipped = tuple(qid for qid in scales if qid not in answers)
+    answered_outside = sorted(answers.keys() - asked)
+    if answered_outside:
+        raise AnswersError(
+            f"есть ответы на вопросы из блоков, которые клиенту не показывали: "
+            f"{answered_outside}"
+        )
+
     return ImportedAnswers(
         client_code=str(body.get("клиент", "")),
         answers=answers,
-        skipped=skipped,
+        shown_blocks=shown_blocks,
+        skipped=tuple(qid for qid in scales if qid in asked and qid not in answers),
+        not_asked=tuple(qid for qid in scales if qid not in asked),
     )
 ```
 
@@ -1866,12 +1932,15 @@ git commit -m "feat: импорт ответов клиента с провер�
 **Interfaces:**
 - Consumes: `ClientRepository`, `SnapshotRepository`, `open_database`; `load_questionnaire`, `load_references`, `load_specialists`
 - Produces:
-  - `Context(questionnaire, references, specialists, clients, snapshots)` — собранное состояние приложения
+  - `Repositories(clients, snapshots)` — хранилища поверх одного соединения
+  - `Context(questionnaire, references, specialists, documents_dir, database_path)` — собранное состояние приложения; `Context.session()` — контекстный менеджер, выдающий `Repositories` на один запрос
   - `build_context(data_dir: Path, knowledge_dir: Path) -> Context`
   - `create_app(context: Context) -> FastAPI`
   - Маршруты: `GET /` (список клиентов), `POST /clients` (добавить), `GET /clients/{code}` (карточка), `POST /clients/{code}/snapshots` (новый срез), `GET /clients/{code}/questionnaire` (скачать HTML-опросник)
 
-**Почему приложение собирается из контекста.** База знаний и база данных загружаются один раз при запуске и передаются явно, а не берутся из глобалей. Тесты создают приложение поверх временной базы одной строкой, без монкипатчинга.
+**Почему приложение собирается из контекста.** База знаний загружается один раз при запуске и передаётся явно, а не берётся из глобалей. Тесты создают приложение поверх временной базы одной строкой, без монкипатчинга.
+
+**Почему соединение своё на каждый запрос.** FastAPI выполняет синхронные обработчики в пуле рабочих потоков, а `sqlite3.Connection` принадлежит потоку, в котором создан: общее соединение падает с `ProgrammingError` на первом же обращении к базе. Соединение открывается и закрывается внутри `Context.session()`, поэтому оно всегда принадлежит потоку обработчика и не накапливается — это закрывает и отложенное замечание из задачи 1. Все обращения к базе в обработчике должны находиться внутри `with context.session() as repo:`; наружу выносятся только чтение базы знаний и отрисовка ответа, которым база не нужна.
 
 - [ ] **Step 1: Добавить зависимости**
 
@@ -1895,6 +1964,7 @@ git commit -m "feat: импорт ответов клиента с провер�
 Файл `tests/app/test_clients_routes.py`:
 
 ```python
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -1959,6 +2029,23 @@ def test_questionnaire_download_is_html(client):
     assert "attachment" in response.headers.get("content-disposition", "")
 
 
+def test_requests_from_different_threads_all_reach_the_database(client):
+    """Обработчики выполняются в пуле потоков, соединение нельзя делить.
+
+    sqlite3.Connection принадлежит потоку, в котором создан. Если соединение
+    станет общим на всё приложение, эти запросы упадут с ProgrammingError.
+    """
+    client.post("/clients", data={"full_name": "Иванова Мария"})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        responses = list(
+            pool.map(lambda _: client.get("/clients/CL-0001"), range(24))
+        )
+
+    assert [r.status_code for r in responses] == [200] * 24
+    assert all("Иванова Мария" in r.text for r in responses)
+
+
 def test_questionnaire_can_include_extra_blocks(client):
     client.post("/clients", data={"full_name": "Иванова Мария"})
     response = client.get(
@@ -1986,14 +2073,23 @@ uv run pytest tests/app/test_clients_routes.py -v
 Файл `src/healthcoach/app/deps.py`:
 
 ```python
-"""Состояние приложения: база знаний и база данных.
+"""Состояние приложения: база знаний и доступ к базе данных.
 
-Загружается один раз при запуске и передаётся явно, чтобы тесты могли
-поднять приложение поверх временной базы без монкипатчинга.
+База знаний читается один раз при запуске: она неизменна и общая для всех
+запросов. Соединение с базой данных — наоборот, своё на каждый запрос.
+FastAPI выполняет синхронные обработчики в пуле рабочих потоков, а
+sqlite3.Connection принадлежит потоку, в котором создан; общее соединение
+падало бы с ProgrammingError на первом же обращении. Заодно соединения не
+копятся: каждое закрывается по выходе из запроса.
+
+Контекст передаётся явно, чтобы тесты поднимали приложение поверх временной
+базы без монкипатчинга.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -2006,27 +2102,46 @@ from healthcoach.storage.snapshots import SnapshotRepository
 
 
 @dataclass(frozen=True)
+class Repositories:
+    """Хранилища поверх одного соединения, живущего один запрос."""
+
+    clients: ClientRepository
+    snapshots: SnapshotRepository
+
+
+@dataclass(frozen=True)
 class Context:
     questionnaire: Questionnaire
     references: References
     specialists: Specialists
-    clients: ClientRepository
-    snapshots: SnapshotRepository
     documents_dir: Path
+    database_path: Path
+
+    @contextmanager
+    def session(self) -> Iterator[Repositories]:
+        """Открыть соединение на время одного запроса и закрыть его."""
+        connection = open_database(self.database_path)
+        try:
+            yield Repositories(
+                clients=ClientRepository(connection),
+                snapshots=SnapshotRepository(connection),
+            )
+        finally:
+            connection.close()
 
 
 def build_context(data_dir: Path, knowledge_dir: Path) -> Context:
     """Собрать состояние приложения из папок с данными и базой знаний."""
     documents_dir = data_dir / "documents"
     documents_dir.mkdir(parents=True, exist_ok=True)
-    connection = open_database(data_dir / "healthcoach.db")
+    database_path = data_dir / "healthcoach.db"
+    open_database(database_path).close()
     return Context(
         questionnaire=load_questionnaire(knowledge_dir / "questionnaire.yaml"),
         references=load_references(knowledge_dir / "references"),
         specialists=load_specialists(knowledge_dir / "specialists.yaml"),
-        clients=ClientRepository(connection),
-        snapshots=SnapshotRepository(connection),
         documents_dir=documents_dir,
+        database_path=database_path,
     )
 ```
 
@@ -2172,58 +2287,69 @@ def build_router(context: Context, templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     def clients_page(request: Request):
-        return templates.TemplateResponse(
-            request, "clients.html", {"clients": context.clients.all()}
-        )
+        with context.session() as repo:
+            return templates.TemplateResponse(
+                request, "clients.html", {"clients": repo.clients.all()}
+            )
 
     @router.post("/clients")
     def add_client(full_name: str = Form(...), contacts: str = Form("")):
-        try:
-            client = context.clients.add(full_name, contacts=contacts or None)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        with context.session() as repo:
+            try:
+                client = repo.clients.add(full_name, contacts=contacts or None)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse(f"/clients/{client.code}", status_code=303)
 
     @router.get("/clients/{code}", response_class=HTMLResponse)
     def client_page(request: Request, code: str):
-        client = context.clients.get(code)
-        if client is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
-        return templates.TemplateResponse(
-            request,
-            "client.html",
-            {
-                "client": client,
-                "snapshots": context.snapshots.for_client(code),
-                "extra_blocks": [
-                    b for b in context.questionnaire.blocks if not b.core
-                ],
-            },
-        )
+        with context.session() as repo:
+            client = repo.clients.get(code)
+            if client is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+            return templates.TemplateResponse(
+                request,
+                "client.html",
+                {
+                    "client": client,
+                    "snapshots": repo.snapshots.for_client(code),
+                    "extra_blocks": [
+                        b for b in context.questionnaire.blocks if not b.core
+                    ],
+                },
+            )
 
     @router.post("/clients/{code}/snapshots")
     def add_snapshot(code: str, taken_on: str = Form(...), note: str = Form("")):
-        if context.clients.get(code) is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
-        try:
-            when = date.fromisoformat(taken_on)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="дата в формате ГГГГ-ММ-ДД") from exc
-        context.snapshots.create(code, when, note=note or None)
+        with context.session() as repo:
+            if repo.clients.get(code) is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+            try:
+                when = date.fromisoformat(taken_on)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="дата в формате ГГГГ-ММ-ДД"
+                ) from exc
+            repo.snapshots.create(code, when, note=note or None)
         return RedirectResponse(f"/clients/{code}", status_code=303)
 
     @router.get("/clients/{code}/questionnaire")
     def questionnaire_file(code: str, extra: list[str] = Query(default=[])):
-        if context.clients.get(code) is None:
-            raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+        with context.session() as repo:
+            if repo.clients.get(code) is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
         try:
-            html = render_questionnaire(context.questionnaire, code, extra_block_ids=extra)
+            html = render_questionnaire(
+                context.questionnaire, code, extra_block_ids=extra
+            )
         except QuestionnaireHtmlError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return HTMLResponse(
             html,
             headers={
-                "content-disposition": f'attachment; filename="questionnaire-{code}.html"'
+                "content-disposition": (
+                    f'attachment; filename="questionnaire-{code}.html"'
+                )
             },
         )
 
@@ -2275,7 +2401,7 @@ if __name__ == "__main__":
 uv run pytest tests/app/ -v
 ```
 
-Ожидается: 8 PASS.
+Ожидается: 9 PASS.
 
 - [ ] **Step 8: Поднять приложение и посмотреть**
 
@@ -2303,11 +2429,21 @@ git commit -m "feat: каркас приложения, карточка кли�
 - Create: `tests/app/test_snapshot_routes.py`
 
 **Interfaces:**
-- Consumes: `Context`; `parse_answers`, `AnswersError`; `resolve_analyte`; `convert_to_reference`, `UnitError`; `collect_findings`, `Subject`, `Measurement`
+- Consumes: `Context` и `Context.session()`; `parse_answers`, `AnswersError`, `ImportedAnswers`; `resolve_analyte`; `convert_to_reference`, `UnitError`; `collect_findings`, `Subject`, `Measurement`
 - Produces:
   - Маршруты: `GET /snapshots/{id}`, `POST /snapshots/{id}/answers` (загрузка файла), `POST /snapshots/{id}/measurements` (ручной ввод), `POST /snapshots/{id}/measurements/{mid}/confirm`, `GET /snapshots/{id}/findings`
 
+**Ворота сверки держатся на двух проверках.** Подтверждение привязано к срезу: `confirm_measurement` меняет строку только если она принадлежит этому срезу, иначе 404. Без этого идентификатор среза в адресе ничего бы не значил, и подтверждение затрагивало бы измерение другого клиента. Загрузка ответов сверяет код клиента из файла с кодом клиента среза: в папке загрузок у коуча лежат анкеты всех клиентов, и различаются они только именем файла.
+
+**Подтверждённый показатель не исчезает из находок.** Даже нераспознанный: он доходит до находок со статусом «правило не задано» и подписью из бланка. Иначе коуч видит «подтверждено» на экране и ничего — в находках, и считает, что показатель учтён.
+
 **Как работает ввод показателя.** Коуч вводит название так, как оно написано в бланке, значение, единицы и дату забора. Система распознаёт показатель и пересчитывает единицы. Если название не распознано или единицы не сопоставлены — измерение **всё равно сохраняется**, но помечается, и на экране видно почему. Находки считаются только по подтверждённым измерениям: это те самые ворота сверки из спецификации.
+
+**Работа с базой.** Каждое обращение к базе — внутри `with context.session() as repo:`. Обработчики синхронные, FastAPI выполняет их в пуле потоков, общее соединение падало бы с `ProgrammingError` (см. задачу 7). Внутри одного обработчика открывается одна сессия, а не по одной на каждое чтение.
+
+**Почему загрузка ответов не делает редирект.** `parse_answers` возвращает разбор: сколько ответов пришло, какие вопросы клиент видел и пропустил (`skipped`) и какие ему вовсе не показывали (`not_asked`). Этот разбор нужен коучу сразу — поэтому загрузка отрисовывает страницу среза с отчётом об импорте, а не отправляет редиректом. Показывается только `skipped`: это вопросы, с которыми коучу есть что делать. `not_asked` на экран не выводится вообще — там больше двух сотен вопросов необязательных блоков, к клиенту отношения не имеющих.
+
+**Отложено сознательно:** список показанных блоков не сохраняется в базу, поэтому отчёт об импорте виден только сразу после загрузки; при следующем открытии страницы остаётся счётчик загруженных ответов. Хранение потребовало бы колонки в таблице срезов, а сегодня разбор нужен именно в момент загрузки.
 
 - [ ] **Step 1: Написать падающие тесты**
 
@@ -2322,6 +2458,7 @@ from fastapi.testclient import TestClient
 
 from healthcoach.app.deps import build_context
 from healthcoach.app.main import create_app
+from healthcoach.intake.questionnaire_html import PAYLOAD_VERSION
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
 
@@ -2337,6 +2474,27 @@ def _snapshot(test_client) -> int:
     test_client.post("/clients", data={"full_name": "Иванова Мария"})
     test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
     return 1
+
+
+def _measurements(context, snapshot_id):
+    with context.session() as repo:
+        return repo.snapshots.measurements(snapshot_id)
+
+
+def _stored_answers(context, snapshot_id):
+    with context.session() as repo:
+        return repo.snapshots.answers(snapshot_id)
+
+
+def _answers_file(context, answers, blocks):
+    body = {
+        "версия": PAYLOAD_VERSION,
+        "клиент": "CL-0001",
+        "спецификация": context.questionnaire.version,
+        "блоки": blocks,
+        "ответы": answers,
+    }
+    return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
 def test_snapshot_page_renders(client):
@@ -2364,7 +2522,7 @@ def test_measurement_is_recognised_and_stored(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.analyte_id == "ферритин"
     assert stored.value == 18.0
     assert stored.confirmed is False
@@ -2382,7 +2540,7 @@ def test_alias_units_are_converted_on_entry(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.units == "нг/мл"
     assert stored.value == 18.0
 
@@ -2399,7 +2557,7 @@ def test_unknown_analyte_is_stored_and_flagged(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.analyte_id == ""
     assert stored.raw_name == "Гомоцистеин"
 
@@ -2419,7 +2577,7 @@ def test_unmatched_units_are_stored_and_flagged(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     assert stored.units == "пмоль/л"
     page = test_client.get(f"/snapshots/{snapshot_id}").text
     assert "единицы" in page
@@ -2437,34 +2595,47 @@ def test_confirming_a_measurement_shows_it_as_confirmed(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
-    (again,) = context.snapshots.measurements(snapshot_id)
+    (again,) = _measurements(context, snapshot_id)
     assert again.confirmed is True
 
 
 def test_answers_upload_is_stored(client):
     test_client, context = client
     snapshot_id = _snapshot(test_client)
-    questionnaire = context.questionnaire
-    block = questionnaire.block("obraz_zizni")
+    block = context.questionnaire.block("obraz_zizni")
     answers = {q.id: min(o.score for o in q.options()) for q in block.questions}
-    payload = json.dumps(
-        {
-            "версия": "1.0",
-            "клиент": "CL-0001",
-            "спецификация": questionnaire.version,
-            "ответы": answers,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
+    core = [b.id for b in context.questionnaire.blocks if b.core]
 
     response = test_client.post(
         f"/snapshots/{snapshot_id}/answers",
-        files={"file": ("ответы.json", payload, "application/json")},
+        files={
+            "file": ("ответы.json", _answers_file(context, answers, core), "application/json")
+        },
     )
-    assert response.status_code in (200, 303)
-    assert context.snapshots.answers(snapshot_id) == answers
+    assert response.status_code == 200
+    assert _stored_answers(context, snapshot_id) == answers
+
+
+def test_upload_reports_skipped_but_not_the_blocks_never_shown(client):
+    """Коуч видит, что клиент пропустил, и не видит того, чего ему не слали."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    block = context.questionnaire.block("obraz_zizni")
+    answers = {block.questions[0].id: 0}
+    core = [b.id for b in context.questionnaire.blocks if b.core]
+
+    page = test_client.post(
+        f"/snapshots/{snapshot_id}/answers",
+        files={
+            "file": ("ответы.json", _answers_file(context, answers, core), "application/json")
+        },
+    ).text
+
+    assert block.questions[1].id in page
+    candida = context.questionnaire.block("oprosnik_candida")
+    assert candida.questions[0].id not in page
 
 
 def test_broken_answers_upload_is_reported(client):
@@ -2491,7 +2662,7 @@ def test_findings_respect_the_sex_parameter(client):
             "taken_on": "2026-08-20",
         },
     )
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
 
     female = test_client.get(
@@ -2520,7 +2691,7 @@ def test_findings_use_only_confirmed_measurements(client):
     before = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" not in before
 
-    (stored,) = context.snapshots.measurements(snapshot_id)
+    (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
     after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" in after
@@ -2555,6 +2726,22 @@ uv run pytest tests/app/test_snapshot_routes.py -v
 {% else %}
 <p class="muted">Ответы не загружены.</p>
 {% endif %}
+
+{% if imported %}
+<p>Файл разобран: {{ imported.answers | length }} ответов,
+  пропущено {{ imported.skipped | length }}.</p>
+{% if imported.skipped %}
+<details>
+  <summary class="warn">Клиент видел, но не ответил — {{ imported.skipped | length }}</summary>
+  <ul>
+    {% for question_id in imported.skipped %}
+    <li class="muted">{{ question_id }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endif %}
+
 <form method="post" action="/snapshots/{{ snapshot.id }}/answers"
       enctype="multipart/form-data">
   <label>Файл ответов<input type="file" name="file" accept=".json" required></label>
@@ -2626,12 +2813,13 @@ from datetime import date
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from healthcoach.app.deps import Context
-from healthcoach.intake.answers import AnswersError, parse_answers
+from healthcoach.app.deps import Context, Repositories
+from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.units import UnitError, convert_to_reference
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.storage.snapshots import StoredMeasurement
 
 UNRESOLVED = ""
 """analyte_id нераспознанного показателя: он хранится, но не трактуется."""
@@ -2639,7 +2827,7 @@ UNRESOLVED = ""
 
 @dataclass(frozen=True)
 class Row:
-    measurement: object
+    measurement: StoredMeasurement
     title: str
     problem: str | None
 
@@ -2647,19 +2835,22 @@ class Row:
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
-    def _snapshot_or_404(snapshot_id: int):
-        snapshot = context.snapshots.get(snapshot_id)
+    def _snapshot_or_404(repo: Repositories, snapshot_id: int):
+        snapshot = repo.snapshots.get(snapshot_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
         return snapshot
 
-    def _rows(snapshot_id: int) -> list[Row]:
+    def _rows(repo: Repositories, snapshot_id: int) -> list[Row]:
         rows: list[Row] = []
-        for measurement in context.snapshots.measurements(snapshot_id):
+        for measurement in repo.snapshots.measurements(snapshot_id):
             if not measurement.analyte_id:
-                rows.append(
-                    Row(measurement, measurement.raw_name, "показатель не распознан")
-                )
+                resolution = resolve_analyte(context.references, measurement.raw_name)
+                problem = "показатель не распознан"
+                if resolution.is_ambiguous:
+                    candidates = ", ".join(a.name for a in resolution.candidates)
+                    problem = f"название подходит нескольким показателям: {candidates}"
+                rows.append(Row(measurement, measurement.raw_name, problem))
                 continue
             analyte = context.references.analyte(measurement.analyte_id)
             if analyte is None:
@@ -2673,29 +2864,58 @@ def build_router(context: Context, templates) -> APIRouter:
             rows.append(Row(measurement, analyte.name, problem))
         return rows
 
-    @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
-    def snapshot_page(request: Request, snapshot_id: int):
-        snapshot = _snapshot_or_404(snapshot_id)
+    def _page(
+        request: Request,
+        repo: Repositories,
+        snapshot,
+        imported: ImportedAnswers | None = None,
+    ):
         return templates.TemplateResponse(
             request,
             "snapshot.html",
             {
                 "snapshot": snapshot,
-                "rows": _rows(snapshot_id),
-                "answers_count": len(context.snapshots.answers(snapshot_id)),
+                "rows": _rows(repo, snapshot.id),
+                "answers_count": len(repo.snapshots.answers(snapshot.id)),
+                "imported": imported,
             },
         )
 
-    @router.post("/snapshots/{snapshot_id}/answers")
-    async def upload_answers(snapshot_id: int, file: UploadFile = File(...)):
-        _snapshot_or_404(snapshot_id)
+    @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
+    def snapshot_page(request: Request, snapshot_id: int):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            return _page(request, repo, snapshot)
+
+    @router.post("/snapshots/{snapshot_id}/answers", response_class=HTMLResponse)
+    async def upload_answers(
+        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    ):
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+
         payload = await file.read()
         try:
             imported = parse_answers(context.questionnaire, payload)
         except AnswersError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        context.snapshots.save_answers(snapshot_id, imported.answers)
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+
+        # Код клиента лежит в самом файле. Не сверить его — значит позволить
+        # анкете одного человека определить рекомендации другому: в папке
+        # загрузок у коуча лежат файлы всех клиентов, и различаются они
+        # только именем.
+        if imported.client_code != snapshot.client_code:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"файл заполнен клиентом {imported.client_code!r}, "
+                    f"а срез принадлежит {snapshot.client_code!r}"
+                ),
+            )
+
+        with context.session() as repo:
+            repo.snapshots.save_answers(snapshot_id, imported.answers)
+            return _page(request, repo, snapshot, imported=imported)
 
     @router.post("/snapshots/{snapshot_id}/measurements")
     def add_measurement(
@@ -2705,7 +2925,6 @@ def build_router(context: Context, templates) -> APIRouter:
         units: str = Form(...),
         taken_on: str = Form(...),
     ):
-        _snapshot_or_404(snapshot_id)
         try:
             number = float(value.replace(",", "."))
         except ValueError as exc:
@@ -2725,20 +2944,27 @@ def build_router(context: Context, templates) -> APIRouter:
             except UnitError:
                 stored_value, stored_units = number, units
 
-        context.snapshots.add_measurement(
-            snapshot_id,
-            analyte_id=analyte_id,
-            raw_name=raw_name,
-            value=stored_value,
-            units=stored_units,
-            taken_on=when,
-        )
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            repo.snapshots.add_measurement(
+                snapshot_id,
+                analyte_id=analyte_id,
+                raw_name=raw_name,
+                value=stored_value,
+                units=stored_units,
+                taken_on=when,
+            )
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/confirm")
     def confirm(snapshot_id: int, measurement_id: int):
-        _snapshot_or_404(snapshot_id)
-        context.snapshots.confirm_measurement(measurement_id)
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+            if not repo.snapshots.confirm_measurement(measurement_id, snapshot_id):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"в срезе {snapshot_id} нет показателя {measurement_id}",
+                )
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
@@ -2750,16 +2976,19 @@ def build_router(context: Context, templates) -> APIRouter:
         с обезличиванием, которому нужны те же поля. Так они хотя бы
         задаются снаружи, а не зашиты в код.
         """
-        snapshot = _snapshot_or_404(snapshot_id)
-        measurements = [
-            Measurement(m.analyte_id, m.value, m.units)
-            for m in context.snapshots.measurements(snapshot_id)
-            if m.confirmed and m.analyte_id
-        ]
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            measurements = [
+                Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
+                for m in repo.snapshots.measurements(snapshot_id)
+                if m.confirmed
+            ]
+            answers = repo.snapshots.answers(snapshot_id)
+
         found = collect_findings(
             context.questionnaire,
             context.references,
-            context.snapshots.answers(snapshot_id),
+            answers,
             measurements,
             Subject(sex=sex, age=age),
         )
@@ -2794,7 +3023,7 @@ from healthcoach.app import routes_clients, routes_snapshots
 uv run pytest tests/app/ -v
 ```
 
-Ожидается: 19 PASS.
+Ожидается: 25 PASS.
 
 - [ ] **Step 7: Прогнать весь набор**
 
@@ -2802,7 +3031,7 @@ uv run pytest tests/app/ -v
 uv run pytest -q
 ```
 
-Ожидается: 219 проходящих.
+Ожидается: 252 проходящих.
 
 - [ ] **Step 8: Пройти сквозной путь руками**
 
@@ -2812,9 +3041,10 @@ uv run python -m healthcoach.app.main
 
 1. Добавить клиента, создать срез.
 2. Скачать опросник, заполнить в браузере несколько блоков, скачать ответы.
-3. Загрузить файл ответов в срез.
+3. Загрузить файл ответов в срез — убедиться, что отчёт об импорте показывает пропущенные вопросы и не показывает вопросы блоков, которых клиенту не отправляли.
 4. Ввести ферритин 18 нг/мл, подтвердить.
 5. Открыть находки — дефицит ферритина и степени по заполненным блокам.
+6. Остановить `Ctrl+C`, удалить созданную базу `data/healthcoach.db` — это проверочные данные, им в рабочей базе не место.
 
 - [ ] **Step 9: Коммит**
 
@@ -2831,4 +3061,6 @@ git commit -m "feat: экран среза с ручным вводом пока
 
 **План 4 — интерпретация и отчёт.** Обезличивание с обязательным тестом на утечку, адаптер `LLMProvider` поверх `claude -p`, сборка черновика с привязкой к находкам, экран правки и утверждения, PDF через WeasyPrint, графики динамики, портфолио с подсветкой врачей.
 
-**Отложено сознательно и записано:** пол и возраст клиента жёстко заданы в маршруте находок (`Subject(sex="ж", age=35)`) — их место в карточке клиента, и они добавляются планом 4 вместе с обезличиванием, которому эти же поля нужны. Пока это видно в коде явной строкой, а не спрятано.
+**Переход схемы не имеет права ломать базу.** Карточки, заведённые до версии 2, остаются с пустыми полом и датой рождения. `Client.birth_date` поэтому `date | None`, а не `date`: разбор пустой строки как даты валил бы список клиентов, а не только находки, и починить карточку было бы негде. Карточка честно показывает, что не заполнена, форма на её странице заполняет, находки до этого отказываются считать с объяснением.
+
+**Пол и дата рождения — в карточке клиента.** Изначально план откладывал их до плана 4 и оставлял в маршруте находок `Subject(sex="ж", age=35)`. Финальное ревью показало, что оговорка «задаются снаружи» неверна: ссылка со страницы среза не передаёт ничего, поэтому находки считались для 35-летней женщины по каждому клиенту, и в отчёте это никак не было видно. Мужчина с ферритином 35 нг/мл получал «ниже целевого» вместо «дефицит». Теперь пол и дата рождения обязательны в карточке, возраст считается на дату среза, а заголовок находок называет, для кого они посчитаны.

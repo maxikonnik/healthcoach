@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Срез {{ snapshot.taken_on }}{% endblock %}
+{% block body %}
+<nav>
+  <a href="/clients/{{ snapshot.client_code }}">← {{ snapshot.client_code }}</a>
+</nav>
+<h1>Срез {{ snapshot.taken_on }}
+  <span class="muted">{{ snapshot.client_code }}</span></h1>
+
+<h2>Анкета</h2>
+{% if answers_count %}
+<p>Загружено ответов: {{ answers_count }}.</p>
+{% else %}
+<p class="muted">Ответы не загружены.</p>
+{% endif %}
+
+{% if imported %}
+<p>Файл разобран: {{ imported.answers | length }} ответов,
+  пропущено {{ imported.skipped | length }}.</p>
+{% if imported.skipped %}
+<details>
+  <summary class="warn">Клиент видел, но не ответил — {{ imported.skipped | length }}</summary>
+  <ul>
+    {% for question_id in imported.skipped %}
+    <li class="muted">{{ question_id }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endif %}
+
+<form method="post" action="/snapshots/{{ snapshot.id }}/answers"
+      enctype="multipart/form-data">
+  <label>Файл ответов<input type="file" name="file" accept=".json" required></label>
+  <button type="submit">Загрузить</button>
+</form>
+
+<h2>Показатели</h2>
+<form method="post" action="/snapshots/{{ snapshot.id }}/measurements">
+  <label>Название из бланка<input name="raw_name" required
+         placeholder="Ферритин (S-Ferritin)"></label>
+  <label>Значение<input name="value" required inputmode="decimal"></label>
+  <label>Единицы<input name="units" required placeholder="нг/мл"></label>
+  <label>Дата забора<input type="date" name="taken_on" required></label>
+  <button type="submit">Добавить</button>
+</form>
+
+{% if rows %}
+<table>
+  <tr>
+    <th>Из бланка</th><th>Показатель</th><th>Значение</th>
+    <th>Дата забора</th><th>Статус</th><th></th>
+  </tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.measurement.raw_name }}</td>
+    <td>
+      {% if row.problem %}<span class="warn">{{ row.problem }}</span>
+      {% else %}{{ row.title }}{% endif %}
+    </td>
+    <td>{{ row.measurement.value }} {{ row.measurement.units }}</td>
+    <td>{{ row.measurement.taken_on }}</td>
+    <td>
+      {% if row.measurement.confirmed %}подтверждено
+      {% else %}<span class="muted">не сверено</span>{% endif %}
+    </td>
+    <td>
+      {% if not row.measurement.confirmed %}
+      <form method="post"
+            action="/snapshots/{{ snapshot.id }}/measurements/{{ row.measurement.id }}/confirm">
+        <button type="submit">Подтвердить</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Показателей пока нет.</p>
+{% endif %}
+
+<h2>Находки</h2>
+<p><a href="/snapshots/{{ snapshot.id }}/findings">Открыть находки</a></p>
+<p class="muted">В находки идут только подтверждённые показатели.</p>
+{% endblock %}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Health Coaching{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 60rem;
+           margin-inline: auto; padding: 1rem 1rem 4rem; }
+    a { color: inherit; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid; }
+    th { font-weight: 600; opacity: .7; font-size: .85rem; }
+    form { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap;
+           align-items: end; }
+    label { display: grid; gap: .2rem; font-size: .85rem; opacity: .8; }
+    input, select, button { font: inherit; padding: .4rem .5rem; }
+    nav { margin-bottom: 1.5rem; font-size: .9rem; }
+    .muted { opacity: .6; }
+    .warn { color: #b45309; }
+    .bad { color: #b91c1c; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav><a href="/">← Клиенты</a></nav>
+  {% block body %}{% endblock %}
+</body>
+</html>
