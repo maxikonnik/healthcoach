@@ -22,9 +22,12 @@ from healthcoach.intake.ocr import AppleVisionEngine, OCREngine
 from healthcoach.knowledge.questionnaire import Questionnaire, load_questionnaire
 from healthcoach.knowledge.references import References, load_references
 from healthcoach.knowledge.specialists import Specialists, load_specialists
+from healthcoach.llm.provider import ClaudeCodeProvider, LLMProvider
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.documents import DocumentRepository
+from healthcoach.storage.drafts import DraftRepository
+from healthcoach.storage.requests import RequestRepository
 from healthcoach.storage.snapshots import SnapshotRepository
 
 
@@ -35,6 +38,8 @@ class Repositories:
     clients: ClientRepository
     snapshots: SnapshotRepository
     documents: DocumentRepository
+    requests: RequestRepository
+    drafts: DraftRepository
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,7 @@ class Context:
     documents_dir: Path
     database_path: Path
     ocr: OCREngine | None
+    llm: LLMProvider
 
     @contextmanager
     def session(self) -> Iterator[Repositories]:
@@ -55,6 +61,8 @@ class Context:
                 clients=ClientRepository(connection),
                 snapshots=SnapshotRepository(connection),
                 documents=DocumentRepository(connection),
+                requests=RequestRepository(connection),
+                drafts=DraftRepository(connection),
             )
         finally:
             connection.close()
@@ -82,4 +90,5 @@ def build_context(data_dir: Path, knowledge_dir: Path) -> Context:
         documents_dir=documents_dir,
         database_path=database_path,
         ocr=engine,
+        llm=ClaudeCodeProvider(),
     )

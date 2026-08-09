@@ -360,3 +360,123 @@ def test_interrupted_migration_leaves_no_half_applied_state(tmp_path, monkeypatc
     assert version == SCHEMA_VERSION
     assert by_id[1].value == 18.0
     assert by_id[5].value == 0.35
+
+
+SCHEMA_V4 = """
+CREATE TABLE identities (
+    code        TEXT PRIMARY KEY,
+    full_name   TEXT NOT NULL,
+    sex         TEXT NOT NULL,
+    birth_date  TEXT NOT NULL,
+    contacts    TEXT,
+    note        TEXT
+);
+
+CREATE TABLE snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_code  TEXT NOT NULL REFERENCES identities(code) ON DELETE CASCADE,
+    taken_on     TEXT NOT NULL,
+    note         TEXT
+);
+
+CREATE INDEX snapshots_by_client
+    ON snapshots (client_code, taken_on);
+
+CREATE TABLE documents (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    stored_path  TEXT NOT NULL,
+    added_at     TEXT NOT NULL,
+    unparsed     TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE measurements (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    analyte_id   TEXT NOT NULL,
+    raw_name     TEXT NOT NULL,
+    value        REAL,
+    raw_value    TEXT NOT NULL DEFAULT '',
+    units        TEXT NOT NULL,
+    taken_on     TEXT NOT NULL,
+    document_id  INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    source       TEXT NOT NULL DEFAULT 'ручной ввод',
+    confirmed    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX measurements_by_snapshot
+    ON measurements (snapshot_id);
+
+CREATE INDEX measurements_by_analyte
+    ON measurements (analyte_id, taken_on);
+
+CREATE TABLE answers (
+    snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    question_id  TEXT NOT NULL,
+    score        INTEGER NOT NULL,
+    PRIMARY KEY (snapshot_id, question_id)
+);
+"""
+
+
+def _version_four_database(path: Path) -> None:
+    connection = sqlite3.connect(path)
+    connection.executescript(SCHEMA_V4)
+    connection.execute(
+        "INSERT INTO identities VALUES (?, ?, ?, ?, ?, ?)",
+        ("CL-0001", "Иванова Мария", "ж", "1990-05-17", "@masha", None),
+    )
+    connection.execute(
+        "INSERT INTO snapshots (id, client_code, taken_on, note) VALUES (?, ?, ?, ?)",
+        (1, "CL-0001", "2026-09-01", None),
+    )
+    connection.execute(
+        "INSERT INTO documents "
+        "(id, snapshot_id, filename, stored_path, added_at, unparsed) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, 1, "Биохимия.pdf", "/data/documents/1/a.pdf", "2026-09-01T00:00:00", ""),
+    )
+    connection.execute(
+        "INSERT INTO measurements "
+        "(id, snapshot_id, analyte_id, raw_name, value, raw_value, units, "
+        " taken_on, document_id, source, confirmed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1,
+            1,
+            "ферритин",
+            "Ферритин",
+            18.0,
+            "18.0",
+            "нг/мл",
+            "2026-08-20",
+            1,
+            "ручной ввод",
+            1,
+        ),
+    )
+    connection.execute("PRAGMA user_version = 4")
+    connection.commit()
+    connection.close()
+
+
+def test_version_four_database_gains_the_report_tables(tmp_path):
+    """Переход добавляет таблицы и не трогает то, что уже лежит."""
+    path = tmp_path / "db.sqlite"
+    _version_four_database(path)
+
+    with open_database(path) as connection:
+        (version,) = connection.execute("PRAGMA user_version").fetchone()
+        (stored,) = SnapshotRepository(connection).measurements(1)
+        names = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+
+    assert version == SCHEMA_VERSION
+    assert {"requests", "draft_sections", "draft_approvals"} <= names
+    assert stored.value == 18.0
+    assert stored.confirmed is True

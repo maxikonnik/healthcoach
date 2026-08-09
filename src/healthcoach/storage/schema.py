@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS identities (
@@ -64,6 +64,29 @@ CREATE TABLE IF NOT EXISTS answers (
     question_id  TEXT NOT NULL,
     score        INTEGER NOT NULL,
     PRIMARY KEY (snapshot_id, question_id)
+);
+
+CREATE TABLE IF NOT EXISTS requests (
+    snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    raw          TEXT NOT NULL,
+    redacted     TEXT NOT NULL DEFAULT '',
+    approved     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS draft_sections (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    section_id   TEXT NOT NULL,
+    generated    TEXT NOT NULL,
+    edited       TEXT NOT NULL DEFAULT '',
+    finding_ids  TEXT NOT NULL DEFAULT '',
+    UNIQUE (snapshot_id, section_id)
+);
+
+CREATE TABLE IF NOT EXISTS draft_approvals (
+    snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    approved_at  TEXT NOT NULL,
+    knowledge    TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -166,6 +189,40 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         WHERE id IN (SELECT measurement_id FROM documents_v3_links)
         """,
         "DROP TABLE documents_v3_links",
+    ),
+    4: (
+        # На свежей базе эти CREATE TABLE не делают ничего: SCHEMA уже
+        # создала requests/draft_sections/draft_approvals через executescript
+        # раньше, чем _migrate дойдёт до этого перехода, и IF NOT EXISTS
+        # делает повтор безвредным. Работает только сам факт наличия ключа
+        # 4 — он и поднимает user_version у старой базы до 5. Тела
+        # переходов здесь ради единообразия со старыми записями словаря.
+        """
+        CREATE TABLE IF NOT EXISTS requests (
+            snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+            raw          TEXT NOT NULL,
+            redacted     TEXT NOT NULL DEFAULT '',
+            approved     INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS draft_sections (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            section_id   TEXT NOT NULL,
+            generated    TEXT NOT NULL,
+            edited       TEXT NOT NULL DEFAULT '',
+            finding_ids  TEXT NOT NULL DEFAULT '',
+            UNIQUE (snapshot_id, section_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS draft_approvals (
+            snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+            approved_at  TEXT NOT NULL,
+            knowledge    TEXT NOT NULL DEFAULT ''
+        )
+        """,
     ),
 }
 """Что доделать в базе версии N, чтобы она стала версией N+1.

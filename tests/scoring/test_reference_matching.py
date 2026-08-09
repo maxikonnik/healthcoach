@@ -173,3 +173,75 @@ def test_resolves_analyte_by_synonym():
     )
     assert verdict.analyte_id == "ферритин"
     assert verdict.status == "дефицит"
+
+
+def test_only_the_unresolved_path_says_the_title_came_from_the_document():
+    """`rule_missing` поднят на четырёх путях, а заголовок из бланка
+    приходит ровно с одного. Маска, стоящая на `rule_missing`, прячет от
+    модели названия из базы знаний коуча — таблица ниже перечисляет все
+    четыре пути и то, откуда у каждого берётся заголовок."""
+    (unresolved,) = check_measurements(
+        _refs(),
+        [Measurement("", 12.0, "мкмоль/л", label="Гомоцистеин по Инвитро")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert unresolved.rule_missing is True
+    assert unresolved.title == "Гомоцистеин по Инвитро"
+    assert unresolved.title_from_document is True
+    assert unresolved.units_from_document is True
+
+    (no_value,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", None, "нг/мл", label="KOROLKOVA E.V. Ферритин")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert no_value.rule_missing is True
+    assert no_value.title_from_document is True
+
+    (mismatch,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", 18.0, "мг/дл", label="KOROLKOVA E.V. Ферритин")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert mismatch.rule_missing is True
+    assert mismatch.title == "Ферритин"
+    # Название — из базы знаний, единицы — из бланка.
+    assert mismatch.title_from_document is False
+    assert mismatch.units_from_document is True
+
+
+def test_a_target_missing_for_this_sex_and_age_keeps_the_title_from_the_knowledge_base(
+    tmp_path,
+):
+    """Четвёртый путь с `rule_missing`: показатель распознан, единицы
+    сошлись, но целевого коридора для этого пола и возраста нет."""
+    (tmp_path / "test.yaml").write_text(
+        "показатели:\n"
+        "  - id: тестостерон\n"
+        "    название: Тестостерон\n"
+        "    единицы: нмоль/л\n"
+        "    целевые:\n"
+        "      - условие: {пол: м}\n"
+        "        оптимум: [12.0, 30.0]\n",
+        encoding="utf-8",
+    )
+    (verdict,) = check_measurements(
+        load_references(tmp_path),
+        [Measurement("тестостерон", 1.2, "нмоль/л", label="KOROLKOVA E.V.")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "правило не задано"
+    assert verdict.rule_missing is True
+    assert verdict.title == "Тестостерон"
+    assert verdict.title_from_document is False
+    assert verdict.units_from_document is False
+
+
+def test_the_row_of_the_snapshot_reaches_the_verdict():
+    """Различитель нераспознанных находок берётся отсюда."""
+    (verdict,) = check_measurements(
+        _refs(),
+        [Measurement("", 12.0, "мкмоль/л", label="Гомоцистеин", row_id=41)],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.row_id == 41

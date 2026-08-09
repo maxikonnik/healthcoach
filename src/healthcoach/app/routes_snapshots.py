@@ -38,6 +38,15 @@ class DocumentImport:
     filename: str
     source: str
     count: int
+    header: tuple[str, ...] = ()
+    """Первые строки документа — шапка бланка, показываемая рядом с именем
+    из карточки клиента, чтобы коуч мог свериться сам."""
+    client_name: str = ""
+    belongs: bool = True
+    """False — основа фамилии клиента (name_stems) не нашлась в тексте
+    документа. Не отказ: распознавание коверкает буквы, ложный отказ на
+    своём же клиенте хуже предупреждения, которое коуч может прочитать
+    и отклонить."""
 
 
 def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
@@ -219,7 +228,9 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404, detail=f"нет клиента {snapshot.client_code}"
                 )
             measurements = [
-                Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
+                Measurement(
+                    m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id
+                )
                 for m in repo.snapshots.measurements(snapshot_id)
                 if m.confirmed
             ]

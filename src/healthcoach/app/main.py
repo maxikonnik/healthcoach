@@ -7,7 +7,12 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 
-from healthcoach.app import routes_clients, routes_documents, routes_snapshots
+from healthcoach.app import (
+    routes_clients,
+    routes_documents,
+    routes_report,
+    routes_snapshots,
+)
 from healthcoach.app.deps import Context, build_context
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -20,6 +25,7 @@ def create_app(context: Context) -> FastAPI:
     app.include_router(routes_clients.build_router(context, templates))
     app.include_router(routes_snapshots.build_router(context, templates))
     app.include_router(routes_documents.build_router(context, templates))
+    app.include_router(routes_report.build_router(context, templates))
     return app
 
 

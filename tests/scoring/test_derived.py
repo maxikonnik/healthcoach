@@ -223,3 +223,22 @@ def test_missing_value_operand_blocks_the_derived_value_instead_of_crashing():
     assert verdict.value is None
     assert verdict.rule_missing is True
     assert "значение не распознано" in verdict.note
+
+
+def test_the_blocked_note_does_not_echo_the_units_written_on_the_form():
+    """Причина отказа уходит в note, а note уходит модели. Ручной ввод
+    сохраняет подпись единиц дословно — пересказывать её наружу значит
+    протащить текст документа мимо маски. Коуч видит подпись на экране
+    среза, модели она не нужна."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 4.0, "ммоль/л KOROLKOVA E.V."),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert "KOROLKOVA E.V." not in verdict.note
+    # Референсные единицы из базы знаний остаются — по ним коуч поймёт,
+    # с чем не сошлось.
+    assert "ммоль/л" in verdict.note

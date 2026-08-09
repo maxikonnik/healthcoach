@@ -15,6 +15,36 @@ from healthcoach.app.routes_snapshots import DocumentImport, render_snapshot_pag
 from healthcoach.intake.documents import DocumentError, read_document
 from healthcoach.intake.lab_table import parse_number
 from healthcoach.intake.measurements import prepare_measurements
+from healthcoach.privacy.redact import name_stems
+from healthcoach.storage.clients import Client
+
+HEADER_LINES = 3
+"""Сколько первых строк документа показывать коучу как шапку — печатные
+бланки кладут ФИО и дату в начало, до самой таблицы показателей."""
+
+
+def document_belongs_to(client: Client, lines: tuple[str, ...] | list[str]) -> bool:
+    """Нашлась ли в тексте документа хоть одна основа имени клиента.
+
+    Основы берутся `name_stems` из `healthcoach.privacy.redact` — тем же
+    правилом склонения, что и у сторожа обезличивания, а не второй копией:
+    расхождение двух копий одного правила уже было находкой финального
+    ревью плана 3. `name_stems` не обещает, что первый элемент — фамилия:
+    у клиента с фамилией короче четырёх букв («Ким Мария Сергеевна») она
+    вовсе выпадает из списка, и первым элементом становится имя. Список —
+    просто набор того, что мы знаем об имени этого клиента, без порядка и
+    без выделенной «главной» основы, поэтому предполагать позицию нельзя.
+
+    Предупреждение — только если НИ ОДНА основа не нашлась; хватает любой
+    одной. Сравнение регистронезависимое: распознавание бланка не
+    сохраняет регистр надёжно, а результат — предупреждение, не отказ, так
+    что ложное совпадение не страшнее пропуска.
+    """
+    stems = name_stems(client)
+    if not stems:
+        return True
+    text = "\n".join(lines).casefold()
+    return any(stem.casefold() in text for stem in stems)
 
 
 def build_router(context: Context, templates) -> APIRouter:
@@ -104,6 +134,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 raise HTTPException(
                     status_code=404, detail=f"нет среза {snapshot_id}"
                 )
+            client = repo.clients.get(snapshot.client_code)
             return render_snapshot_page(
                 request,
                 templates,
@@ -114,6 +145,11 @@ def build_router(context: Context, templates) -> APIRouter:
                     filename=document.filename,
                     source=read.source,
                     count=len(prepared),
+                    header=read.lines[:HEADER_LINES],
+                    client_name=client.full_name if client else "",
+                    belongs=(
+                        document_belongs_to(client, read.lines) if client else True
+                    ),
                 ),
             )
 

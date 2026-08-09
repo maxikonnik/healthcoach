@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Черновик среза {{ snapshot.taken_on }}{% endblock %}
+{% block body %}
+<nav><a href="/snapshots/{{ snapshot.id }}">← Срез {{ snapshot.taken_on }}</a></nav>
+<h1>Черновик отчёта <span class="muted">{{ snapshot.client_code }}</span></h1>
+
+{% if approved_at %}
+<p class="warn">Утверждён {{ approved_at }} — разделы больше не правятся.</p>
+{% endif %}
+
+<h2>Запрос клиента</h2>
+{% if not client_request %}
+<form method="post" action="/snapshots/{{ snapshot.id }}/request">
+  <label>Словами клиента<textarea name="raw" rows="4" cols="70" required></textarea></label>
+  <button type="submit">Сохранить</button>
+</form>
+{% else %}
+<p class="muted">Как написал клиент:</p>
+<blockquote>{{ client_request.raw }}</blockquote>
+
+{% if client_request.approved %}
+<p>Уйдёт модели, утверждено:</p>
+<blockquote>{{ client_request.redacted }}</blockquote>
+{% else %}
+<p class="warn">Вычитайте текст перед отправкой. Модель увидит ровно то,
+  что останется справа. Автоматическая чистка ненадёжна на свободном
+  тексте — последнее слово за вами.</p>
+<form method="post" action="/snapshots/{{ snapshot.id }}/request/redact">
+  <label>Уйдёт модели<textarea name="redacted" rows="4" cols="70"
+    >{{ client_request.redacted or suggested }}</textarea></label>
+  <button type="submit">Сохранить вычитку</button>
+</form>
+{% if client_request.redacted %}
+<form method="post" action="/snapshots/{{ snapshot.id }}/request/approve">
+  <button type="submit">Утвердить — можно отправлять</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if not approved_at %}
+{# После утверждения маршрут отвечает на переписывание запроса 409-м:
+   рядом с утверждёнными разделами оказался бы посторонний текст. Кнопка,
+   которая всегда отказывает, — та же ошибка, что и форма правки раздела
+   ниже, и закрыта тем же условием. #}
+<form method="post" action="/snapshots/{{ snapshot.id }}/request">
+  <label>Переписать запрос<textarea name="raw" rows="3" cols="70" required
+    >{{ client_request.raw }}</textarea></label>
+  <button type="submit">Заменить</button>
+</form>
+{% endif %}
+{% endif %}
+
+<h2>Разделы</h2>
+{% if not sections %}
+<p class="muted">Черновик ещё не собран.</p>
+{% if client_request and client_request.approved %}
+<form method="post" action="/snapshots/{{ snapshot.id }}/draft">
+  <button type="submit">Собрать черновик</button>
+</form>
+{% else %}
+<p class="muted">Сборка станет доступна, когда запрос клиента будет вычитан
+  и утверждён.</p>
+{% endif %}
+{% else %}
+{% for section in sections %}
+<h3>{{ titles.get(section.section_id, section.section_id) }}</h3>
+{% if section.finding_ids %}
+<p class="muted">Стоит на находках:
+  {% for id in section.finding_ids %}<code>{{ id }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% else %}
+<p class="muted">Находки к разделу не привязаны.</p>
+{% endif %}
+<p class="muted">Написала модель:</p>
+<blockquote>{{ section.generated }}</blockquote>
+{% if approved_at %}
+{% if section.edited %}
+<p>Ваша правка:</p>
+<blockquote>{{ section.edited }}</blockquote>
+{% endif %}
+{% else %}
+<form method="post" action="/snapshots/{{ snapshot.id }}/draft/{{ section.id }}/edit">
+  <label>Ваш текст<textarea name="text" rows="6" cols="70"
+    >{{ section.edited or section.generated }}</textarea></label>
+  <button type="submit">Сохранить правку</button>
+</form>
+{% endif %}
+{% endfor %}
+
+{% if not approved_at %}
+<form method="post" action="/snapshots/{{ snapshot.id }}/draft/approve">
+  <button type="submit">Утвердить черновик</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}
