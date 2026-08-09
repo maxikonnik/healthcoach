@@ -56,8 +56,9 @@ def test_error_names_what_was_found_not_just_that_something_was():
 def test_guard_errs_towards_refusing_and_says_so():
     """Основа фамилии может совпасть с обычным словом — и это выбор.
 
-    У клиента по фамилии Белкин основа совпадает с «белки», и сторож
-    отвергнет текст, где речь про белки крови. Это неудобно, но безопасно:
+    У клиента по фамилии Белкин основа — «Белк», и она находится внутри
+    слова «белки», поэтому сторож отвергнет текст про белки крови. Это
+    неудобно, но безопасно:
     сообщение называет найденное, и коуч понимает, что произошло.
     Обратная ошибка — выпустить фамилию наружу — неисправима.
     """
@@ -71,7 +72,7 @@ def test_guard_errs_towards_refusing_and_says_so():
     )
     with pytest.raises(LeakError) as excinfo:
         assert_no_leak("Общий белки крови в норме", belkin)
-    assert "Белки" in str(excinfo.value)
+    assert "Белк" in str(excinfo.value)
 
 
 def test_guard_has_no_way_to_be_switched_off():
