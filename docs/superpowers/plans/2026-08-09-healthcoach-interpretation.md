@@ -744,6 +744,27 @@ def test_error_names_what_was_found_not_just_that_something_was():
     assert "18.04.1987" in message
 
 
+def test_guard_errs_towards_refusing_and_says_so():
+    """Основа фамилии может совпасть с обычным словом — и это выбор.
+
+    У клиента по фамилии Белкин основа совпадает с «белки», и сторож
+    отвергнет текст, где речь про белки крови. Это неудобно, но безопасно:
+    сообщение называет найденное, и коуч понимает, что произошло.
+    Обратная ошибка — выпустить фамилию наружу — неисправима.
+    """
+    belkin = Client(
+        code="CL-0003",
+        full_name="Белкин Иван Петрович",
+        sex="м",
+        birth_date=date(1980, 1, 1),
+        contacts=None,
+        note=None,
+    )
+    with pytest.raises(LeakError) as excinfo:
+        assert_no_leak("Общий белки крови в норме", belkin)
+    assert "Белки" in str(excinfo.value)
+
+
 def test_guard_has_no_way_to_be_switched_off():
     """Проверка обязательна и не подлежит смягчению.
 
@@ -826,11 +847,16 @@ def date_forms(client: Client) -> list[str]:
 
 
 def contact_forms(client: Client) -> list[str]:
-    """Контакты и цифровые последовательности из них."""
+    """Контакты целиком и длинные цифровые последовательности из них.
+
+    Короткие обрывки цифр брать нельзя: «916» из телефона совпало бы со
+    значением анализа, и сторож отверг бы отправку из-за ферритина 916.
+    Шесть цифр подряд — уже номер, а не результат измерения.
+    """
     if not client.contacts:
         return []
     forms = [item.strip() for item in client.contacts.split(",") if item.strip()]
-    digits = re.findall(r"\d{3,}", client.contacts)
+    digits = re.findall(r"\d{6,}", client.contacts)
     return forms + digits
 
 
@@ -1887,9 +1913,12 @@ class FakeProvider:
 
 @pytest.fixture
 def client(tmp_path):
-    context = build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE)
+    import dataclasses
+
     provider = FakeProvider()
-    object.__setattr__(context, "llm", provider)
+    context = dataclasses.replace(
+        build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE), llm=provider
+    )
     with TestClient(create_app(context)) as test_client:
         yield test_client, context, provider
 
