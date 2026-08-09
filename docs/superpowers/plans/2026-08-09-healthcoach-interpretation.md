@@ -573,7 +573,7 @@ git show $(git log --format=%H --grep="merge: план 3" -1):src/healthcoach/st
 uv run pytest -q
 ```
 
-Ожидается: 381 проходящий.
+Ожидается: 386 проходящих (стражи границы хранилища параметризованы по модулям и сами подхватят два новых).
 
 - [ ] **Step 9: Коммит**
 
@@ -935,7 +935,7 @@ git add src/healthcoach/privacy tests/privacy
 git commit -m "feat: обезличивание и обязательная проверка на утечку"
 ```
 
-Ожидается: 396 проходящих.
+Ожидается: 403 проходящих.
 
 ---
 
@@ -1171,7 +1171,7 @@ git add src/healthcoach/llm tests/llm
 git commit -m "feat: сборка обезличенного входа модели с обязательной проверкой"
 ```
 
-Ожидается: 402 проходящих.
+Ожидается: 409 проходящих.
 
 ---
 
@@ -1431,7 +1431,7 @@ git add src/healthcoach/llm/provider.py tests/llm/test_provider.py tests/conftes
 git commit -m "feat: адаптер языковой модели поверх claude -p"
 ```
 
-Ожидается: 411 проходящих.
+Ожидается: 418 проходящих.
 
 ---
 
@@ -1857,7 +1857,7 @@ git add src/healthcoach/report tests/report
 git commit -m "feat: сборка черновика по разделам с привязкой к находкам"
 ```
 
-Ожидается: 421 проходящий.
+Ожидается: 428 проходящих.
 
 ---
 
