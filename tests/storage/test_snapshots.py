@@ -43,6 +43,7 @@ def test_measurement_round_trip(repositories):
         analyte_id="ферритин",
         raw_name="Ферритин (S-Ferritin)",
         value=18.0,
+        raw_value="18.0",
         units="нг/мл",
         taken_on=date(2026, 8, 20),
     )
@@ -57,7 +58,7 @@ def test_confirming_a_measurement_sticks(repositories):
     code, snapshots = repositories
     snapshot = snapshots.create(code, date(2026, 9, 1))
     stored = snapshots.add_measurement(
-        snapshot.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 8, 20)
     )
     assert snapshots.confirm_measurement(stored.id, snapshot.id) is True
     (read_back,) = snapshots.measurements(snapshot.id)
@@ -70,7 +71,7 @@ def test_confirmation_does_not_reach_another_snapshot(repositories):
     mine = snapshots.create(code, date(2026, 9, 1))
     other = snapshots.create(code, date(2026, 10, 1))
     stored = snapshots.add_measurement(
-        other.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
+        other.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 8, 20)
     )
 
     assert snapshots.confirm_measurement(stored.id, mine.id) is False
@@ -91,10 +92,10 @@ def test_history_spans_snapshots_and_sorts_by_sampling_date(repositories):
     later = snapshots.create(code, date(2026, 9, 1))
     earlier = snapshots.create(code, date(2026, 1, 15))
     snapshots.add_measurement(
-        later.id, "ферритин", "Ферритин", 45.0, "нг/мл", date(2026, 8, 20)
+        later.id, "ферритин", "Ферритин", 45.0, "45.0", "нг/мл", date(2026, 8, 20)
     )
     snapshots.add_measurement(
-        earlier.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 1, 10)
+        earlier.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 1, 10)
     )
     assert [m.value for m in snapshots.history(code, "ферритин")] == [18.0, 45.0]
 

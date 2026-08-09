@@ -147,6 +147,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 analyte_id=analyte_id,
                 raw_name=raw_name,
                 value=stored_value,
+                raw_value=value.strip(),
                 units=stored_units,
                 taken_on=when,
             )

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS identities (
@@ -43,10 +43,12 @@ CREATE TABLE IF NOT EXISTS measurements (
     snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
     analyte_id   TEXT NOT NULL,
     raw_name     TEXT NOT NULL,
-    value        REAL NOT NULL,
+    value        REAL,
+    raw_value    TEXT NOT NULL DEFAULT '',
     units        TEXT NOT NULL,
     taken_on     TEXT NOT NULL,
     document_id  INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    source       TEXT NOT NULL DEFAULT 'ручной ввод',
     confirmed    INTEGER NOT NULL DEFAULT 0
 );
 
@@ -68,6 +70,38 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     1: (
         "ALTER TABLE identities ADD COLUMN sex TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE identities ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''",
+    ),
+    2: (
+        # SQLite не умеет снимать NOT NULL через ALTER TABLE: значение
+        # измерения должно уметь отсутствовать, поэтому таблица
+        # пересобирается, а строки переносятся.
+        "ALTER TABLE measurements RENAME TO measurements_v2",
+        """
+        CREATE TABLE measurements (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            analyte_id   TEXT NOT NULL,
+            raw_name     TEXT NOT NULL,
+            value        REAL,
+            raw_value    TEXT NOT NULL DEFAULT '',
+            units        TEXT NOT NULL,
+            taken_on     TEXT NOT NULL,
+            document_id  INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+            source       TEXT NOT NULL DEFAULT 'ручной ввод',
+            confirmed    INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        """
+        INSERT INTO measurements
+            (id, snapshot_id, analyte_id, raw_name, value, raw_value,
+             units, taken_on, document_id, source, confirmed)
+        SELECT id, snapshot_id, analyte_id, raw_name, value, CAST(value AS TEXT),
+               units, taken_on, document_id, 'ручной ввод', confirmed
+        FROM measurements_v2
+        """,
+        "DROP TABLE measurements_v2",
+        "CREATE INDEX IF NOT EXISTS measurements_by_snapshot ON measurements (snapshot_id)",
+        "CREATE INDEX IF NOT EXISTS measurements_by_analyte ON measurements (analyte_id, taken_on)",
     ),
 }
 """Что доделать в базе версии N, чтобы она стала версией N+1.
