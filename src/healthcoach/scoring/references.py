@@ -15,6 +15,7 @@ STATUS_EXCESS = "избыток"
 STATUS_NO_RULE = "правило не задано"
 STATUS_UNIT_MISMATCH = "единицы не сопоставлены"
 STATUS_NOT_COMPUTED = "не удалось вычислить"
+STATUS_NO_VALUE = "значение не распознано"
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,10 @@ def check_measurements(
     verdicts: list[AnalyteVerdict] = []
 
     for measurement in measurements:
+        if measurement.value is None:
+            verdicts.append(_unresolved(measurement, STATUS_NO_VALUE))
+            continue
+
         analyte = references.resolve(measurement.analyte_id)
         if analyte is None:
             verdicts.append(_unresolved(measurement, STATUS_NO_RULE))

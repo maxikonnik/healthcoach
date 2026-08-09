@@ -15,6 +15,8 @@ from healthcoach.knowledge.references import Analyte, References
 _NOISE = re.compile(r"[*†‡]|\(.*?\)|\[.*?\]")
 _TRAILING = re.compile(r"[\s,;:.\-–—]+$")
 _SPACES = re.compile(r"\s+")
+_LAB_CODE = re.compile(r"\bA\d{2}\.\d{2}\.\d{3}\b\s*(\([^()]*\))?")
+"""Код номенклатуры медицинских услуг: «Ферритин A09.05.076 (Приказ …)»."""
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,8 @@ class Resolution:
 
 def _clean(raw_name: str) -> str:
     """Убрать сноски, скобочные уточнения и хвостовые единицы."""
-    text = _NOISE.sub(" ", raw_name)
+    text = _LAB_CODE.sub("", raw_name)
+    text = _NOISE.sub(" ", text)
     text = text.split(",")[0]
     text = _TRAILING.sub("", text)
     return _SPACES.sub(" ", text).strip().casefold()
