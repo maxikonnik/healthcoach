@@ -160,14 +160,18 @@ class SnapshotRepository:
         return cursor.rowcount == 1
 
     def set_value(self, measurement_id: int, snapshot_id: int, value: float) -> bool:
-        """Вписать число там, где в бланке его не было. False — строки нет.
+        """Вписать число там, где в бланке его не было. False — строки нет,
+        либо число там уже есть.
 
         Срез обязателен по той же причине, что и у подтверждения: без него
         правка по одному идентификатору затрагивала бы измерение любого
-        другого клиента.
+        другого клиента. Условие `value IS NULL` — по причине, ради которой
+        метод существует: он заполняет пропуск, а не переписывает число,
+        которое коуч уже мог подтвердить как верное.
         """
         cursor = self._connection.execute(
-            "UPDATE measurements SET value = ? WHERE id = ? AND snapshot_id = ?",
+            "UPDATE measurements SET value = ? "
+            "WHERE id = ? AND snapshot_id = ? AND value IS NULL",
             (value, measurement_id, snapshot_id),
         )
         self._connection.commit()

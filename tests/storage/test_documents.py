@@ -104,3 +104,28 @@ def test_filling_a_value_does_not_reach_another_snapshot(repositories):
     assert snapshots.set_value(stored.id, snapshot.id, 0.3) is False
     (untouched,) = snapshots.measurements(other.id)
     assert untouched.value is None
+
+
+def test_set_value_does_not_overwrite_a_value_the_coach_already_has(repositories):
+    """set_value заполняет пропуск, а не переписывает уже подтверждённое число."""
+    snapshot, snapshots, _ = repositories
+    stored = snapshots.add_measurement(
+        snapshot.id,
+        analyte_id="ферритин",
+        raw_name="Ферритин",
+        value=18.0,
+        raw_value="18.0",
+        units="нг/мл",
+        taken_on=date(2026, 8, 20),
+    )
+
+    assert snapshots.set_value(stored.id, snapshot.id, 999.0) is False
+    (untouched,) = snapshots.measurements(snapshot.id)
+    assert untouched.value == 18.0
+    assert untouched.raw_value == "18.0"
+
+
+def test_set_value_reports_failure_for_a_measurement_that_does_not_exist(repositories):
+    """Молчаливый успех на несуществующий идентификатор скрывал бы опечатку."""
+    snapshot, snapshots, _ = repositories
+    assert snapshots.set_value(99999, snapshot.id, 0.3) is False

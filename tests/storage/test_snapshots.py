@@ -115,22 +115,46 @@ def test_saving_answers_replaces_previous(repositories):
     assert snapshots.answers(snapshot.id) == {"pitanie.а.1": 3}
 
 
-def test_snapshot_module_never_touches_the_identity_table():
-    """Реестр ФИО читает только ClientRepository — граница закреплена тестом."""
-    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+def _guarded_storage_modules() -> list[Path]:
+    """Модули хранилища, которым имя клиента знать не положено.
+
+    Изначально страж проверял только snapshots.py — и когда в documents.py
+    завели `from healthcoach.storage.clients import ClientRepository` и метод
+    `SELECT full_name FROM identities`, весь набор тестов прошёл молча.
+    Поэтому здесь перечисляются файлы каталога, а не один захардкоженный
+    путь: новый модуль хранилища подпадает под проверку по факту появления.
+
+    Исключены clients.py — владелец identities/full_name, которому это и
+    положено, — и schema.py: она объявляет DDL таблицы identities как
+    часть общей схемы для всего приложения, а не читает чужие данные.
+    """
+    storage_dir = Path("src/healthcoach/storage")
+    exempt = {"clients.py", "schema.py"}
+    modules = sorted(p for p in storage_dir.glob("*.py") if p.name not in exempt)
+    assert modules, "не нашлось модулей хранилища для проверки"
+    return modules
+
+
+@pytest.mark.parametrize("module", _guarded_storage_modules(), ids=lambda p: p.name)
+def test_storage_module_never_touches_the_identity_table(module):
+    """Реестр ФИО читает только ClientRepository — граница закреплена тестом
+    для каждого модуля хранилища, а не только для срезов."""
+    source = module.read_text(encoding="utf-8")
     assert "identities" not in source
     assert "full_name" not in source
 
 
-def test_snapshot_module_does_not_delegate_to_the_client_repository():
-    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта.
+@pytest.mark.parametrize("module", _guarded_storage_modules(), ids=lambda p: p.name)
+def test_storage_module_does_not_delegate_to_the_client_repository(module):
+    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта
+    для каждого модуля хранилища.
 
     Проверка по дереву импортов, а не по строкам: делегирование не содержало бы
     ни слова 'identities', ни 'full_name', и текстовый страж его пропустил бы.
     """
     import ast
 
-    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+    source = module.read_text(encoding="utf-8")
     imported: set[str] = set()
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom) and node.module:
@@ -139,4 +163,4 @@ def test_snapshot_module_does_not_delegate_to_the_client_repository():
             imported.update(alias.name for alias in node.names)
 
     leaking = {name for name in imported if "storage.clients" in name}
-    assert not leaking, f"модуль срезов импортирует {sorted(leaking)}"
+    assert not leaking, f"модуль {module} импортирует {sorted(leaking)}"
