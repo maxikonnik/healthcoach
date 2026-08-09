@@ -438,3 +438,63 @@ def test_document_import_records_the_source(client, monkeypatch):
     stored = _measurements(context, snapshot_id)
     assert stored
     assert all(m.source == "pdf" for m in stored)
+
+
+def _upload_text_document(test_client, snapshot_id, lines):
+    """Загрузить документ с заранее известным текстом.
+
+    Чтение подменяется: проверяется предупреждение о чужом клиенте, а не
+    разбор PDF, который проверен своими тестами.
+    """
+    import healthcoach.app.routes_documents as routes
+    from healthcoach.intake.documents import ReadDocument
+    from healthcoach.intake.lab_table import parse_lab_lines
+    from healthcoach.storage.snapshots import SOURCE_PDF
+
+    original = routes.read_document
+
+    def fake(path, engine=None):
+        return ReadDocument(
+            source=SOURCE_PDF, lines=tuple(lines), table=parse_lab_lines(lines)
+        )
+
+    routes.read_document = fake
+    try:
+        return test_client.post(
+            f"/snapshots/{snapshot_id}/documents",
+            files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+        ).text
+    finally:
+        routes.read_document = original
+
+
+def test_document_of_another_client_is_flagged_not_refused(client):
+    """Распознавание коверкает буквы: ложный отказ хуже предупреждения."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+
+    lines = [
+        "Ф.И.О. пациента: Петров Пётр Петрович",
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    page = _upload_text_document(test_client, snapshot_id, lines)
+
+    assert "Петров" in page
+    assert "не найдена" in page
+    with context.session() as repo:
+        assert repo.snapshots.measurements(snapshot_id)
+
+
+def test_document_of_this_client_is_not_flagged(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+
+    lines = [
+        "Ф.И.О. пациента: Иванова Мария Сергеевна",
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    page = _upload_text_document(test_client, snapshot_id, lines)
+
+    assert "не найдена" not in page

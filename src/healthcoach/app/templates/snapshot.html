@@ -46,6 +46,14 @@
 {% if document_import %}
 <p>«{{ document_import.filename }}» ({{ document_import.source }}):
   импортировано показателей: {{ document_import.count }}.</p>
+{% if document_import.header %}
+<p class="muted">В карточке: {{ document_import.client_name }}. В документе:
+  {% for line in document_import.header %}«{{ line }}»{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+{% if not document_import.belongs %}
+<p class="warn">Фамилия клиента «{{ document_import.client_name }}» в тексте
+  документа не найдена — проверьте, тот ли это клиент.</p>
+{% endif %}
 {% endif %}
 
 {% if documents %}

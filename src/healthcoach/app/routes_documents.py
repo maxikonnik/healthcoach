@@ -15,6 +15,31 @@ from healthcoach.app.routes_snapshots import DocumentImport, render_snapshot_pag
 from healthcoach.intake.documents import DocumentError, read_document
 from healthcoach.intake.lab_table import parse_number
 from healthcoach.intake.measurements import prepare_measurements
+from healthcoach.privacy.redact import name_stems
+from healthcoach.storage.clients import Client
+
+HEADER_LINES = 3
+"""Сколько первых строк документа показывать коучу как шапку — печатные
+бланки кладут ФИО и дату в начало, до самой таблицы показателей."""
+
+
+def document_belongs_to(client: Client, lines: tuple[str, ...] | list[str]) -> bool:
+    """Нашлась ли основа фамилии клиента в тексте документа.
+
+    Основа берётся `name_stems` из `healthcoach.privacy.redact` — тем же
+    правилом склонения, что и у сторожа обезличивания, а не второй копией:
+    расхождение двух копий одного правила уже было находкой финального
+    ревью плана 3. Первый элемент — основа фамилии (первое слово ФИО).
+    Сравнение регистронезависимое: распознавание бланка не сохраняет
+    регистр надёжно, а результат — предупреждение, не отказ, так что
+    ложное совпадение не страшнее пропуска.
+    """
+    stems = name_stems(client)
+    if not stems:
+        return True
+    surname_stem = stems[0].casefold()
+    text = "\n".join(lines).casefold()
+    return surname_stem in text
 
 
 def build_router(context: Context, templates) -> APIRouter:
@@ -104,6 +129,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 raise HTTPException(
                     status_code=404, detail=f"нет среза {snapshot_id}"
                 )
+            client = repo.clients.get(snapshot.client_code)
             return render_snapshot_page(
                 request,
                 templates,
@@ -114,6 +140,11 @@ def build_router(context: Context, templates) -> APIRouter:
                     filename=document.filename,
                     source=read.source,
                     count=len(prepared),
+                    header=read.lines[:HEADER_LINES],
+                    client_name=client.full_name if client else "",
+                    belongs=(
+                        document_belongs_to(client, read.lines) if client else True
+                    ),
                 ),
             )
 

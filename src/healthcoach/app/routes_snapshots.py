@@ -38,6 +38,15 @@ class DocumentImport:
     filename: str
     source: str
     count: int
+    header: tuple[str, ...] = ()
+    """Первые строки документа — шапка бланка, показываемая рядом с именем
+    из карточки клиента, чтобы коуч мог свериться сам."""
+    client_name: str = ""
+    belongs: bool = True
+    """False — основа фамилии клиента (name_stems) не нашлась в тексте
+    документа. Не отказ: распознавание коверкает буквы, ложный отказ на
+    своём же клиенте хуже предупреждения, которое коуч может прочитать
+    и отклонить."""
 
 
 def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
