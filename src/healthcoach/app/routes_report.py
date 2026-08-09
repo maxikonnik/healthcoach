@@ -40,7 +40,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 ),
             )
         measurements = [
-            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
+            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
             for m in repo.snapshots.measurements(snapshot.id)
             if m.confirmed
         ]

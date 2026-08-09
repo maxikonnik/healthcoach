@@ -56,9 +56,14 @@ def compute_derived(
             continue
 
         if analyte is not None and not units_match(analyte, measurement.units):
+            # Написание единиц из бланка сюда не переписывается: эта причина
+            # уходит в note вердикта, а note уходит модели. Ручной ввод
+            # сохраняет подпись единиц дословно — там может оказаться что
+            # угодно, вплоть до строки с именем клиента. Коуч видит исходную
+            # подпись на экране среза, модели она не нужна.
             unusable[key] = (
                 f"{analyte.name}: референс задан в единицах {analyte.units!r}, "
-                f"измерение пришло в {measurement.units!r}"
+                f"единицы из бланка с ними не сопоставлены"
             )
         if key in values and values[key] != measurement.value:
             unusable[key] = (

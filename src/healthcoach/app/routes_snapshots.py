@@ -228,7 +228,9 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404, detail=f"нет клиента {snapshot.client_code}"
                 )
             measurements = [
-                Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
+                Measurement(
+                    m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id
+                )
                 for m in repo.snapshots.measurements(snapshot_id)
                 if m.confirmed
             ]

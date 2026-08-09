@@ -76,6 +76,12 @@ class Finding:
     answered: int | None = None
     """Сколько вопросов подгруппы клиент заполнил. None у показателей."""
     total: int | None = None
+    row_id: int | None = None
+    """Строка измерения в срезе — различает находки с пустым subject_id."""
+    title_from_document: bool = False
+    """title списан с бланка клиента, а не взят из базы знаний коуча."""
+    units_from_document: bool = False
+    """units — написание из бланка, а не объявленные единицы показателя."""
 
     @property
     def partial(self) -> bool:
@@ -104,6 +110,9 @@ def _from_verdict(verdict: AnalyteVerdict, kind: str) -> Finding:
         lab_range=verdict.lab_range,
         note=verdict.note,
         rule_missing=verdict.rule_missing,
+        row_id=verdict.row_id,
+        title_from_document=verdict.title_from_document,
+        units_from_document=verdict.units_from_document,
     )
 
 

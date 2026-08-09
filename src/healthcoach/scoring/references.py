@@ -37,6 +37,12 @@ class Measurement:
     label: str = ""
     """Как показатель назван в бланке. Нужен нераспознанным: их
     analyte_id пуст, и без подписи находка была бы безымянной."""
+    row_id: int | None = None
+    """Идентификатор строки измерения в срезе. Нужен нераспознанным: их
+    analyte_id пуст, и без него две нераспознанные находки получают один
+    и тот же идентификатор. Идентификатор строки не меняется, пока срез
+    жив, — поэтому раздел черновика, сославшийся на находку, найдёт её и
+    после перезагрузки страницы."""
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,26 @@ class AnalyteVerdict:
     lab_range: Interval | None
     note: str | None
     rule_missing: bool
+    row_id: int | None = None
+    """Строка измерения, из которой вердикт получился. У производных её нет."""
+    title_from_document: bool = False
+    """title списан с бланка (`measurement.label`), а не взят из базы знаний.
+
+    `rule_missing` для этого не годится: он поднят на четырёх разных путях,
+    и только на одном из них — `_unresolved` — заголовок приходит из
+    документа клиента. На остальных трёх (единицы не сопоставлены, нет
+    целевого значения для пола и возраста, производный не посчитан) это
+    `analyte.name`/`derived.name` из базы знаний коуча, и прятать его
+    от модели значит запретить ей назвать показатель, который она обязана
+    назвать."""
+    units_from_document: bool = False
+    """units — то, что написано в бланке, а не объявленные единицы показателя.
+
+    Поднят там, где сохранённые единицы заведомо не сведены к референсным:
+    показатель не распознан вовсе и сверять не с чем, либо единицы с
+    референсом не сопоставились. Ручной ввод сохраняет подпись единиц
+    дословно, так что там может оказаться что угодно, вплоть до строки с
+    именем клиента."""
 
 
 def select_target(analyte: Analyte, subject: Subject) -> Target | None:
@@ -73,6 +99,12 @@ def _status(target: Target, value: float) -> str:
 
 
 def _unresolved(measurement: Measurement, status: str) -> AnalyteVerdict:
+    """Вердикт по измерению, которое не с чем сверить.
+
+    Единственное место, где заголовок и единицы берутся из бланка клиента,
+    а не из базы знаний коуча, — поэтому оба флага «из документа» поднимает
+    только оно.
+    """
     return AnalyteVerdict(
         analyte_id=measurement.analyte_id,
         title=measurement.label or measurement.analyte_id,
@@ -83,6 +115,9 @@ def _unresolved(measurement: Measurement, status: str) -> AnalyteVerdict:
         lab_range=None,
         note=None,
         rule_missing=True,
+        row_id=measurement.row_id,
+        title_from_document=True,
+        units_from_document=True,
     )
 
 
@@ -117,6 +152,11 @@ def check_measurements(
                         f"измерение пришло в {measurement.units!r}"
                     ),
                     rule_missing=True,
+                    row_id=measurement.row_id,
+                    # Название — из базы знаний: показатель распознан.
+                    # Единицы — из бланка: с референсными они не сошлись.
+                    title_from_document=False,
+                    units_from_document=True,
                 )
             )
             continue
@@ -134,6 +174,7 @@ def check_measurements(
                     lab_range=analyte.lab_range,
                     note="нет целевого значения для этого пола и возраста",
                     rule_missing=True,
+                    row_id=measurement.row_id,
                 )
             )
             continue
@@ -149,6 +190,7 @@ def check_measurements(
                 lab_range=analyte.lab_range,
                 note=analyte.note,
                 rule_missing=False,
+                row_id=measurement.row_id,
             )
         )
 
