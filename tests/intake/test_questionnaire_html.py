@@ -64,6 +64,30 @@ def test_file_is_self_contained(questionnaire):
     assert "https://" not in html
 
 
+def _shown_blocks(html: str) -> list[str]:
+    match = re.search(r"^const SHOWN_BLOCKS = (.+);$", html, re.MULTILINE)
+    assert match is not None, "страница не объявляет SHOWN_BLOCKS"
+    return json.loads(match.group(1))
+
+
+def test_page_declares_exactly_the_blocks_it_rendered(questionnaire):
+    """Файл ответов отличает пропуск от «не показывали» только по этому списку.
+
+    Если страница объявит блоки, которых не показывала, все их вопросы
+    вернутся в «пропущенные» — ровно тот шум, ради устранения которого
+    список и появился.
+    """
+    core = [b.id for b in questionnaire.blocks if b.core]
+
+    assert _shown_blocks(render_questionnaire(questionnaire, "CL-0001")) == core
+    assert "oprosnik_candida" not in core
+
+    with_extra = render_questionnaire(
+        questionnaire, "CL-0001", extra_block_ids=["oprosnik_candida"]
+    )
+    assert _shown_blocks(with_extra) == [*core, "oprosnik_candida"]
+
+
 def test_client_code_is_embedded_for_the_storage_key(questionnaire):
     html = render_questionnaire(questionnaire, "CL-0417")
     assert "CL-0417" in html

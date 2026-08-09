@@ -103,6 +103,20 @@ def test_missing_blocks_key_is_refused(questionnaire):
         parse_answers(questionnaire, json.dumps(body, ensure_ascii=False))
 
 
+def test_empty_blocks_list_is_refused(questionnaire):
+    """Опросник, в котором клиенту не показали ни одного блока, — не анкета."""
+    with pytest.raises(AnswersError, match="пуст"):
+        parse_answers(questionnaire, _payload(questionnaire, {}, **{"блоки": []}))
+
+
+def test_repeated_blocks_collapse(questionnaire):
+    core = _core_ids(questionnaire)
+    result = parse_answers(
+        questionnaire, _payload(questionnaire, {}, **{"блоки": [*core, *core]})
+    )
+    assert result.shown_blocks == tuple(core)
+
+
 def test_unknown_block_names_the_version_mismatch(questionnaire):
     payload = _payload(questionnaire, {}, **{"блоки": ["выдуманный_блок"]})
     with pytest.raises(AnswersError) as excinfo:
@@ -172,7 +186,7 @@ def test_boolean_score_is_refused(questionnaire):
 
 def _const(html: str, name: str):
     """Значение JS-константы, объявленной страницей."""
-    match = re.search(rf"\bconst {name} = (.+);$", html, re.MULTILINE)
+    match = re.search(rf"^const {name} = (.+);$", html, re.MULTILINE)
     assert match is not None, f"страница не объявляет {name}"
     return json.loads(match.group(1))
 

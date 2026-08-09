@@ -72,6 +72,11 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
         isinstance(b, str) for b in raw_blocks
     ):
         raise AnswersError("в файле ответов нет списка 'блоки' со строками")
+    if not raw_blocks:
+        raise AnswersError(
+            "список 'блоки' пуст: опросник, в котором клиенту не показали "
+            "ни одного блока, собран неправильно"
+        )
 
     known_blocks = {block.id for block in questionnaire.blocks}
     unknown = [b for b in raw_blocks if b not in known_blocks]
@@ -80,14 +85,16 @@ def parse_answers(questionnaire: Questionnaire, payload: str | bytes) -> Importe
             f"в спецификации нет блоков {sorted(unknown)}; "
             f"вероятно, опросник собран по другой версии"
         )
-    shown_blocks = tuple(raw_blocks)
+    shown_blocks = tuple(dict.fromkeys(raw_blocks))
 
+    shown = set(shown_blocks)
     scales: dict[str, set[int]] = {}
     asked: set[str] = set()
     for block in questionnaire.blocks:
+        was_shown = block.id in shown
         for question in block.questions:
             scales[question.id] = {o.score for o in question.options()}
-            if block.id in shown_blocks:
+            if was_shown:
                 asked.add(question.id)
 
     answers: dict[str, int] = {}

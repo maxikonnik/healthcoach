@@ -231,6 +231,6 @@ def render_questionnaire(
         '<div class="bar"><p id="warning" hidden></p>'
         '<span id="progress"></span>'
         '<button type="button" id="download">Скачать ответы</button></div>'
-        f"<script>{script}</script>"
+        f"<script>\n{script}</script>"
         "</body></html>"
     )

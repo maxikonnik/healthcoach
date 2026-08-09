@@ -28,6 +28,11 @@ def open_database(path: Path) -> sqlite3.Connection:
         )
 
     connection.executescript(SCHEMA)
-    connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    if version != SCHEMA_VERSION:
+        # PRAGMA user_version переписывает первую страницу файла и берёт
+        # исключительную блокировку. Приложение открывает базу на каждый
+        # запрос, включая чтения: безусловная запись превращала бы любой
+        # GET в писателя и роняла бы его «database is locked» под нагрузкой.
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     connection.commit()
     return connection
