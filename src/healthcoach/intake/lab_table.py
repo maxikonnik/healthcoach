@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ ROLE_NAME = "название"
 ROLE_VALUE = "значение"
 ROLE_UNITS = "единицы"
 ROLE_REFERENCE = "референс"
+
+_ROLES_REQUIRED = (ROLE_NAME, ROLE_VALUE, ROLE_UNITS, ROLE_REFERENCE)
 
 _HEADER_WORDS = {
     "исследование": ROLE_NAME,
@@ -60,25 +63,72 @@ def parse_number(text: str) -> float | None:
     """Число из ячейки бланка. None, если числа там нет.
 
     «<0.60» числом не считается: настоящее значение меньше, а насколько —
-    неизвестно, и подстановка 0.60 исказила бы динамику.
+    неизвестно, и подстановка 0.60 исказила бы динамику. «nan»/«inf» тоже
+    не числа бланка: они молча испортили бы любое дальнейшее сравнение
+    с коридором нормы.
     """
     cleaned = text.strip().replace(",", ".")
     try:
-        return float(cleaned)
+        value = float(cleaned)
     except ValueError:
         return None
+    if not math.isfinite(value):
+        return None
+    return value
 
 
-def _header_roles(line: str) -> list[str] | None:
-    """Порядок ролей колонок, если строка похожа на шапку."""
+def _header_word_roles(line: str) -> list[str]:
+    """Роли, узнанные среди слов строки, по порядку появления."""
     roles: list[str] = []
     for word in _SPACES.split(line.strip().casefold()):
         role = _HEADER_WORDS.get(word.strip(".:"))
         if role is not None and role not in roles:
             roles.append(role)
-    if ROLE_NAME in roles and ROLE_VALUE in roles:
-        return roles
-    return None
+    return roles
+
+
+def _unrecognised_header_words(line: str) -> list[str]:
+    """Слова строки-шапки, не сопоставленные ни одной роли."""
+    words: list[str] = []
+    for word in _SPACES.split(line.strip().casefold()):
+        cleaned = word.strip(".:")
+        if cleaned and cleaned not in _HEADER_WORDS and cleaned not in words:
+            words.append(cleaned)
+    return words
+
+
+def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
+    """Найти строку-шапку и вернуть её номер в списке и порядок её ролей.
+
+    Кандидат в шапку — строка без цифр, в которой встречаются слова ролей
+    «название» и «значение». Цифры исключают кандидата: строка результата
+    со словами, похожими на шапку (`Показатель: Глюкоза Результат: 5.2 ...`),
+    шапкой быть не может, и её значение не должно пропасть под видом шапки.
+
+    Если у найденного кандидата нет всех четырёх ролей, разбирать дальше
+    нельзя: колонка, роль которой не опознана, встанет не на своё место
+    (например, единицы — в референс), а это опаснее отказа.
+    """
+    for index, line in enumerate(lines):
+        if _HAS_DIGIT.search(line):
+            continue
+        roles = _header_word_roles(line)
+        if ROLE_NAME not in roles or ROLE_VALUE not in roles:
+            continue
+        missing = [role for role in _ROLES_REQUIRED if role not in roles]
+        if missing:
+            unrecognised = _unrecognised_header_words(line)
+            raise LabTableError(
+                f"строка-шапка {line.strip()!r} не называет колонки: "
+                f"{', '.join(missing)}; нераспознанные слова: "
+                f"{', '.join(unrecognised) if unrecognised else 'нет'} — "
+                "разбирать дальше нельзя, колонка встанет не на своё место"
+            )
+        return index, roles
+    raise LabTableError(
+        "в выгрузке не найдена шапка таблицы: неизвестно, где значение, "
+        "а где единицы"
+    )
 
 
 def _strip_lab_code(line: str) -> str:
@@ -98,14 +148,17 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
     rest = tokens[first:]
     fields: dict[str, str] = {ROLE_NAME: name}
 
-    # Референс бывает из трёх слов («0 - 5»), единицы — всегда из одного.
     # Последняя колонка забирает весь остаток: референс бывает из трёх
-    # слов («0 - 5»), а единицы — всегда из одного.
+    # слов («0 - 5»), а единицы — всегда из одного. Если остаток из
+    # нескольких слов достаётся единицам, граница колонок разобрана не
+    # там — строка идёт в unparsed, а не в запись с обрубленным референсом.
     tail_roles = [role for role in roles if role != ROLE_NAME]
     for index, role in enumerate(tail_roles):
         if not rest:
             return None
         if index == len(tail_roles) - 1:
+            if role == ROLE_UNITS and len(rest) > 1:
+                return None
             fields[role] = " ".join(rest)
             rest = []
         else:
@@ -124,24 +177,17 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
 
 def parse_lab_lines(lines: Sequence[str]) -> LabTable:
     """Разобрать строки выгрузки в записи бланка."""
-    roles: list[str] | None = None
-    for line in lines:
-        roles = _header_roles(line)
-        if roles is not None:
-            break
-    if roles is None:
-        raise LabTableError(
-            "в выгрузке не найдена шапка таблицы: неизвестно, где значение, "
-            "а где единицы"
-        )
+    header_index, roles = _find_header(lines)
 
     rows: list[LabRow] = []
     unparsed: list[str] = []
     pending_name = ""
 
-    for line in lines:
+    for index, line in enumerate(lines):
+        if index == header_index:
+            continue
         stripped = line.strip()
-        if not stripped or _header_roles(line) is not None or _SERVICE.match(stripped):
+        if not stripped or _SERVICE.match(stripped):
             continue
 
         if pending_name and _STARTS_WITH_NUMBER.match(stripped):

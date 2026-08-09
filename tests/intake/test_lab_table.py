@@ -70,6 +70,7 @@ def test_line_with_a_broken_laboratory_code_is_reported_not_guessed():
 def test_service_lines_are_not_taken_for_results():
     table = parse_lab_lines(_lines("gemotest"))
     assert not any("Дата исследования" in r.name for r in table.rows)
+    assert not any("Дата исследования" in line for line in table.unparsed)
 
 
 def test_line_with_a_number_that_did_not_parse_reaches_the_coach():
@@ -91,3 +92,81 @@ def test_parse_number_accepts_both_decimal_separators():
     assert parse_number("341") == 341.0
     assert parse_number("Смотри текст") is None
     assert parse_number("") is None
+
+
+def test_parse_number_rejects_non_finite_values():
+    """nan/inf молча испортили бы любое дальнейшее сравнение с коридором."""
+    assert parse_number("nan") is None
+    assert parse_number("inf") is None
+    assert parse_number("-inf") is None
+
+
+def test_header_missing_units_word_due_to_pdf_spacing_is_refused():
+    """«Ед.изм.» без пробела — обычный артефакт извлечения текста из PDF.
+
+    Не опознав колонку единиц, разбор не имеет права отдать хвост строки
+    референсу: «C-реактивный белок ... 0.7 мг/л 0 - 5» стал бы записью с
+    units='' и reference_text='мг/л 0 - 5' — единицы потеряны, а референс
+    неверен. Отказ безопаснее угадывания.
+    """
+    lines = [
+        "Показатель Результат Ед.изм. Референсные пределы",
+        "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
+    ]
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(lines)
+    message = str(exc_info.value)
+    assert "Показатель Результат Ед.изм. Референсные пределы" in message
+    assert "единицы" in message
+
+
+def test_header_with_an_unknown_units_word_is_refused():
+    """«Единицы» вместо «Ед. изм.» — тоже не входит в словарь ролей."""
+    lines = [
+        "Показатель Результат Единицы Референсные пределы",
+        "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
+    ]
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(lines)
+    assert "единицы" in str(exc_info.value)
+
+
+def test_header_with_an_unknown_reference_word_is_refused():
+    """«Норма» вместо «Нормальные»/«Референсные» — слово не в словаре."""
+    lines = [
+        "Показатель Результат Ед. изм. Норма",
+        "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
+    ]
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(lines)
+    assert "референс" in str(exc_info.value)
+
+
+def test_units_last_header_with_a_spaced_reference_range_is_reported_not_truncated():
+    """«117.00 - 155.00» с пробелами вокруг тире, как в smclinic — но здесь
+    единицы стоят последними в шапке, и без проверки весь хвост строки
+    достался бы им, обрубив референс до голой нижней границы.
+    """
+    lines = [
+        "Параметр Результат Референсные значения Ед. изм.",
+        "Гемоглобин (Hb) 134.00 117.00 - 155.00 г/л",
+    ]
+    table = parse_lab_lines(lines)
+    assert not table.rows
+    assert any("117.00 - 155.00" in line for line in table.unparsed)
+
+
+def test_a_line_resembling_a_header_but_carrying_a_digit_is_not_dropped():
+    """Цифра исключает строку из кандидатов в шапку — а раз она не шапка,
+    её результат не должен пропасть без следа, как раньше, когда шапка
+    искалась заново на каждой строке.
+    """
+    lines = [
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Исследование выполнено на анализаторе, результат 2 измерений усреднён",
+        "Показатель: Глюкоза Результат: 5.2 ммоль/л 3.9 - 5.9",
+    ]
+    table = parse_lab_lines(lines)
+    seen = [r.line for r in table.rows] + list(table.unparsed)
+    assert any("анализаторе" in line for line in seen)
+    assert any("Глюкоза" in line for line in seen)
