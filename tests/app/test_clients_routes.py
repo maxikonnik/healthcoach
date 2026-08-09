@@ -9,6 +9,8 @@ from healthcoach.app.main import create_app
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
 
+WOMAN = {"full_name": "Иванова Мария", "sex": "ж", "birth_date": "1990-05-17"}
+
 
 @pytest.fixture
 def client(tmp_path):
@@ -24,14 +26,14 @@ def test_empty_client_list_renders(client):
 
 
 def test_adding_a_client_shows_it_in_the_list(client):
-    client.post("/clients", data={"full_name": "Иванова Мария", "contacts": "@masha"})
+    client.post("/clients", data=WOMAN | {"contacts": "@masha"})
     response = client.get("/")
     assert "Иванова Мария" in response.text
     assert "CL-0001" in response.text
 
 
 def test_client_card_shows_code_and_name(client):
-    client.post("/clients", data={"full_name": "Иванова Мария"})
+    client.post("/clients", data=WOMAN)
     response = client.get("/clients/CL-0001")
     assert response.status_code == 200
     assert "CL-0001" in response.text
@@ -43,19 +45,19 @@ def test_unknown_client_is_404(client):
 
 
 def test_creating_a_snapshot_lists_it_on_the_card(client):
-    client.post("/clients", data={"full_name": "Иванова Мария"})
+    client.post("/clients", data=WOMAN)
     client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
     response = client.get("/clients/CL-0001")
     assert "2026-09-01" in response.text
 
 
 def test_empty_name_is_rejected(client):
-    response = client.post("/clients", data={"full_name": "   "})
+    response = client.post("/clients", data=WOMAN | {"full_name": "   "})
     assert response.status_code == 400
 
 
 def test_questionnaire_download_is_html(client):
-    client.post("/clients", data={"full_name": "Иванова Мария"})
+    client.post("/clients", data=WOMAN)
     response = client.get("/clients/CL-0001/questionnaire")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
@@ -69,7 +71,7 @@ def test_requests_from_different_threads_all_reach_the_database(client):
     sqlite3.Connection принадлежит потоку, в котором создан. Если соединение
     станет общим на всё приложение, эти запросы упадут с ProgrammingError.
     """
-    client.post("/clients", data={"full_name": "Иванова Мария"})
+    client.post("/clients", data=WOMAN)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         responses = list(
@@ -81,7 +83,7 @@ def test_requests_from_different_threads_all_reach_the_database(client):
 
 
 def test_questionnaire_can_include_extra_blocks(client):
-    client.post("/clients", data={"full_name": "Иванова Мария"})
+    client.post("/clients", data=WOMAN)
     response = client.get(
         "/clients/CL-0001/questionnaire", params={"extra": "oprosnik_candida"}
     )

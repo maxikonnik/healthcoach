@@ -12,7 +12,7 @@ from healthcoach.storage.snapshots import SnapshotRepository
 def repositories(tmp_path):
     with open_database(tmp_path / "db.sqlite") as connection:
         clients = ClientRepository(connection)
-        client = clients.add("Иванова Мария")
+        client = clients.add("Иванова Мария", "ж", date(1990, 5, 17))
         yield client.code, SnapshotRepository(connection)
 
 

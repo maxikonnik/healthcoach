@@ -71,6 +71,23 @@ class Finding:
     lab_range: Interval | None
     note: str | None
     rule_missing: bool
+    answered: int | None = None
+    """Сколько вопросов подгруппы клиент заполнил. None у показателей."""
+    total: int | None = None
+
+    @property
+    def partial(self) -> bool:
+        """Степень выставлена не по всем вопросам подгруппы.
+
+        Пропущенный вопрос считается за ноль баллов, а больше баллов —
+        хуже. Значит каждый пропуск смещает клиента в сторону здорового,
+        и степень по неполным ответам мягче настоящей.
+        """
+        return (
+            self.answered is not None
+            and self.total is not None
+            and self.answered < self.total
+        )
 
 
 def _from_verdict(verdict: AnalyteVerdict, kind: str) -> Finding:
@@ -126,6 +143,8 @@ def collect_findings(
                 lab_range=None,
                 note=note,
                 rule_missing=rule_missing,
+                answered=scored.answered,
+                total=scored.total,
             )
         )
 

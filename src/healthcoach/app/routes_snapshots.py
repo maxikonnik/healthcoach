@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from healthcoach.app.deps import Context, Repositories
 from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
+from healthcoach.knowledge.sex import SexError
 from healthcoach.knowledge.units import UnitError, convert_to_reference
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
@@ -163,16 +164,21 @@ def build_router(context: Context, templates) -> APIRouter:
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
-    def findings(snapshot_id: int, sex: str = "ж", age: int = 35):
+    def findings(snapshot_id: int):
         """Находки текстом: полноценный отчёт собирает план 4.
 
-        Пол и возраст пока приходят параметрами запроса со значениями по
-        умолчанию: их место в карточке клиента, но туда они попадут вместе
-        с обезличиванием, которому нужны те же поля. Так они хотя бы
-        задаются снаружи, а не зашиты в код.
+        Пол и возраст берутся из карточки клиента и нигде не подставляются
+        по умолчанию: почти каждый целевой коридор задан для пола и
+        возрастного диапазона, и подстановка молча считала бы находки для
+        другого человека. Возраст — на дату среза, а не на сегодня.
         """
         with context.session() as repo:
             snapshot = _snapshot_or_404(repo, snapshot_id)
+            client = repo.clients.get(snapshot.client_code)
+            if client is None:
+                raise HTTPException(
+                    status_code=404, detail=f"нет клиента {snapshot.client_code}"
+                )
             measurements = [
                 Measurement(m.analyte_id, m.value, m.units, label=m.raw_name)
                 for m in repo.snapshots.measurements(snapshot_id)
@@ -180,19 +186,40 @@ def build_router(context: Context, templates) -> APIRouter:
             ]
             answers = repo.snapshots.answers(snapshot_id)
 
+        age = client.age_on(snapshot.taken_on)
+        try:
+            subject = Subject(sex=client.sex, age=age)
+        except SexError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"в карточке клиента {client.code} не указан пол; "
+                    f"без него целевой коридор не выбрать"
+                ),
+            ) from exc
+
         found = collect_findings(
             context.questionnaire,
             context.references,
             answers,
             measurements,
-            Subject(sex=sex, age=age),
+            subject,
         )
-        lines = [f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}", ""]
+        lines = [
+            f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}",
+            f"Считано для: пол {subject.sex}, возраст {age} на дату среза",
+            "",
+        ]
         for finding in found:
             value = "—" if finding.value is None else finding.value
+            partial = (
+                f" [заполнено {finding.answered} из {finding.total}]"
+                if finding.partial
+                else ""
+            )
             lines.append(
                 f"[{finding.kind}] {finding.title}: {value} {finding.units} "
-                f"— {finding.status}"
+                f"— {finding.status}{partial}"
                 + (f" ({finding.note})" if finding.note else "")
             )
         return "\n".join(lines)

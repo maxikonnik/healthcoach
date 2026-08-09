@@ -8,14 +8,16 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS identities (
-    code       TEXT PRIMARY KEY,
-    full_name  TEXT NOT NULL,
-    contacts   TEXT,
-    note       TEXT
+    code        TEXT PRIMARY KEY,
+    full_name   TEXT NOT NULL,
+    sex         TEXT NOT NULL,
+    birth_date  TEXT NOT NULL,
+    contacts    TEXT,
+    note        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -60,4 +62,16 @@ CREATE TABLE IF NOT EXISTS answers (
     score        INTEGER NOT NULL,
     PRIMARY KEY (snapshot_id, question_id)
 );
+"""
+
+MIGRATIONS: dict[int, tuple[str, ...]] = {
+    1: (
+        "ALTER TABLE identities ADD COLUMN sex TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE identities ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''",
+    ),
+}
+"""Что доделать в базе версии N, чтобы она стала версией N+1.
+
+Пустые значения у прежних клиентов не подставляют пол и возраст молча:
+карточка без них не даёт считать находки и просит заполнить.
 """

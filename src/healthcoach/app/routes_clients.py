@@ -8,6 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from healthcoach.app.deps import Context
+from healthcoach.knowledge.sex import SexError
 from healthcoach.intake.questionnaire_html import (
     QuestionnaireHtmlError,
     render_questionnaire,
@@ -25,11 +26,24 @@ def build_router(context: Context, templates) -> APIRouter:
             )
 
     @router.post("/clients")
-    def add_client(full_name: str = Form(...), contacts: str = Form("")):
+    def add_client(
+        full_name: str = Form(...),
+        sex: str = Form(...),
+        birth_date: str = Form(...),
+        contacts: str = Form(""),
+    ):
+        try:
+            born = date.fromisoformat(birth_date)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="дата рождения в формате ГГГГ-ММ-ДД"
+            ) from exc
         with context.session() as repo:
             try:
-                client = repo.clients.add(full_name, contacts=contacts or None)
-            except ValueError as exc:
+                client = repo.clients.add(
+                    full_name, sex, born, contacts=contacts or None
+                )
+            except (ValueError, SexError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse(f"/clients/{client.code}", status_code=303)
 

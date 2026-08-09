@@ -2,6 +2,7 @@
 {% block title %}{{ client.code }}{% endblock %}
 {% block body %}
 <h1>{{ client.full_name }} <span class="muted">{{ client.code }}</span></h1>
+<p class="muted">{{ client.sex }}, дата рождения {{ client.birth_date }}</p>
 {% if client.contacts %}<p class="muted">{{ client.contacts }}</p>{% endif %}
 
 <h2>Опросник для клиента</h2>

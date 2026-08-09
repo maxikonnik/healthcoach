@@ -10,6 +10,8 @@ from healthcoach.intake.questionnaire_html import PAYLOAD_VERSION
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
 
+WOMAN = {"full_name": "Иванова Мария", "sex": "ж", "birth_date": "1990-05-17"}
+
 
 @pytest.fixture
 def client(tmp_path):
@@ -19,7 +21,7 @@ def client(tmp_path):
 
 
 def _snapshot(test_client) -> int:
-    test_client.post("/clients", data={"full_name": "Иванова Мария"})
+    test_client.post("/clients", data=WOMAN)
     test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
     return 1
 
@@ -190,7 +192,10 @@ def test_answers_of_another_client_are_refused(client):
     """В папке загрузок у коуча лежат файлы всех клиентов, различаются именем."""
     test_client, context = client
     snapshot_id = _snapshot(test_client)
-    test_client.post("/clients", data={"full_name": "Петров Пётр"})
+    test_client.post(
+        "/clients",
+        data={"full_name": "Петров Пётр", "sex": "м", "birth_date": "1985-03-02"},
+    )
 
     block = context.questionnaire.block("obraz_zizni")
     answers = {q.id: min(o.score for o in q.options()) for q in block.questions}
@@ -285,30 +290,54 @@ def test_broken_answers_upload_is_reported(client):
     assert response.status_code == 400
 
 
-def test_findings_respect_the_sex_parameter(client):
-    """Пол влияет на выбор целевого коридора: у мужчин ферритин выше."""
-    test_client, context = client
-    snapshot_id = _snapshot(test_client)
+MAN = {"full_name": "Петров Пётр", "sex": "м", "birth_date": "1985-03-02"}
+
+
+def _client_with_ferritin(test_client, context, card, code, value):
+    """Клиент с подтверждённым ферритином. Возвращает идентификатор среза."""
+    test_client.post("/clients", data=card)
+    test_client.post(f"/clients/{code}/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        snapshot_id = repo.snapshots.for_client(code)[-1].id
     test_client.post(
         f"/snapshots/{snapshot_id}/measurements",
         data={
             "raw_name": "Ферритин",
-            "value": "70",
+            "value": value,
             "units": "нг/мл",
             "taken_on": "2026-08-20",
         },
     )
     (stored,) = _measurements(context, snapshot_id)
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+    return snapshot_id
 
-    female = test_client.get(
-        f"/snapshots/{snapshot_id}/findings", params={"sex": "ж", "age": 32}
-    ).text
-    male = test_client.get(
-        f"/snapshots/{snapshot_id}/findings", params={"sex": "м", "age": 32}
-    ).text
-    assert "в целевом" in female
-    assert "ниже целевого" in male
+
+def test_findings_take_sex_from_the_client_card(client):
+    """Целевой коридор ферритина у мужчин выше — пол нельзя подставлять.
+
+    Ссылка на странице среза не передаёт ни пола, ни возраста: если бы
+    маршрут подставлял их по умолчанию, находки считались бы для другого
+    человека, и в отчёте это никак не было бы видно.
+    """
+    test_client, context = client
+
+    female = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "70")
+    male = _client_with_ferritin(test_client, context, MAN, "CL-0002", "70")
+
+    assert "в целевом" in test_client.get(f"/snapshots/{female}/findings").text
+    assert "ниже целевого" in test_client.get(f"/snapshots/{male}/findings").text
+
+
+def test_findings_report_the_subject_they_were_computed_for(client):
+    """Иначе подстановку нельзя было бы заметить, даже если она случится."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    report = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "пол м" in report
+    assert "возраст 41" in report
+    assert "дефицит" in report
 
 
 def test_findings_use_only_confirmed_measurements(client):

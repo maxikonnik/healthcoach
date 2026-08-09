@@ -29,8 +29,9 @@ def test_reopening_keeps_data(tmp_path):
     path = tmp_path / "db.sqlite"
     with open_database(path) as connection:
         connection.execute(
-            "INSERT INTO identities (code, full_name, contacts, note) VALUES (?, ?, ?, ?)",
-            ("CL-0001", "Иванова Мария", "@masha", None),
+            "INSERT INTO identities (code, full_name, sex, birth_date, contacts, note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("CL-0001", "Иванова Мария", "ж", "1990-05-17", "@masha", None),
         )
         connection.commit()
     with open_database(path) as connection:

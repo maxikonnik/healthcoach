@@ -8,11 +8,13 @@ from healthcoach.knowledge.questionnaire import (
     Subscale,
     Threshold,
 )
+from healthcoach.knowledge.questionnaire import load_questionnaire
 from healthcoach.knowledge.references import load_references
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
 
 REFS = Path(__file__).parents[2] / "knowledge" / "references"
+SPEC = Path(__file__).parents[2] / "knowledge" / "questionnaire.yaml"
 
 SCALE = (ScaleOption(0, "нет"), ScaleOption(1, "иногда"), ScaleOption(2, "часто"))
 
@@ -263,3 +265,37 @@ def _block_without_thresholds() -> Block:
             ),
         ),
     )
+
+
+def test_degree_from_partial_answers_carries_the_count():
+    """Пропущенный вопрос идёт за ноль баллов, а больше баллов — хуже.
+
+    Значит каждый пропуск смещает клиента в сторону здорового. Степень по
+    неполным ответам мягче настоящей, и находка обязана это показывать.
+    """
+    questionnaire = load_questionnaire(SPEC)
+    block = questionnaire.block("obraz_zizni")
+    subscale = block.subscales[0]
+    ids = list(subscale.question_ids)
+
+    full = {qid: 0 for qid in ids}
+    partial = {qid: 0 for qid in ids[:-1]}
+
+    references = load_references(REFS)
+    subject = Subject(sex="ж", age=32)
+
+    def finding_for(answers):
+        for finding in collect_findings(
+            questionnaire, references, answers, [], subject
+        ):
+            if finding.subject_id == f"{block.id}/{subscale.id}":
+                return finding
+        raise AssertionError("находка по подгруппе не найдена")
+
+    assert finding_for(full).partial is False
+    assert finding_for(full).answered == len(ids)
+
+    incomplete = finding_for(partial)
+    assert incomplete.partial is True
+    assert incomplete.answered == len(ids) - 1
+    assert incomplete.total == len(ids)
