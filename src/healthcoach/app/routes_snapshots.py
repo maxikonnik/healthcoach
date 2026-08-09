@@ -186,16 +186,22 @@ def build_router(context: Context, templates) -> APIRouter:
             ]
             answers = repo.snapshots.answers(snapshot_id)
 
+        if not client.is_complete:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"карточка клиента {client.code} не заполнена: без пола и "
+                    f"даты рождения целевой коридор не выбрать"
+                ),
+            )
+
         age = client.age_on(snapshot.taken_on)
         try:
             subject = Subject(sex=client.sex, age=age)
         except SexError as exc:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"в карточке клиента {client.code} не указан пол; "
-                    f"без него целевой коридор не выбрать"
-                ),
+                detail=f"в карточке клиента {client.code} неверный пол: {exc}",
             ) from exc
 
         found = collect_findings(

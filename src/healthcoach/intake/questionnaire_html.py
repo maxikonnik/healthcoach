@@ -198,8 +198,15 @@ def render_questionnaire(
         multi = len(block.subscales) > 1
         # Подгруппы перекрываются: у Candida есть «всего», перечисляющая все
         # вопросы блока. Без учёта уже показанных клиент проходил бы их дважды.
+        # Сводные подгруппы идут последними независимо от порядка в спецификации:
+        # иначе сводная, оказавшись первой, забрала бы себе весь блок и
+        # настоящие заголовки частей исчезли бы.
         rendered: set[str] = set()
-        for subscale in block.subscales:
+        whole = {q.id for q in block.questions}
+        subscales = sorted(
+            block.subscales, key=lambda sub: set(sub.question_ids) >= whole
+        )
+        for subscale in subscales:
             ids = set(subscale.question_ids)
             questions = [
                 q for q in block.questions if q.id in ids and q.id not in rendered

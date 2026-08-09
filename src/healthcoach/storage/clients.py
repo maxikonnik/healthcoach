@@ -30,12 +30,20 @@ class Client:
     code: str
     full_name: str
     sex: str
-    birth_date: date
+    """'м', 'ж' или пустая строка у карточек, заведённых до версии схемы 2."""
+    birth_date: date | None
     contacts: str | None
     note: str | None
 
+    @property
+    def is_complete(self) -> bool:
+        """Хватает ли карточки, чтобы считать находки."""
+        return bool(self.sex) and self.birth_date is not None
+
     def age_on(self, when: date) -> int:
         """Полных лет на указанную дату."""
+        if self.birth_date is None:
+            raise ValueError(f"{self.code}: не заполнена дата рождения")
         years = when.year - self.birth_date.year
         if (when.month, when.day) < (self.birth_date.month, self.birth_date.day):
             years -= 1
@@ -47,7 +55,9 @@ def _client(row: sqlite3.Row) -> Client:
         code=row["code"],
         full_name=row["full_name"],
         sex=row["sex"],
-        birth_date=date.fromisoformat(row["birth_date"]),
+        # Пусто у карточек, доставшихся от схемы версии 1: подставлять туда
+        # что-либо значило бы считать находки для выдуманного человека.
+        birth_date=date.fromisoformat(row["birth_date"]) if row["birth_date"] else None,
         contacts=row["contacts"],
         note=row["note"],
     )
@@ -104,6 +114,23 @@ class ClientRepository:
         )
         self._connection.commit()
         return client
+
+    def update(
+        self,
+        code: str,
+        sex: str,
+        birth_date: date,
+        contacts: str | None = None,
+        note: str | None = None,
+    ) -> bool:
+        """Дозаполнить карточку. False — такого клиента нет."""
+        cursor = self._connection.execute(
+            "UPDATE identities SET sex = ?, birth_date = ?, contacts = ?, note = ? "
+            "WHERE code = ?",
+            (normalize_sex(sex), birth_date.isoformat(), contacts, note, code),
+        )
+        self._connection.commit()
+        return cursor.rowcount == 1
 
     def get(self, code: str) -> Client | None:
         row = self._connection.execute(

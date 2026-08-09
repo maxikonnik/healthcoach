@@ -88,3 +88,30 @@ def test_questionnaire_can_include_extra_blocks(client):
         "/clients/CL-0001/questionnaire", params={"extra": "oprosnik_candida"}
     )
     assert "ОПРОСНИК CANDIDA" in response.text
+
+
+def test_incomplete_card_can_be_filled_in_from_the_page(client):
+    """Карточки от прежней версии схемы остаются пустыми — их надо чем-то чинить."""
+    client.post("/clients", data=WOMAN)
+    response = client.post(
+        "/clients/CL-0001",
+        data={"sex": "м", "birth_date": "1985-03-02", "contacts": "@petr"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "1985-03-02" in response.text
+    assert "@petr" in response.text
+
+
+def test_updating_an_unknown_client_is_404(client):
+    response = client.post(
+        "/clients/CL-9999",
+        data={"sex": "м", "birth_date": "1985-03-02"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 404
+
+
+def test_birth_date_in_the_future_is_refused(client):
+    response = client.post("/clients", data=WOMAN | {"birth_date": "2099-01-01"})
+    assert response.status_code == 400

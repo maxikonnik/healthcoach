@@ -15,6 +15,20 @@ from healthcoach.intake.questionnaire_html import (
 )
 
 
+def _birth_date(raw: str) -> date:
+    try:
+        born = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="дата рождения в формате ГГГГ-ММ-ДД"
+        ) from exc
+    if born > date.today():
+        raise HTTPException(
+            status_code=400, detail=f"дата рождения {born} в будущем"
+        )
+    return born
+
+
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
@@ -32,12 +46,7 @@ def build_router(context: Context, templates) -> APIRouter:
         birth_date: str = Form(...),
         contacts: str = Form(""),
     ):
-        try:
-            born = date.fromisoformat(birth_date)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400, detail="дата рождения в формате ГГГГ-ММ-ДД"
-            ) from exc
+        born = _birth_date(birth_date)
         with context.session() as repo:
             try:
                 client = repo.clients.add(
@@ -46,6 +55,32 @@ def build_router(context: Context, templates) -> APIRouter:
             except (ValueError, SexError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse(f"/clients/{client.code}", status_code=303)
+
+    @router.post("/clients/{code}")
+    def update_client(
+        code: str,
+        sex: str = Form(...),
+        birth_date: str = Form(...),
+        contacts: str = Form(""),
+        note: str = Form(""),
+    ):
+        """Дозаполнить карточку.
+
+        Нужна не только для правки: карточки, заведённые до появления пола
+        и даты рождения, остаются без них после перехода схемы, и без этой
+        формы заполнить их было бы негде.
+        """
+        born = _birth_date(birth_date)
+        with context.session() as repo:
+            try:
+                updated = repo.clients.update(
+                    code, sex, born, contacts=contacts or None, note=note or None
+                )
+            except SexError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if not updated:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+        return RedirectResponse(f"/clients/{code}", status_code=303)
 
     @router.get("/clients/{code}", response_class=HTMLResponse)
     def client_page(request: Request, code: str):

@@ -23,8 +23,9 @@
   <tr>
     <td><a href="/clients/{{ client.code }}">{{ client.code }}</a></td>
     <td>{{ client.full_name }}</td>
-    <td>{{ client.sex }}</td>
-    <td>{{ client.birth_date }}</td>
+    <td>{{ client.sex or "—" }}</td>
+    <td>{% if client.birth_date %}{{ client.birth_date }}
+        {% else %}<span class="bad">не заполнена</span>{% endif %}</td>
     <td class="muted">{{ client.contacts or "—" }}</td>
   </tr>
   {% endfor %}

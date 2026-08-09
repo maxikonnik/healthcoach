@@ -117,6 +117,26 @@ def test_every_question_is_rendered_exactly_once(questionnaire):
         assert html.count(f'data-q="{question.id}"') == 1
 
 
+def test_summary_subscale_does_not_swallow_the_parts(questionnaire):
+    """У Candida подгруппа «всего» перечисляет весь блок.
+
+    Порядок подгрупп в спецификации — дело коуча. Если сводная окажется
+    первой, она не должна забрать себе все вопросы: заголовки настоящих
+    частей нужны клиенту, чтобы понимать, о чём его спрашивают.
+    """
+    html = render_questionnaire(
+        questionnaire, "CL-0001", extra_block_ids=["oprosnik_candida"]
+    )
+    block = questionnaire.block("oprosnik_candida")
+    summary = next(
+        sub for sub in block.subscales if len(sub.question_ids) == len(block.questions)
+    )
+    for subscale in block.subscales:
+        if subscale is summary:
+            continue
+        assert subscale.title in html
+
+
 def test_question_ids_are_present_as_input_names(questionnaire):
     html = render_questionnaire(questionnaire, "CL-0001")
     block = questionnaire.block("obraz_zizni")

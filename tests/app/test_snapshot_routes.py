@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -338,6 +339,44 @@ def test_findings_report_the_subject_they_were_computed_for(client):
     assert "пол м" in report
     assert "возраст 41" in report
     assert "дефицит" in report
+
+
+def test_age_is_taken_at_the_snapshot_date_not_today(client):
+    """Иначе за год сопровождения возраст уедет и коридор сменится молча."""
+    test_client, context = client
+    test_client.post(
+        "/clients",
+        data={
+            "full_name": "Петров Пётр",
+            "sex": "м",
+            "birth_date": "1985-03-02",
+        },
+    )
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2020-09-01"})
+    with context.session() as repo:
+        snapshot_id = repo.snapshots.for_client("CL-0001")[-1].id
+
+    report = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "возраст 35" in report
+
+
+def test_findings_refuse_an_incomplete_client_card(client):
+    """Пустая карточка не должна подставлять пол — лучше отказ с объяснением."""
+    test_client, context = client
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        snapshot_id = repo.snapshots.for_client("CL-0001")[-1].id
+
+    # Так выглядит карточка, доставшаяся от схемы версии 1.
+    connection = sqlite3.connect(context.database_path)
+    connection.execute("UPDATE identities SET sex = '', birth_date = ''")
+    connection.commit()
+    connection.close()
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/findings")
+    assert response.status_code == 400
+    assert "не заполнена" in response.text
 
 
 def test_findings_use_only_confirmed_measurements(client):

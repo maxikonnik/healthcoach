@@ -279,7 +279,7 @@ git commit -m "feat: схема базы и открытие с проверко
 - Consumes: `open_database`, `StorageError` из задачи 1. **Больше ничего:** `storage` не импортирует `scoring` — это соседние слои, а не надстройка. Свой `Answers = dict[str, int]` объявляется локально; структурно он совпадает с одноимённым псевдонимом в `scoring`, поэтому словарь передаётся в `collect_findings` напрямую.
 - Produces:
   - `Client(code: str, full_name: str, contacts: str | None, note: str | None)`
-  - `ClientRepository(connection)` с методами `add(full_name, sex, birth_date, contacts=None, note=None) -> Client`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
+  - `ClientRepository(connection)` с методами `add(full_name, sex, birth_date, contacts=None, note=None) -> Client`, `update(code, sex, birth_date, contacts=None, note=None) -> bool`, `get(code) -> Client | None`, `all() -> list[Client]`, `next_code() -> str`
   - `Snapshot(id: int, client_code: str, taken_on: date, note: str | None)`
   - `StoredMeasurement(id: int, analyte_id: str, raw_name: str, value: float, units: str, taken_on: date, confirmed: bool)`
   - `SnapshotRepository(connection)` с методами `create(client_code, taken_on, note=None) -> Snapshot`, `get(snapshot_id) -> Snapshot | None`, `for_client(client_code) -> list[Snapshot]`, `add_measurement(...) -> StoredMeasurement`, `measurements(snapshot_id) -> list[StoredMeasurement]`, `confirm_measurement(measurement_id, snapshot_id) -> bool`, `history(client_code, analyte_id) -> list[StoredMeasurement]`, `save_answers(snapshot_id, answers) -> None`, `answers(snapshot_id) -> Answers`
@@ -3060,5 +3060,7 @@ git commit -m "feat: экран среза с ручным вводом пока
 **План 3 — документы.** Чтение PDF через pdfplumber, адаптер `OCREngine` поверх распознавания изображений, автозаполнение формы показателей из выгрузки лаборатории. Требует реальных выгрузок в `samples/`: без них разбор форматов — гадание. Экран сверки из задачи 8 остаётся тем же, меняется только источник строк.
 
 **План 4 — интерпретация и отчёт.** Обезличивание с обязательным тестом на утечку, адаптер `LLMProvider` поверх `claude -p`, сборка черновика с привязкой к находкам, экран правки и утверждения, PDF через WeasyPrint, графики динамики, портфолио с подсветкой врачей.
+
+**Переход схемы не имеет права ломать базу.** Карточки, заведённые до версии 2, остаются с пустыми полом и датой рождения. `Client.birth_date` поэтому `date | None`, а не `date`: разбор пустой строки как даты валил бы список клиентов, а не только находки, и починить карточку было бы негде. Карточка честно показывает, что не заполнена, форма на её странице заполняет, находки до этого отказываются считать с объяснением.
 
 **Пол и дата рождения — в карточке клиента.** Изначально план откладывал их до плана 4 и оставлял в маршруте находок `Subject(sex="ж", age=35)`. Финальное ревью показало, что оговорка «задаются снаружи» неверна: ссылка со страницы среза не передаёт ничего, поэтому находки считались для 35-летней женщины по каждому клиенту, и в отчёте это никак не было видно. Мужчина с ферритином 35 нг/мл получал «ниже целевого» вместо «дефицит». Теперь пол и дата рождения обязательны в карточке, возраст считается на дату среза, а заголовок находок называет, для кого они посчитаны.
