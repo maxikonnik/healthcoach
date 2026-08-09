@@ -14,9 +14,11 @@ class FakeRun:
             stdout, stderr, returncode, raises,
         )
         self.command = None
+        self.kwargs = None
 
     def __call__(self, command, **kwargs):
         self.command = command
+        self.kwargs = kwargs
         if self.raises is not None:
             raise self.raises
         return self
@@ -29,15 +31,39 @@ def test_answer_is_taken_from_the_result_field(monkeypatch):
     assert ClaudeCodeProvider().complete("вопрос") == "Ответ модели"
 
 
-def test_prompt_is_passed_headless(monkeypatch):
+def test_prompt_is_delivered_via_stdin_not_argv(monkeypatch):
     run = FakeRun(stdout=json.dumps({"is_error": False, "result": "ок"}))
     monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
 
     ClaudeCodeProvider().complete("вопрос")
 
     assert "-p" in run.command
-    assert "вопрос" in run.command
     assert "--output-format" in run.command
+    assert "вопрос" not in run.command
+    assert run.kwargs["input"] == "вопрос"
+
+
+def test_prompt_starting_with_dashes_is_delivered_unchanged(monkeypatch):
+    """Позиционный токен с "-" claude принял бы за неизвестный флаг —
+    поэтому промпт не может попадать в argv ни в каком виде."""
+    prompt = "--this-is-not-a-real-flag-zzz"
+    run = FakeRun(stdout=json.dumps({"is_error": False, "result": "ок"}))
+    monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
+
+    ClaudeCodeProvider().complete(prompt)
+
+    assert prompt not in run.command
+    assert run.kwargs["input"] == prompt
+
+
+def test_prompt_with_newlines_and_quotes_survives(monkeypatch):
+    prompt = 'первая строка\nвторая "строка" с \'кавычками\''
+    run = FakeRun(stdout=json.dumps({"is_error": False, "result": "ок"}))
+    monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
+
+    ClaudeCodeProvider().complete(prompt)
+
+    assert run.kwargs["input"] == prompt
 
 
 def test_reported_error_is_refused(monkeypatch):
@@ -70,6 +96,31 @@ def test_empty_answer_is_refused(monkeypatch):
     monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
 
     with pytest.raises(LLMError, match="пустой"):
+        ClaudeCodeProvider().complete("вопрос")
+
+
+def test_null_result_is_refused(monkeypatch):
+    """JSON null не должен превращаться в текстовую строку "None"."""
+    run = FakeRun(stdout=json.dumps({"is_error": False, "result": None}))
+    monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
+
+    with pytest.raises(LLMError, match="не строка"):
+        ClaudeCodeProvider().complete("вопрос")
+
+
+def test_non_string_result_is_refused(monkeypatch):
+    run = FakeRun(stdout=json.dumps({"is_error": False, "result": ["x"]}))
+    monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
+
+    with pytest.raises(LLMError, match="не строка"):
+        ClaudeCodeProvider().complete("вопрос")
+
+
+def test_non_object_body_is_refused(monkeypatch):
+    run = FakeRun(stdout=json.dumps([1, 2, 3]))
+    monkeypatch.setattr("healthcoach.llm.provider.subprocess.run", run)
+
+    with pytest.raises(LLMError, match="не объект"):
         ClaudeCodeProvider().complete("вопрос")
 
 

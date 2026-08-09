@@ -37,8 +37,12 @@ class ClaudeCodeProvider:
         self._model = model
         self._timeout = timeout
 
-    def _command(self, prompt: str) -> list[str]:
-        command = [BINARY, "-p", prompt, "--output-format", "json"]
+    def _command(self) -> list[str]:
+        # Промпт намеренно не попадает в argv: собственный парсер claude
+        # отвергает позиционные токены, начинающиеся с "-", как неизвестные
+        # флаги, а argv вдобавок ограничен по длине — payload может быть
+        # большим. Промпт передаётся через stdin, это снимает оба ограничения.
+        command = [BINARY, "-p", "--output-format", "json"]
         if self._model:
             command += ["--model", self._model]
         return command
@@ -46,7 +50,8 @@ class ClaudeCodeProvider:
     def complete(self, prompt: str) -> str:
         try:
             completed = subprocess.run(
-                self._command(prompt),
+                self._command(),
+                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=self._timeout,
@@ -72,9 +77,19 @@ class ClaudeCodeProvider:
         except json.JSONDecodeError as exc:
             raise LLMError(f"ответ {BINARY} не разобран как JSON: {exc}") from exc
 
-        answer = str(body.get("result", ""))
+        if not isinstance(body, dict):
+            raise LLMError(
+                f"ответ {BINARY} не объект JSON, а {type(body).__name__}: {body!r}"
+            )
+
+        result = body.get("result")
+        if not isinstance(result, str):
+            raise LLMError(
+                f"поле result не строка, а {type(result).__name__}: {result!r}"
+            )
+
         if body.get("is_error"):
-            raise LLMError(f"модель вернула ошибку: {answer or 'без сообщения'}")
-        if not answer.strip():
+            raise LLMError(f"модель вернула ошибку: {result or 'без сообщения'}")
+        if not result.strip():
             raise LLMError("модель вернула пустой ответ")
-        return answer
+        return result
