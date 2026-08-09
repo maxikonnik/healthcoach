@@ -35,6 +35,14 @@
   <button type="submit">Загрузить</button>
 </form>
 
+<h2>Документы</h2>
+<form method="post" action="/snapshots/{{ snapshot.id }}/documents"
+      enctype="multipart/form-data">
+  <label>Выгрузка лаборатории
+    <input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></label>
+  <button type="submit">Загрузить</button>
+</form>
+
 <h2>Показатели</h2>
 <form method="post" action="/snapshots/{{ snapshot.id }}/measurements">
   <label>Название из бланка<input name="raw_name" required
@@ -46,19 +54,30 @@
 </form>
 
 {% if rows %}
+{% set ok_rows = rows | rejectattr("problem") | list %}
+{% set problem_rows = rows | selectattr("problem") | list %}
+
+{% if ok_rows %}
 <table>
   <tr>
-    <th>Из бланка</th><th>Показатель</th><th>Значение</th>
+    <th>Из бланка</th><th>Показатель</th><th>Источник</th><th>Значение</th>
     <th>Дата забора</th><th>Статус</th><th></th>
   </tr>
-  {% for row in rows %}
+  {% for row in ok_rows %}
   <tr>
     <td>{{ row.measurement.raw_name }}</td>
+    <td>{{ row.title }}</td>
+    <td class="muted">{{ row.measurement.source }}</td>
     <td>
-      {% if row.problem %}<span class="warn">{{ row.problem }}</span>
-      {% else %}{{ row.title }}{% endif %}
+      {% if row.measurement.value is none %}
+      <form method="post"
+            action="/snapshots/{{ snapshot.id }}/measurements/{{ row.measurement.id }}/value">
+        <span class="warn">{{ row.measurement.raw_value }}</span>
+        <input name="value" size="6" inputmode="decimal" required>
+        <button type="submit">Вписать</button>
+      </form>
+      {% else %}{{ row.measurement.value }} {{ row.measurement.units }}{% endif %}
     </td>
-    <td>{{ row.measurement.value }} {{ row.measurement.units }}</td>
     <td>{{ row.measurement.taken_on }}</td>
     <td>
       {% if row.measurement.confirmed %}подтверждено
@@ -75,6 +94,51 @@
   </tr>
   {% endfor %}
 </table>
+{% else %}
+<p class="muted">Узнанных показателей пока нет.</p>
+{% endif %}
+
+{% if problem_rows %}
+<details>
+  <summary class="warn">Нераспознанные показатели — {{ problem_rows | length }}</summary>
+  <table>
+    <tr>
+      <th>Из бланка</th><th>Проблема</th><th>Источник</th><th>Значение</th>
+      <th>Дата забора</th><th>Статус</th><th></th>
+    </tr>
+    {% for row in problem_rows %}
+    <tr>
+      <td>{{ row.measurement.raw_name }}</td>
+      <td><span class="warn">{{ row.problem }}</span></td>
+      <td class="muted">{{ row.measurement.source }}</td>
+      <td>
+        {% if row.measurement.value is none %}
+        <form method="post"
+              action="/snapshots/{{ snapshot.id }}/measurements/{{ row.measurement.id }}/value">
+          <span class="warn">{{ row.measurement.raw_value }}</span>
+          <input name="value" size="6" inputmode="decimal" required>
+          <button type="submit">Вписать</button>
+        </form>
+        {% else %}{{ row.measurement.value }} {{ row.measurement.units }}{% endif %}
+      </td>
+      <td>{{ row.measurement.taken_on }}</td>
+      <td>
+        {% if row.measurement.confirmed %}подтверждено
+        {% else %}<span class="muted">не сверено</span>{% endif %}
+      </td>
+      <td>
+        {% if not row.measurement.confirmed %}
+        <form method="post"
+              action="/snapshots/{{ snapshot.id }}/measurements/{{ row.measurement.id }}/confirm">
+          <button type="submit">Подтвердить</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</details>
+{% endif %}
 {% else %}
 <p class="muted">Показателей пока нет.</p>
 {% endif %}
