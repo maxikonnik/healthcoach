@@ -19,6 +19,14 @@ class PayloadError(Exception):
     """Вход модели собрать нельзя."""
 
 
+UNRESOLVED_TITLE = "показатель из бланка, не распознан"
+"""Заголовок нераспознанной находки. Настоящий title для неё — текст,
+списанный с бланка (иногда OCR-ом с фотографии), и может содержать что
+угодно, вплоть до имени клиента. Модель всё равно не может истолковать
+показатель, которого нет в базе знаний коуча, поэтому заменять его
+на общую формулировку ничего не теряет."""
+
+
 def finding_id(finding: Finding) -> str:
     """Устойчивый идентификатор находки — по нему раздел на неё ссылается."""
     return f"{finding.kind}/{finding.subject_id}"
@@ -26,9 +34,10 @@ def finding_id(finding: Finding) -> str:
 
 def _finding_line(finding: Finding) -> str:
     value = "—" if finding.value is None else finding.value
+    title = UNRESOLVED_TITLE if not finding.subject_id else finding.title
     parts = [
         f"[{finding_id(finding)}]",
-        f"{finding.title}:",
+        f"{title}:",
         f"{value} {finding.units}".strip(),
         f"— {finding.status}",
     ]
@@ -52,9 +61,13 @@ def build_payload(
     if not findings:
         raise PayloadError("находок нет — интерпретировать нечего")
 
+    human_line = f"пол: {subject.sex}, возраст: {subject.age}"
+    if subject.cycle_phase:
+        human_line += f", фаза цикла: {subject.cycle_phase}"
+
     lines = [
         "ЧЕЛОВЕК",
-        f"пол: {subject.sex}, возраст: {subject.age}",
+        human_line,
         "",
         "ЗАПРОС И ЦЕЛИ (словами клиента, вычитаны специалистом)",
         request or "не указан",
