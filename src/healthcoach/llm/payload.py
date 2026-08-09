@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from healthcoach.privacy.leak import assert_no_leak
-from healthcoach.scoring.findings import Finding
+from healthcoach.scoring.findings import KIND_ANALYTE, KIND_DERIVED, Finding
 from healthcoach.scoring.references import Subject
 from healthcoach.storage.clients import Client
 
@@ -20,11 +20,17 @@ class PayloadError(Exception):
 
 
 UNRESOLVED_TITLE = "показатель из бланка, не распознан"
-"""Заголовок нераспознанной находки. Настоящий title для неё — текст,
-списанный с бланка (иногда OCR-ом с фотографии), и может содержать что
-угодно, вплоть до имени клиента. Модель всё равно не может истолковать
-показатель, которого нет в базе знаний коуча, поэтому заменять его
-на общую формулировку ничего не теряет."""
+"""Заголовок находки-показателя, для которой не сработало правило.
+Настоящий title для неё в общем случае — текст, списанный с бланка
+(иногда OCR-ом с фотографии), и может содержать что угодно, вплоть до
+имени клиента: путь в `check_measurements`/`_unresolved` подставляет туда
+`measurement.label`, каким бы ни был `subject_id`. Модель всё равно не
+может истолковать показатель, для которого правило не задано, поэтому
+заменять его заголовок на общую формулировку ничего не теряет.
+
+Заголовок опросника этим правилом не маскируется: он всегда берётся из
+базы знаний коуча (название блока/подшкалы), а не из документа клиента,
+даже когда степень не выставлена (`rule_missing=True`)."""
 
 
 def finding_id(finding: Finding) -> str:
@@ -34,7 +40,8 @@ def finding_id(finding: Finding) -> str:
 
 def _finding_line(finding: Finding) -> str:
     value = "—" if finding.value is None else finding.value
-    title = UNRESOLVED_TITLE if not finding.subject_id else finding.title
+    document_derived = finding.kind in (KIND_ANALYTE, KIND_DERIVED) and finding.rule_missing
+    title = UNRESOLVED_TITLE if document_derived else finding.title
     parts = [
         f"[{finding_id(finding)}]",
         f"{title}:",

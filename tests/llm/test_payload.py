@@ -120,6 +120,55 @@ def test_payload_does_not_send_the_verbatim_title_of_an_unresolved_finding():
     assert "правило не задано" in payload
 
 
+def test_payload_does_not_send_the_verbatim_title_of_a_finding_with_no_rule_even_when_resolved():
+    """Раньше маркером считался пустой subject_id — ложно: `_unresolved()`
+    вызывается и когда analyte_id распознан, но значения нет (например,
+    в бланке ‘<0.60’), и title всё равно берётся из текста бланка
+    (`measurement.label`), а не из базы знаний. Настоящий маркер — kind
+    показателя/производного вместе с rule_missing."""
+    resolved_but_missing = Finding(
+        kind="показатель",
+        subject_id="ferritin",
+        title="KOROLKOVA E.V. Ферритин",
+        value=None,
+        units="нг/мл",
+        status="значение не распознано",
+        target=None,
+        lab_range=None,
+        note=None,
+        rule_missing=True,
+    )
+    payload = build_payload(
+        [resolved_but_missing], Subject(sex="ж", age=39), "", _specialties(), CLIENT
+    )
+    assert "KOROLKOVA E.V. Ферритин" not in payload
+    assert "показатель из бланка, не распознан" in payload
+    assert "нг/мл" in payload
+    assert "значение не распознано" in payload
+
+
+def test_payload_keeps_the_real_title_of_a_questionnaire_finding_with_no_degree():
+    """Заголовок опросника — название блока/подшкалы из базы знаний коуча,
+    не текст документа, даже когда степень не выставлена (rule_missing=True).
+    Маскировать его незачем и нельзя — его нет смысла путать с заголовком
+    показателя."""
+    unscored = Finding(
+        kind="опросник",
+        subject_id="obraz_zizni/весь",
+        title="ОБРАЗ ЖИЗНИ",
+        value=8,
+        units="баллов",
+        status="степень не выставлена",
+        target=None,
+        lab_range=None,
+        note="нет правила для этой суммы",
+        rule_missing=True,
+    )
+    payload = build_payload([unscored], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
+    assert "ОБРАЗ ЖИЗНИ" in payload
+    assert "показатель из бланка, не распознан" not in payload
+
+
 def test_payload_carries_cycle_phase_when_set():
     payload = build_payload(
         [FINDING], Subject(sex="ж", age=39, cycle_phase="фолликулярная"), "", _specialties(), CLIENT
