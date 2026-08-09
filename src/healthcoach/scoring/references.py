@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from healthcoach.knowledge.references import Analyte, Interval, References, Target
 from healthcoach.knowledge.sex import normalize_sex
+from healthcoach.knowledge.units import units_match
 
 STATUS_DEFICIT = "дефицит"
 STATUS_BELOW = "ниже целевого"
@@ -15,6 +16,7 @@ STATUS_EXCESS = "избыток"
 STATUS_NO_RULE = "правило не задано"
 STATUS_UNIT_MISMATCH = "единицы не сопоставлены"
 STATUS_NOT_COMPUTED = "не удалось вычислить"
+STATUS_NO_VALUE = "значение не распознано"
 
 
 @dataclass(frozen=True)
@@ -91,12 +93,16 @@ def check_measurements(
     verdicts: list[AnalyteVerdict] = []
 
     for measurement in measurements:
+        if measurement.value is None:
+            verdicts.append(_unresolved(measurement, STATUS_NO_VALUE))
+            continue
+
         analyte = references.resolve(measurement.analyte_id)
         if analyte is None:
             verdicts.append(_unresolved(measurement, STATUS_NO_RULE))
             continue
 
-        if measurement.units.strip().casefold() != analyte.units.strip().casefold():
+        if not units_match(analyte, measurement.units):
             verdicts.append(
                 AnalyteVerdict(
                     analyte_id=analyte.id,

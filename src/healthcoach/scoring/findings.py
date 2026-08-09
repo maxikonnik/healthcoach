@@ -16,6 +16,7 @@ from healthcoach.scoring.references import (
     STATUS_EXCESS,
     STATUS_NOT_COMPUTED,
     STATUS_NO_RULE,
+    STATUS_NO_VALUE,
     STATUS_UNIT_MISMATCH,
     STATUS_WITHIN,
     AnalyteVerdict,
@@ -41,6 +42,7 @@ _SEVERITY = {
     STATUS_UNIT_MISMATCH: 4,
     STATUS_NOT_COMPUTED: 4,
     STATUS_UNSCORED: 4,
+    STATUS_NO_VALUE: 4,
     STATUS_NO_RULE: 5,
 }
 

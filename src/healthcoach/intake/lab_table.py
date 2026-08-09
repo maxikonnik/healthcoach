@@ -1,0 +1,267 @@
+"""Разбор строк выгрузки лаборатории в записи бланка.
+
+Роли колонок берутся из строки-шапки, а не из позиции: у одной
+лаборатории единицы стоят до референса, у другой — после. Строка,
+которая однозначно не читается, не разбирается по частям, а доходит
+до коуча целиком: догадка здесь стоила бы неверного числа в анализе.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from healthcoach.intake.resolve import LAB_CODE
+
+ROLE_NAME = "название"
+ROLE_VALUE = "значение"
+ROLE_UNITS = "единицы"
+ROLE_REFERENCE = "референс"
+
+_ROLES_REQUIRED = (ROLE_NAME, ROLE_VALUE, ROLE_UNITS, ROLE_REFERENCE)
+
+_HEADER_WORDS = {
+    "исследование": ROLE_NAME,
+    "показатель": ROLE_NAME,
+    "параметр": ROLE_NAME,
+    "значение": ROLE_VALUE,
+    "результат": ROLE_VALUE,
+    "ед": ROLE_UNITS,
+    "нормальные": ROLE_REFERENCE,
+    "референсные": ROLE_REFERENCE,
+}
+
+_NUMBER = re.compile(r"^[<>]?\d+(?:[.,]\d+)?$")
+_STARTS_WITH_NUMBER = re.compile(r"^\s*[<>]?\d")
+_HAS_DIGIT = re.compile(r"\d")
+_SERVICE = re.compile(r"^\s*(Дата исследования|Штрихкод|Материал|Вн\.№)")
+_SPACES = re.compile(r"\s+")
+_RANGE_DASH = re.compile(r"^[-–—]$")
+_COMPARISON_SIGN = re.compile(r"^[<>≤≥]$")
+
+
+class LabTableError(Exception):
+    """Выгрузку разобрать нельзя."""
+
+
+@dataclass(frozen=True)
+class LabRow:
+    name: str
+    value_text: str
+    units: str
+    reference_text: str
+    line: str
+
+
+@dataclass(frozen=True)
+class LabTable:
+    rows: tuple[LabRow, ...]
+    unparsed: tuple[str, ...]
+    """Строки, которые не читаются однозначно. Показываются коучу как есть."""
+
+
+def parse_number(text: str) -> float | None:
+    """Число из ячейки бланка. None, если числа там нет.
+
+    «<0.60» числом не считается: настоящее значение меньше, а насколько —
+    неизвестно, и подстановка 0.60 исказила бы динамику. «nan»/«inf» тоже
+    не числа бланка: они молча испортили бы любое дальнейшее сравнение
+    с коридором нормы.
+    """
+    cleaned = text.strip().replace(",", ".")
+    try:
+        value = float(cleaned)
+    except ValueError:
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _header_word_roles(line: str) -> list[str]:
+    """Роли, узнанные среди слов строки, по порядку появления."""
+    roles: list[str] = []
+    for word in _SPACES.split(line.strip().casefold()):
+        role = _HEADER_WORDS.get(word.strip(".:"))
+        if role is not None and role not in roles:
+            roles.append(role)
+    return roles
+
+
+def _unrecognised_header_words(line: str) -> list[str]:
+    """Слова строки-шапки, не сопоставленные ни одной роли."""
+    words: list[str] = []
+    for word in _SPACES.split(line.strip().casefold()):
+        cleaned = word.strip(".:")
+        if cleaned and cleaned not in _HEADER_WORDS and cleaned not in words:
+            words.append(cleaned)
+    return words
+
+
+def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
+    """Найти строку-шапку и вернуть её номер в списке и порядок её ролей.
+
+    Кандидат в шапку — строка без цифр, в которой встречаются слова ролей
+    «название» и «значение». Цифры исключают кандидата: строка результата
+    со словами, похожими на шапку (`Показатель: Глюкоза Результат: 5.2 ...`),
+    шапкой быть не может, и её значение не должно пропасть под видом шапки.
+
+    Если у найденного кандидата нет всех четырёх ролей, разбирать дальше
+    нельзя: колонка, роль которой не опознана, встанет не на своё место
+    (например, единицы — в референс), а это опаснее отказа.
+    """
+    for index, line in enumerate(lines):
+        if _HAS_DIGIT.search(line):
+            continue
+        roles = _header_word_roles(line)
+        if ROLE_NAME not in roles or ROLE_VALUE not in roles:
+            continue
+        missing = [role for role in _ROLES_REQUIRED if role not in roles]
+        if missing:
+            unrecognised = _unrecognised_header_words(line)
+            raise LabTableError(
+                f"строка-шапка {line.strip()!r} не называет колонки: "
+                f"{', '.join(missing)}; нераспознанные слова: "
+                f"{', '.join(unrecognised) if unrecognised else 'нет'} — "
+                "разбирать дальше нельзя, колонка встанет не на своё место"
+            )
+        return index, roles
+    raise LabTableError(
+        "в выгрузке не найдена шапка таблицы: неизвестно, где значение, "
+        "а где единицы"
+    )
+
+
+def _strip_lab_code(line: str) -> str:
+    """Стереть код номенклатуры услуги — тем же правилом, что и resolve.py.
+
+    Общий объект `LAB_CODE`, а не вторая копия регулярки: копия однажды уже
+    разошлась с оригиналом и съедала квалифицирующую скобку («ионизированный»),
+    из-за чего ионизированный кальций читался как общий.
+    """
+    return _SPACES.sub(" ", LAB_CODE.sub("", line)).strip()
+
+
+def _consume_reference(rest: list[str]) -> tuple[str, list[str]]:
+    """Взять из остатка явный диапазон референса, если он там есть.
+
+    На фото референс иногда печатается с пробелами вокруг тире
+    («3,89 - 9,23») или с отдельным знаком сравнения («< 5») — тогда он
+    занимает не один токен, а два-три. Диапазон опознаётся однозначно —
+    по тире между двумя числами или по знаку сравнения перед числом, а
+    не по счёту слов вслепую. Если ни одна из форм не подошла, референс,
+    как и любая другая непоследняя колонка, забирает один токен.
+    """
+    if (
+        len(rest) >= 3
+        and _NUMBER.match(rest[0])
+        and _RANGE_DASH.match(rest[1])
+        and _NUMBER.match(rest[2])
+    ):
+        return " ".join(rest[:3]), rest[3:]
+    if len(rest) >= 2 and _COMPARISON_SIGN.match(rest[0]) and _NUMBER.match(rest[1]):
+        return " ".join(rest[:2]), rest[2:]
+    return rest[0], rest[1:]
+
+
+def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
+    """Разобрать строку результата или вернуть None, если не читается."""
+    tokens = _SPACES.split(line.strip())
+    first = next(
+        (i for i, token in enumerate(tokens) if _NUMBER.match(token)), None
+    )
+    if first is None or first == 0:
+        return None
+
+    name = " ".join(tokens[:first])
+    rest = tokens[first:]
+    fields: dict[str, str] = {ROLE_NAME: name}
+
+    # Последняя колонка забирает весь остаток: референс бывает из трёх
+    # слов («0 - 5»), а единицы — всегда из одного. Если остаток из
+    # нескольких слов достаётся единицам, граница колонок разобрана не
+    # там — строка идёт в unparsed, а не в запись с обрубленным референсом.
+    tail_roles = [role for role in roles if role != ROLE_NAME]
+    for index, role in enumerate(tail_roles):
+        if not rest:
+            return None
+        if index == len(tail_roles) - 1:
+            if role == ROLE_UNITS and len(rest) > 1:
+                return None
+            fields[role] = " ".join(rest)
+            rest = []
+        elif role == ROLE_REFERENCE:
+            fields[role], rest = _consume_reference(rest)
+        else:
+            fields[role] = rest.pop(0)
+
+    if not _NUMBER.match(fields.get(ROLE_VALUE, "")):
+        return None
+    return LabRow(
+        name=fields[ROLE_NAME],
+        value_text=fields[ROLE_VALUE],
+        units=fields.get(ROLE_UNITS, ""),
+        reference_text=fields.get(ROLE_REFERENCE, ""),
+        line=line,
+    )
+
+
+def parse_lab_lines(lines: Sequence[str]) -> LabTable:
+    """Разобрать строки выгрузки в записи бланка."""
+    header_index, roles = _find_header(lines)
+
+    rows: list[LabRow] = []
+    unparsed: list[str] = []
+    pending_name = ""
+    pending_line = ""
+    """Исходный текст строки, из которой взято `pending_name` — на случай,
+    если следующая строка со значением всё равно не разберётся: имя не
+    должно пропасть из того, что видит коуч, только потому что оно жило
+    отдельной строкой."""
+
+    for index, line in enumerate(lines):
+        if index == header_index:
+            continue
+        stripped = line.strip()
+        if not stripped or _SERVICE.match(stripped):
+            continue
+
+        if pending_name and _STARTS_WITH_NUMBER.match(stripped):
+            candidate = f"{pending_name} {stripped}"
+            display = f"{pending_line} {line}"
+            pending_name = ""
+            pending_line = ""
+        else:
+            candidate = stripped
+            display = line
+
+        cleaned = _strip_lab_code(candidate)
+        if "(" in cleaned and cleaned.count("(") != cleaned.count(")"):
+            unparsed.append(display)
+            pending_name = ""
+            pending_line = ""
+            continue
+
+        row = _split_row(cleaned, roles)
+        if row is not None:
+            rows.append(row)
+            pending_name = ""
+            pending_line = ""
+        elif _HAS_DIGIT.search(cleaned):
+            # В строке есть число, а записи не вышло: это может быть
+            # результат, который разбор не осилил. Молча выбросить его
+            # нельзя — он доходит до коуча текстом. Перенесённое с
+            # предыдущей строки имя уходит вместе с ней: иначе коуч увидел
+            # бы голое число без названия показателя.
+            unparsed.append(display)
+            pending_name = ""
+            pending_line = ""
+        elif cleaned:
+            # Числа нет вовсе, значит это не результат: либо перенесённое
+            # название, либо проза бланка. Ждём следующую строку.
+            pending_name = cleaned
+            pending_line = line
+
+    return LabTable(rows=tuple(rows), unparsed=tuple(unparsed))

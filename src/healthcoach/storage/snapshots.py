@@ -9,6 +9,10 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
+SOURCE_MANUAL = "ручной ввод"
+SOURCE_PDF = "pdf"
+SOURCE_PHOTO = "фото"
+
 Answers = dict[str, int]
 
 
@@ -25,10 +29,14 @@ class StoredMeasurement:
     id: int
     analyte_id: str
     raw_name: str
-    value: float
+    value: float | None
+    """None, если в бланке было не число: «<0.60» не равно 0.60."""
+    raw_value: str
     units: str
     taken_on: date
     confirmed: bool
+    source: str
+    document_id: int | None
 
 
 def _snapshot(row: sqlite3.Row) -> Snapshot:
@@ -46,9 +54,12 @@ def _measurement(row: sqlite3.Row) -> StoredMeasurement:
         analyte_id=row["analyte_id"],
         raw_name=row["raw_name"],
         value=row["value"],
+        raw_value=row["raw_value"],
         units=row["units"],
         taken_on=date.fromisoformat(row["taken_on"]),
         confirmed=bool(row["confirmed"]),
+        source=row["source"],
+        document_id=row["document_id"],
     )
 
 
@@ -88,23 +99,28 @@ class SnapshotRepository:
         snapshot_id: int,
         analyte_id: str,
         raw_name: str,
-        value: float,
+        value: float | None,
+        raw_value: str,
         units: str,
         taken_on: date,
+        source: str = SOURCE_MANUAL,
         document_id: int | None = None,
     ) -> StoredMeasurement:
         cursor = self._connection.execute(
             "INSERT INTO measurements "
-            "(snapshot_id, analyte_id, raw_name, value, units, taken_on, document_id, confirmed) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+            "(snapshot_id, analyte_id, raw_name, value, raw_value, units, "
+            " taken_on, document_id, source, confirmed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
                 snapshot_id,
                 analyte_id,
                 raw_name,
                 value,
+                raw_value,
                 units,
                 taken_on.isoformat(),
                 document_id,
+                source,
             ),
         )
         self._connection.commit()
@@ -113,9 +129,12 @@ class SnapshotRepository:
             analyte_id=analyte_id,
             raw_name=raw_name,
             value=value,
+            raw_value=raw_value,
             units=units,
             taken_on=taken_on,
             confirmed=False,
+            source=source,
+            document_id=document_id,
         )
 
     def measurements(self, snapshot_id: int) -> list[StoredMeasurement]:
@@ -136,6 +155,24 @@ class SnapshotRepository:
             "UPDATE measurements SET confirmed = 1 "
             "WHERE id = ? AND snapshot_id = ?",
             (measurement_id, snapshot_id),
+        )
+        self._connection.commit()
+        return cursor.rowcount == 1
+
+    def set_value(self, measurement_id: int, snapshot_id: int, value: float) -> bool:
+        """Вписать число там, где в бланке его не было. False — строки нет,
+        либо число там уже есть.
+
+        Срез обязателен по той же причине, что и у подтверждения: без него
+        правка по одному идентификатору затрагивала бы измерение любого
+        другого клиента. Условие `value IS NULL` — по причине, ради которой
+        метод существует: он заполняет пропуск, а не переписывает число,
+        которое коуч уже мог подтвердить как верное.
+        """
+        cursor = self._connection.execute(
+            "UPDATE measurements SET value = ? "
+            "WHERE id = ? AND snapshot_id = ? AND value IS NULL",
+            (value, measurement_id, snapshot_id),
         )
         self._connection.commit()
         return cursor.rowcount == 1

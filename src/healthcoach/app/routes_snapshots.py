@@ -12,7 +12,7 @@ from healthcoach.app.deps import Context, Repositories
 from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
-from healthcoach.knowledge.units import UnitError, convert_to_reference
+from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
 from healthcoach.storage.snapshots import StoredMeasurement
@@ -28,6 +28,74 @@ class Row:
     problem: str | None
 
 
+@dataclass(frozen=True)
+class DocumentImport:
+    """Итог свежей загрузки документа, показываемый один раз — сразу после
+    неё. Строки, которые разбор не смог превратить в запись бланка вовсе,
+    сюда не входят: они хранятся с самим документом (`Document.unparsed`)
+    и показываются на каждом открытии среза, а не только в этом ответе."""
+
+    filename: str
+    source: str
+    count: int
+
+
+def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
+    rows: list[Row] = []
+    for measurement in repo.snapshots.measurements(snapshot_id):
+        if not measurement.analyte_id:
+            resolution = resolve_analyte(context.references, measurement.raw_name)
+            problem = "показатель не распознан"
+            if resolution.is_ambiguous:
+                candidates = ", ".join(a.name for a in resolution.candidates)
+                problem = f"название подходит нескольким показателям: {candidates}"
+            rows.append(Row(measurement, measurement.raw_name, problem))
+            continue
+        analyte = context.references.analyte(measurement.analyte_id)
+        if analyte is None:
+            rows.append(
+                Row(measurement, measurement.analyte_id, "показатель не распознан")
+            )
+            continue
+        problem = None
+        if not units_match(analyte, measurement.units):
+            problem = f"единицы не сопоставлены: {measurement.units}"
+        rows.append(Row(measurement, analyte.name, problem))
+    return rows
+
+
+def render_snapshot_page(
+    request: Request,
+    templates,
+    context: Context,
+    repo: Repositories,
+    snapshot,
+    *,
+    imported: ImportedAnswers | None = None,
+    document_import: DocumentImport | None = None,
+):
+    """Отрисовать экран среза. Общая точка входа: и обычный показ страницы,
+    и оба обработчика загрузки (анкеты, документа) рендерят её напрямую —
+    редирект не пережил бы то, что нужно показать один раз."""
+    return templates.TemplateResponse(
+        request,
+        "snapshot.html",
+        {
+            "snapshot": snapshot,
+            "rows": _rows(context, repo, snapshot.id),
+            "answers_count": len(repo.snapshots.answers(snapshot.id)),
+            "imported": imported,
+            "document_import": document_import,
+            # Какие документы уже приложены к срезу, и что в каждом из
+            # них разбор не понял — показывается на каждом открытии
+            # страницы, а не только сразу после загрузки: перезагрузка
+            # страницы не имеет права стереть то, что коуч ещё не успел
+            # вписать руками.
+            "documents": repo.documents.for_snapshot(snapshot.id),
+        },
+    )
+
+
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
@@ -37,44 +105,14 @@ def build_router(context: Context, templates) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
         return snapshot
 
-    def _rows(repo: Repositories, snapshot_id: int) -> list[Row]:
-        rows: list[Row] = []
-        for measurement in repo.snapshots.measurements(snapshot_id):
-            if not measurement.analyte_id:
-                resolution = resolve_analyte(context.references, measurement.raw_name)
-                problem = "показатель не распознан"
-                if resolution.is_ambiguous:
-                    candidates = ", ".join(a.name for a in resolution.candidates)
-                    problem = f"название подходит нескольким показателям: {candidates}"
-                rows.append(Row(measurement, measurement.raw_name, problem))
-                continue
-            analyte = context.references.analyte(measurement.analyte_id)
-            if analyte is None:
-                rows.append(
-                    Row(measurement, measurement.analyte_id, "показатель не распознан")
-                )
-                continue
-            problem = None
-            if measurement.units.strip().casefold() != analyte.units.strip().casefold():
-                problem = f"единицы не сопоставлены: {measurement.units}"
-            rows.append(Row(measurement, analyte.name, problem))
-        return rows
-
     def _page(
         request: Request,
         repo: Repositories,
         snapshot,
         imported: ImportedAnswers | None = None,
     ):
-        return templates.TemplateResponse(
-            request,
-            "snapshot.html",
-            {
-                "snapshot": snapshot,
-                "rows": _rows(repo, snapshot.id),
-                "answers_count": len(repo.snapshots.answers(snapshot.id)),
-                "imported": imported,
-            },
+        return render_snapshot_page(
+            request, templates, context, repo, snapshot, imported=imported
         )
 
     @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)
@@ -147,6 +185,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 analyte_id=analyte_id,
                 raw_name=raw_name,
                 value=stored_value,
+                raw_value=value.strip(),
                 units=stored_units,
                 taken_on=when,
             )

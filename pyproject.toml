@@ -9,6 +9,9 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "uvicorn>=0.32",
+    "pdfplumber>=0.11",
+    "pyobjc-framework-Vision>=10.3; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=10.3; sys_platform == 'darwin'",
 ]
 
 [dependency-groups]

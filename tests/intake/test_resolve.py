@@ -34,6 +34,23 @@ def test_recognises_ferritin_in_its_many_spellings(references, raw):
     assert resolution.raw_name == raw
 
 
+def test_lab_code_with_the_order_boilerplate_is_stripped(references):
+    resolution = resolve_analyte(references, "Кальций A09.05.206 (Приказ МЗ РФ № 804н)")
+    assert resolution.is_certain
+    assert resolution.analyte.id == "кальций"
+
+
+def test_lab_code_with_a_qualifying_parenthesis_is_not_stripped(references):
+    """Регресс: код + любая другая скобка стирались целиком, и «Кальций
+    A09.05.206 (ионизированный)» — общий кальций с корзиной 9.2-10.0 мг/дл —
+    находился по имени общего кальция, хотя ионизированный кальций мерится
+    в других единицах и имеет другой коридор. Скобка должна остаться в
+    имени, чтобы показатель остался нераспознанным, а не был перепутан."""
+    resolution = resolve_analyte(references, "Кальций A09.05.206 (ионизированный)")
+    assert not resolution.is_certain
+    assert resolution.is_unknown
+
+
 def test_unknown_name_is_reported_not_guessed(references):
     resolution = resolve_analyte(references, "Гомоцистеин")
     assert resolution.is_unknown

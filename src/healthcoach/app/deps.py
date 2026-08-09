@@ -18,11 +18,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from healthcoach.intake.ocr import AppleVisionEngine, OCREngine
 from healthcoach.knowledge.questionnaire import Questionnaire, load_questionnaire
 from healthcoach.knowledge.references import References, load_references
 from healthcoach.knowledge.specialists import Specialists, load_specialists
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
+from healthcoach.storage.documents import DocumentRepository
 from healthcoach.storage.snapshots import SnapshotRepository
 
 
@@ -32,6 +34,7 @@ class Repositories:
 
     clients: ClientRepository
     snapshots: SnapshotRepository
+    documents: DocumentRepository
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,7 @@ class Context:
     specialists: Specialists
     documents_dir: Path
     database_path: Path
+    ocr: OCREngine | None
 
     @contextmanager
     def session(self) -> Iterator[Repositories]:
@@ -50,6 +54,7 @@ class Context:
             yield Repositories(
                 clients=ClientRepository(connection),
                 snapshots=SnapshotRepository(connection),
+                documents=DocumentRepository(connection),
             )
         finally:
             connection.close()
@@ -61,10 +66,20 @@ def build_context(data_dir: Path, knowledge_dir: Path) -> Context:
     documents_dir.mkdir(parents=True, exist_ok=True)
     database_path = data_dir / "healthcoach.db"
     open_database(database_path).close()
+
+    # Распознавание есть только в macOS. Без него PDF читаются как обычно,
+    # а фотография честно отвечает, что распознать её нечем.
+    engine: OCREngine | None
+    try:
+        engine = AppleVisionEngine()
+    except Exception:
+        engine = None
+
     return Context(
         questionnaire=load_questionnaire(knowledge_dir / "questionnaire.yaml"),
         references=load_references(knowledge_dir / "references"),
         specialists=load_specialists(knowledge_dir / "specialists.yaml"),
         documents_dir=documents_dir,
         database_path=database_path,
+        ocr=engine,
     )

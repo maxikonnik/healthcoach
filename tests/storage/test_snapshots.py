@@ -43,6 +43,7 @@ def test_measurement_round_trip(repositories):
         analyte_id="ферритин",
         raw_name="Ферритин (S-Ferritin)",
         value=18.0,
+        raw_value="18.0",
         units="нг/мл",
         taken_on=date(2026, 8, 20),
     )
@@ -57,7 +58,7 @@ def test_confirming_a_measurement_sticks(repositories):
     code, snapshots = repositories
     snapshot = snapshots.create(code, date(2026, 9, 1))
     stored = snapshots.add_measurement(
-        snapshot.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 8, 20)
     )
     assert snapshots.confirm_measurement(stored.id, snapshot.id) is True
     (read_back,) = snapshots.measurements(snapshot.id)
@@ -70,7 +71,7 @@ def test_confirmation_does_not_reach_another_snapshot(repositories):
     mine = snapshots.create(code, date(2026, 9, 1))
     other = snapshots.create(code, date(2026, 10, 1))
     stored = snapshots.add_measurement(
-        other.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 8, 20)
+        other.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 8, 20)
     )
 
     assert snapshots.confirm_measurement(stored.id, mine.id) is False
@@ -91,10 +92,10 @@ def test_history_spans_snapshots_and_sorts_by_sampling_date(repositories):
     later = snapshots.create(code, date(2026, 9, 1))
     earlier = snapshots.create(code, date(2026, 1, 15))
     snapshots.add_measurement(
-        later.id, "ферритин", "Ферритин", 45.0, "нг/мл", date(2026, 8, 20)
+        later.id, "ферритин", "Ферритин", 45.0, "45.0", "нг/мл", date(2026, 8, 20)
     )
     snapshots.add_measurement(
-        earlier.id, "ферритин", "Ферритин", 18.0, "нг/мл", date(2026, 1, 10)
+        earlier.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 1, 10)
     )
     assert [m.value for m in snapshots.history(code, "ферритин")] == [18.0, 45.0]
 
@@ -114,22 +115,46 @@ def test_saving_answers_replaces_previous(repositories):
     assert snapshots.answers(snapshot.id) == {"pitanie.а.1": 3}
 
 
-def test_snapshot_module_never_touches_the_identity_table():
-    """Реестр ФИО читает только ClientRepository — граница закреплена тестом."""
-    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+def _guarded_storage_modules() -> list[Path]:
+    """Модули хранилища, которым имя клиента знать не положено.
+
+    Изначально страж проверял только snapshots.py — и когда в documents.py
+    завели `from healthcoach.storage.clients import ClientRepository` и метод
+    `SELECT full_name FROM identities`, весь набор тестов прошёл молча.
+    Поэтому здесь перечисляются файлы каталога, а не один захардкоженный
+    путь: новый модуль хранилища подпадает под проверку по факту появления.
+
+    Исключены clients.py — владелец identities/full_name, которому это и
+    положено, — и schema.py: она объявляет DDL таблицы identities как
+    часть общей схемы для всего приложения, а не читает чужие данные.
+    """
+    storage_dir = Path("src/healthcoach/storage")
+    exempt = {"clients.py", "schema.py"}
+    modules = sorted(p for p in storage_dir.glob("*.py") if p.name not in exempt)
+    assert modules, "не нашлось модулей хранилища для проверки"
+    return modules
+
+
+@pytest.mark.parametrize("module", _guarded_storage_modules(), ids=lambda p: p.name)
+def test_storage_module_never_touches_the_identity_table(module):
+    """Реестр ФИО читает только ClientRepository — граница закреплена тестом
+    для каждого модуля хранилища, а не только для срезов."""
+    source = module.read_text(encoding="utf-8")
     assert "identities" not in source
     assert "full_name" not in source
 
 
-def test_snapshot_module_does_not_delegate_to_the_client_repository():
-    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта.
+@pytest.mark.parametrize("module", _guarded_storage_modules(), ids=lambda p: p.name)
+def test_storage_module_does_not_delegate_to_the_client_repository(module):
+    """Вторая дорога к именам — импорт репозитория клиентов; она тоже закрыта
+    для каждого модуля хранилища.
 
     Проверка по дереву импортов, а не по строкам: делегирование не содержало бы
     ни слова 'identities', ни 'full_name', и текстовый страж его пропустил бы.
     """
     import ast
 
-    source = Path("src/healthcoach/storage/snapshots.py").read_text(encoding="utf-8")
+    source = module.read_text(encoding="utf-8")
     imported: set[str] = set()
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom) and node.module:
@@ -138,4 +163,4 @@ def test_snapshot_module_does_not_delegate_to_the_client_repository():
             imported.update(alias.name for alias in node.names)
 
     leaking = {name for name in imported if "storage.clients" in name}
-    assert not leaking, f"модуль срезов импортирует {sorted(leaking)}"
+    assert not leaking, f"модуль {module} импортирует {sorted(leaking)}"

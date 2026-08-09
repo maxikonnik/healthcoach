@@ -2,6 +2,7 @@ from pathlib import Path
 
 from healthcoach.knowledge.references import Interval, load_references
 from healthcoach.scoring.references import (
+    STATUS_NO_VALUE,
     Measurement,
     Subject,
     check_measurements,
@@ -95,10 +96,72 @@ def test_unknown_analyte_is_reported_not_dropped():
 def test_unit_mismatch_is_not_interpreted():
     (verdict,) = check_measurements(
         _refs(),
-        [Measurement("ферритин", 18, "мкг/л")],
+        [Measurement("ферритин", 18, "пмоль/л")],
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert verdict.status == "единицы не сопоставлены"
+    assert verdict.rule_missing is True
+
+
+def test_a_unit_needing_a_declared_factor_is_reported_not_scored_unconverted(tmp_path):
+    """Регресс: `units_match` какое-то время принимала и единицы,
+    объявленные как требующие пересчёта (`analyte.conversions`), — а
+    `check_measurements` сравнивает `measurement.value` с коридором как
+    есть, не умножая. 10.0 мг/дл кальция без пересчёта — это 10.0 против
+    коридора 2.3-2.5 ммоль/л: «выше целевого», хотя настоящее значение
+    (10.0 × 0.2495 = 2.495) — «в целевом». Молча неверный вердикт хуже
+    отказа: коуч обязан увидеть «единицы не сопоставлены», а не число,
+    которое выглядит как вычисленное, но не пересчитано.
+    """
+    (tmp_path / "calcium.yaml").write_text(
+        "показатели:\n"
+        "  - id: кальций\n"
+        "    название: Кальций\n"
+        "    единицы: ммоль/л\n"
+        "    пересчёт:\n"
+        "      - из: мг/дл\n"
+        "        множитель: 0.2495\n"
+        "    целевые:\n"
+        "      - оптимум: [2.3, 2.5]\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("кальций", 10.0, "мг/дл")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "единицы не сопоставлены"
+    assert verdict.rule_missing is True
+    assert verdict.value == 10.0
+
+
+def test_declared_unit_synonym_is_not_a_mismatch():
+    """Регресс: check_measurements сравнивал единицы напрямую строкой и не
+    знал про объявленные синонимы (`синонимы_единиц` в ferritin.yaml) — тот
+    же самый показатель отвергался как «единицы не сопоставлены» из-за
+    написания, которое коуч сам объявил равнозначным. Правило теперь одно —
+    `units_match`, оно же используется `convert_to_reference`."""
+    (verdict,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", 18, "мкг/л")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "дефицит"
+    assert verdict.rule_missing is False
+
+
+def test_missing_value_is_reported_not_computed():
+    """Регресс: подтверждённое измерение с value=None («<0.60» в бланке)
+    раньше падало на сравнении `value > target.optimal.low` (None > float).
+    Теперь оно получает свой статус раньше, чем доходит до сравнения."""
+    (verdict,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", None, "нг/мл")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == STATUS_NO_VALUE
+    assert verdict.value is None
     assert verdict.rule_missing is True
 
 

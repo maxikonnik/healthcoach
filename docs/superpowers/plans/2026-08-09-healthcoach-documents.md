@@ -951,7 +951,7 @@ def parse_lab_lines(lines: Sequence[str]) -> LabTable:
 uv run pytest tests/intake/test_lab_table.py -v
 ```
 
-Ожидается: 9 PASS. Если `_split_row` не сходится на образцах — править реализацию, не тесты: тесты списаны со структуры настоящих выгрузок.
+Ожидается: 10 PASS. Если `_split_row` не сходится на образцах — править реализацию, не тесты: тесты списаны со структуры настоящих выгрузок.
 
 - [ ] **Step 6: Прогнать весь набор и закоммитить**
 
@@ -961,7 +961,7 @@ git add src/healthcoach/intake/lab_table.py tests/intake
 git commit -m "feat: разбор строк выгрузки лаборатории по шапке таблицы"
 ```
 
-Ожидается: 284 проходящих.
+Ожидается: 285 проходящих.
 
 ---
 
@@ -1111,7 +1111,7 @@ git add pyproject.toml uv.lock src/healthcoach/intake/pdf.py tests/intake/test_p
 git commit -m "feat: чтение строк текста из PDF-выгрузки"
 ```
 
-Ожидается: 288 проходящих.
+Ожидается: 289 проходящих.
 
 ---
 
@@ -1364,7 +1364,7 @@ git add pyproject.toml uv.lock src/healthcoach/intake/ocr.py tests/intake/test_o
 git commit -m "feat: распознавание фотографий бланка средствами macOS"
 ```
 
-Ожидается: 295 проходящих.
+Ожидается: 296 проходящих.
 
 ---
 
@@ -1376,7 +1376,7 @@ git commit -m "feat: распознавание фотографий бланк�
 - Modify: `src/healthcoach/intake/resolve.py` — вырезать служебный код лаборатории из названия
 - Modify: `src/healthcoach/scoring/references.py` — статус для измерения без числа
 - Modify: `src/healthcoach/scoring/findings.py` — тяжесть нового статуса
-- Test: `tests/intake/test_documents.py`
+- Test: `tests/intake/test_read_document.py`
 - Test: `tests/intake/test_import_measurements.py`
 
 **Interfaces:**
@@ -1393,7 +1393,7 @@ git commit -m "feat: распознавание фотографий бланк�
 
 - [ ] **Step 1: Написать падающие тесты единого входа**
 
-Файл `tests/intake/test_documents.py`:
+Файл `tests/intake/test_read_document.py`:
 
 ```python
 from pathlib import Path
@@ -1422,12 +1422,14 @@ def test_photo_goes_through_the_engine(tmp_path):
     path.write_bytes(b"\xff\xd8\xff")
     engine = FakeEngine(
         [
-            TextLine("Показатель", x=0.1, y=0.90),
-            TextLine("Результат", x=0.5, y=0.90),
-            TextLine("Ед. изм.", x=0.8, y=0.90),
-            TextLine("Гемоглобин", x=0.1, y=0.80),
-            TextLine("103", x=0.5, y=0.80),
-            TextLine("г/л", x=0.8, y=0.80),
+            TextLine("Показатель", x=0.10, y=0.90),
+            TextLine("Результат", x=0.40, y=0.90),
+            TextLine("Ед. изм.", x=0.65, y=0.90),
+            TextLine("Референсные пределы", x=0.85, y=0.90),
+            TextLine("Гемоглобин", x=0.10, y=0.80),
+            TextLine("103", x=0.40, y=0.80),
+            TextLine("г/л", x=0.65, y=0.80),
+            TextLine("117 - 155", x=0.85, y=0.80),
         ]
     )
 
@@ -1437,6 +1439,7 @@ def test_photo_goes_through_the_engine(tmp_path):
     assert row.name == "Гемоглобин"
     assert row.value_text == "103"
     assert row.units == "г/л"
+    assert row.reference_text == "117 - 155"
 
 
 def test_photo_without_an_engine_is_refused(tmp_path):
@@ -1535,10 +1538,12 @@ def test_laboratory_code_in_the_name_does_not_prevent_recognition():
 - [ ] **Step 3: Запустить тесты и убедиться, что они падают**
 
 ```bash
-uv run pytest tests/intake/test_documents.py tests/intake/test_import_measurements.py -v
+uv run pytest tests/intake/test_read_document.py tests/intake/test_import_measurements.py -v
 ```
 
 Ожидается: ошибки импорта `healthcoach.intake.documents` и `healthcoach.intake.measurements`.
+
+Имя файла намеренно не `test_documents.py`: под `tests/` нет `__init__.py`, а такой файл уже есть в `tests/storage/`, и pytest не соберёт оба в одном прогоне.
 
 - [ ] **Step 4: Научить распознавание названий вырезать служебный код**
 
@@ -1734,7 +1739,7 @@ git add src/healthcoach/intake src/healthcoach/scoring tests/intake
 git commit -m "feat: запись бланка превращается в измерение среза, ничего не теряя"
 ```
 
-Ожидается: 304 проходящих.
+Ожидается: 305 проходящих.
 
 ---
 
