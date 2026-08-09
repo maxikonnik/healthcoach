@@ -101,6 +101,80 @@ def test_value_of_another_snapshot_is_404(client):
     assert response.status_code == 404
 
 
+_HEADER = "Показатель Результат Ед. изм. Референсные значения"
+
+
+def test_unparsed_line_reaches_the_coach_but_not_the_measurements(client, monkeypatch):
+    """Строка, которую разбор не понял, обязана дойти до коуча текстом —
+    и не имеет права осесть в базе под видом измерения."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    lines = [
+        _HEADER,
+        "Ферритин 50 нг/мл 20 - 250",
+        "Загадочная строка 12,3",
+    ]
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: lines
+    )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/documents",
+        files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert "Загадочная строка 12,3" in response.text
+
+    stored = _measurements(context, snapshot_id)
+    assert len(stored) == 1
+    assert all("Загадочная" not in m.raw_name for m in stored)
+
+
+def test_shown_import_count_matches_what_was_stored(client, monkeypatch):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    lines = [
+        _HEADER,
+        "Ферритин 50 нг/мл 20 - 250",
+        "Витамин Д 30 нг/мл 30 - 100",
+    ]
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: lines
+    )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/documents",
+        files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    stored = _measurements(context, snapshot_id)
+    assert len(stored) == 2
+    assert f"импортировано показателей: {len(stored)}" in response.text
+
+
+def test_fully_parsed_document_shows_no_unparsed_section(client, monkeypatch):
+    """Пустая секция «не понято», которая рисуется всегда, — тот же шум,
+    что и её отсутствие, когда она нужна."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    lines = [
+        _HEADER,
+        "Ферритин 50 нг/мл 20 - 250",
+    ]
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: lines
+    )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/documents",
+        files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert "Не понято" not in response.text
+
+
 def test_non_numeric_value_is_refused(client):
     test_client, context = client
     snapshot_id = _snapshot(test_client)

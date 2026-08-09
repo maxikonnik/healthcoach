@@ -28,6 +28,72 @@ class Row:
     problem: str | None
 
 
+@dataclass(frozen=True)
+class DocumentImport:
+    """Итог загрузки документа, показываемый один раз — сразу после неё.
+
+    `unparsed` — строки, которые разбор не смог превратить в запись бланка
+    вовсе (не «показатель не распознан», а «этого не понять как строку
+    таблицы»). Они не становятся измерением ни в каком виде и существуют
+    только здесь, чтобы коуч ввёл их руками.
+    """
+
+    filename: str
+    source: str
+    count: int
+    unparsed: tuple[str, ...]
+
+
+def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
+    rows: list[Row] = []
+    for measurement in repo.snapshots.measurements(snapshot_id):
+        if not measurement.analyte_id:
+            resolution = resolve_analyte(context.references, measurement.raw_name)
+            problem = "показатель не распознан"
+            if resolution.is_ambiguous:
+                candidates = ", ".join(a.name for a in resolution.candidates)
+                problem = f"название подходит нескольким показателям: {candidates}"
+            rows.append(Row(measurement, measurement.raw_name, problem))
+            continue
+        analyte = context.references.analyte(measurement.analyte_id)
+        if analyte is None:
+            rows.append(
+                Row(measurement, measurement.analyte_id, "показатель не распознан")
+            )
+            continue
+        problem = None
+        if measurement.units.strip().casefold() != analyte.units.strip().casefold():
+            problem = f"единицы не сопоставлены: {measurement.units}"
+        rows.append(Row(measurement, analyte.name, problem))
+    return rows
+
+
+def render_snapshot_page(
+    request: Request,
+    templates,
+    context: Context,
+    repo: Repositories,
+    snapshot,
+    *,
+    imported: ImportedAnswers | None = None,
+    document_import: DocumentImport | None = None,
+):
+    """Отрисовать экран среза. Общая точка входа: и обычный показ страницы,
+    и оба обработчика загрузки (анкеты, документа) рендерят её напрямую —
+    редирект не пережил бы то, что нужно показать один раз."""
+    return templates.TemplateResponse(
+        request,
+        "snapshot.html",
+        {
+            "snapshot": snapshot,
+            "rows": _rows(context, repo, snapshot.id),
+            "answers_count": len(repo.snapshots.answers(snapshot.id)),
+            "imported": imported,
+            "document_import": document_import,
+        },
+    )
+
+
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
@@ -37,44 +103,14 @@ def build_router(context: Context, templates) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
         return snapshot
 
-    def _rows(repo: Repositories, snapshot_id: int) -> list[Row]:
-        rows: list[Row] = []
-        for measurement in repo.snapshots.measurements(snapshot_id):
-            if not measurement.analyte_id:
-                resolution = resolve_analyte(context.references, measurement.raw_name)
-                problem = "показатель не распознан"
-                if resolution.is_ambiguous:
-                    candidates = ", ".join(a.name for a in resolution.candidates)
-                    problem = f"название подходит нескольким показателям: {candidates}"
-                rows.append(Row(measurement, measurement.raw_name, problem))
-                continue
-            analyte = context.references.analyte(measurement.analyte_id)
-            if analyte is None:
-                rows.append(
-                    Row(measurement, measurement.analyte_id, "показатель не распознан")
-                )
-                continue
-            problem = None
-            if measurement.units.strip().casefold() != analyte.units.strip().casefold():
-                problem = f"единицы не сопоставлены: {measurement.units}"
-            rows.append(Row(measurement, analyte.name, problem))
-        return rows
-
     def _page(
         request: Request,
         repo: Repositories,
         snapshot,
         imported: ImportedAnswers | None = None,
     ):
-        return templates.TemplateResponse(
-            request,
-            "snapshot.html",
-            {
-                "snapshot": snapshot,
-                "rows": _rows(repo, snapshot.id),
-                "answers_count": len(repo.snapshots.answers(snapshot.id)),
-                "imported": imported,
-            },
+        return render_snapshot_page(
+            request, templates, context, repo, snapshot, imported=imported
         )
 
     @router.get("/snapshots/{snapshot_id}", response_class=HTMLResponse)

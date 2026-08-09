@@ -19,7 +19,7 @@ def create_app(context: Context) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.include_router(routes_clients.build_router(context, templates))
     app.include_router(routes_snapshots.build_router(context, templates))
-    app.include_router(routes_documents.build_router(context))
+    app.include_router(routes_documents.build_router(context, templates))
     return app
 
 

@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from healthcoach.app.deps import Context
+from healthcoach.app.routes_snapshots import DocumentImport, render_snapshot_page
 from healthcoach.intake.documents import DocumentError, read_document
-from healthcoach.intake.lab_table import LabTableError, parse_number
+from healthcoach.intake.lab_table import parse_number
 from healthcoach.intake.measurements import prepare_measurements
 
-def build_router(context: Context) -> APIRouter:
+
+def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
-    @router.post("/snapshots/{snapshot_id}/documents")
-    async def upload_document(snapshot_id: int, file: UploadFile = File(...)):
+    @router.post("/snapshots/{snapshot_id}/documents", response_class=HTMLResponse)
+    async def upload_document(
+        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    ):
         with context.session() as repo:
             snapshot = repo.snapshots.get(snapshot_id)
             if snapshot is None:
@@ -41,24 +45,43 @@ def build_router(context: Context) -> APIRouter:
 
         try:
             read = read_document(stored_path, context.ocr)
-        except (DocumentError, LabTableError) as exc:
+        except DocumentError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        prepared = prepare_measurements(context.references, read.table)
         with context.session() as repo:
-            for prepared in prepare_measurements(context.references, read.table):
+            for item in prepared:
                 repo.snapshots.add_measurement(
                     snapshot_id,
-                    analyte_id=prepared.analyte_id,
-                    raw_name=prepared.raw_name,
-                    value=prepared.value,
-                    raw_value=prepared.raw_value,
-                    units=prepared.units,
+                    analyte_id=item.analyte_id,
+                    raw_name=item.raw_name,
+                    value=item.value,
+                    raw_value=item.raw_value,
+                    units=item.units,
                     taken_on=snapshot.taken_on,
                     source=read.source,
                     document_id=document.id,
                 )
 
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+        # Редирект на /snapshots/{id} не пережил бы то, что нужно показать
+        # один раз: сколько показателей вошло и какие строки разбор не
+        # понял вовсе. Страница рендерится напрямую — тем же приёмом, что
+        # и загрузка анкеты в routes_snapshots.py.
+        with context.session() as repo:
+            snapshot = repo.snapshots.get(snapshot_id)
+            return render_snapshot_page(
+                request,
+                templates,
+                context,
+                repo,
+                snapshot,
+                document_import=DocumentImport(
+                    filename=document.filename,
+                    source=read.source,
+                    count=len(prepared),
+                    unparsed=read.table.unparsed,
+                ),
+            )
 
     @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/value")
     def set_value(snapshot_id: int, measurement_id: int, value: str = Form(...)):

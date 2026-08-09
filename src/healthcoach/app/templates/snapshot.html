@@ -43,6 +43,22 @@
   <button type="submit">Загрузить</button>
 </form>
 
+{% if document_import %}
+<p>«{{ document_import.filename }}» ({{ document_import.source }}):
+  импортировано показателей: {{ document_import.count }}.</p>
+
+{% if document_import.unparsed %}
+<h3 class="warn">Не понято — впишите вручную ({{ document_import.unparsed | length }})</h3>
+<p class="muted">Эти строки бланка разбор не сумел превратить в показатель.
+  Они нигде не сохранены — впишите нужное через форму ниже.</p>
+<ul>
+  {% for line in document_import.unparsed %}
+  <li class="muted">{{ line }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+
 <h2>Показатели</h2>
 <form method="post" action="/snapshots/{{ snapshot.id }}/measurements">
   <label>Название из бланка<input name="raw_name" required
