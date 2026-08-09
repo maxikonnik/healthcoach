@@ -196,11 +196,17 @@ def render_questionnaire(
     for block in blocks:
         parts = [f"<h2>{html.escape(block.title)}</h2>"]
         multi = len(block.subscales) > 1
+        # Подгруппы перекрываются: у Candida есть «всего», перечисляющая все
+        # вопросы блока. Без учёта уже показанных клиент проходил бы их дважды.
+        rendered: set[str] = set()
         for subscale in block.subscales:
             ids = set(subscale.question_ids)
-            questions = [q for q in block.questions if q.id in ids]
+            questions = [
+                q for q in block.questions if q.id in ids and q.id not in rendered
+            ]
             if not questions:
                 continue
+            rendered.update(q.id for q in questions)
             if multi:
                 parts.append(f"<h3>{html.escape(subscale.title)}</h3>")
             parts.extend(_render_question(q, subscale.title) for q in questions)

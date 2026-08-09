@@ -280,6 +280,14 @@ def load_references(directory: Path) -> References:
     index: dict[str, Analyte] = {}
     for analyte in analytes:
         for key in (analyte.id, analyte.name, *analyte.synonyms):
-            index[key.strip().casefold()] = analyte
+            normalized = key.strip().casefold()
+            if not normalized:
+                # Нераспознанные измерения хранятся с пустым идентификатором.
+                # Пустой ключ в указателе означал бы, что каждое из них
+                # находит этот показатель и выходит в находки под его именем.
+                raise ReferenceError(
+                    f"{analyte.id}: пустое название или синоним"
+                )
+            index[normalized] = analyte
 
     return References(analytes=tuple(analytes), derived=tuple(derived), _index=index)

@@ -179,3 +179,26 @@ def test_analytes_without_the_new_keys_still_load(tmp_path):
     analyte = load_references(tmp_path).analyte("x")
     assert analyte.unit_aliases == ()
     assert analyte.conversions == ()
+
+
+def test_empty_synonym_is_refused(tmp_path):
+    """Пустой ключ в указателе ловил бы каждое нераспознанное измерение.
+
+    Нераспознанные измерения хранятся с пустым идентификатором показателя.
+    Ключ "" в указателе означает, что сверка находит по нему этот показатель,
+    и чужое значение выходит в находки под его именем.
+    """
+    directory = tmp_path / "references"
+    directory.mkdir()
+    (directory / "ferritin.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    синонимы: [Ferritin, '']\n"
+        "    целевые:\n"
+        "      - оптимум: [50, 90]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError, match="пустое название или синоним"):
+        load_references(directory)

@@ -104,6 +104,19 @@ def test_every_option_of_every_included_question_is_rendered(questionnaire):
             assert option.label in html
 
 
+def test_every_question_is_rendered_exactly_once(questionnaire):
+    """Подгруппы перекрываются: у Candida «всего» перечисляет весь блок.
+
+    Без учёта уже показанных клиент проходил бы эти семьдесят вопросов
+    дважды подряд.
+    """
+    html = render_questionnaire(
+        questionnaire, "CL-0001", extra_block_ids=["oprosnik_candida"]
+    )
+    for question in questionnaire.block("oprosnik_candida").questions:
+        assert html.count(f'data-q="{question.id}"') == 1
+
+
 def test_question_ids_are_present_as_input_names(questionnaire):
     html = render_questionnaire(questionnaire, "CL-0001")
     block = questionnaire.block("obraz_zizni")
