@@ -13,6 +13,7 @@ from healthcoach.scoring.references import (
     STATUS_ABOVE,
     STATUS_BELOW,
     STATUS_NOT_COMPUTED,
+    STATUS_NO_VALUE,
     STATUS_WITHIN,
     AnalyteVerdict,
     Measurement,
@@ -35,6 +36,11 @@ def compute_derived(
     Производный, для которого не хватает операндов, пропускается молча —
     это не пробел в данных, а просто несобранный набор анализов. Любая
     другая ошибка вычисления даёт вердикт: молча не теряется ничего.
+
+    Измерение без числа («<0.60» в бланке) — операнд, а не пробел: если
+    формула его использует, она должна отказаться с объяснением, а не
+    получить None вместо float. `values` копит только настоящие числа;
+    отсутствующее значение сразу помечает операнд негодным.
     """
     values: dict[str, float] = {}
     unusable: dict[str, str] = {}
@@ -42,6 +48,11 @@ def compute_derived(
     for measurement in measurements:
         analyte = references.resolve(measurement.analyte_id)
         key = analyte.id if analyte is not None else measurement.analyte_id
+        title = analyte.name if analyte is not None else (measurement.label or key)
+
+        if measurement.value is None:
+            unusable[key] = f"{title}: {STATUS_NO_VALUE}"
+            continue
 
         if analyte is not None and (
             measurement.units.strip().casefold() != analyte.units.strip().casefold()

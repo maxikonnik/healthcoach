@@ -20,6 +20,13 @@ UNRESOLVED = ""
 """Идентификатор нераспознанного показателя: хранится, но не трактуется."""
 
 
+def _unit_problem(units: str) -> str:
+    """Сообщение о несопоставленных единицах — без висящего двоеточия,
+    если в бланке единиц не было вовсе."""
+    label = units.strip() or "не указаны"
+    return f"единицы не сопоставлены: {label}"
+
+
 @dataclass(frozen=True)
 class PreparedMeasurement:
     analyte_id: str
@@ -50,13 +57,19 @@ def prepare_measurements(
         else:
             analyte_id = resolution.analyte.id
             if value is None:
-                units = row.units
+                # Числа нет, но единицы всё равно стоит сверить: коуч
+                # иначе впишет число вручную, не зная, что единицы тоже
+                # разойдутся с референсом.
+                try:
+                    convert_to_reference(resolution.analyte, 1.0, row.units)
+                except UnitError:
+                    problem = _unit_problem(row.units)
             else:
                 try:
                     value = convert_to_reference(resolution.analyte, value, row.units)
                     units = resolution.analyte.units
                 except UnitError:
-                    problem = f"единицы не сопоставлены: {row.units}"
+                    problem = _unit_problem(row.units)
 
         if value is None and problem is None:
             problem = "число не извлечено"

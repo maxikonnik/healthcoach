@@ -124,3 +124,22 @@ def test_conflicting_measurements_block_the_derived_value():
     )
     assert verdict.status == "не удалось вычислить"
     assert "два разных измерения" in verdict.note
+
+
+def test_missing_value_operand_blocks_the_derived_value_instead_of_crashing():
+    """Регресс: `prepare_measurements` намеренно отдаёт признанный показатель
+    с value=None («<0.60» в бланке). Формула, использующая такой операнд,
+    раньше пыталась делить None и падала с TypeError — теперь получает
+    вердикт с объяснением."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", None, "мг/дл"),
+            Measurement("калий", 4.3, "ммоль/л"),
+        ],
+    )
+    assert verdict.analyte_id == "кальций_калий"
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "значение не распознано" in verdict.note

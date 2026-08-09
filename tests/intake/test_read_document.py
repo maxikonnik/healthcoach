@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from healthcoach.intake.documents import DocumentError, read_document
-from healthcoach.intake.ocr import TextLine
+from healthcoach.intake.lab_table import LabTableError
+from healthcoach.intake.ocr import OCRError, TextLine
+from healthcoach.intake.pdf import PdfError
 from healthcoach.storage.snapshots import SOURCE_PDF, SOURCE_PHOTO
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -17,6 +19,13 @@ class FakeEngine:
 
     def read(self, path: Path):
         return self._observations
+
+
+class FailingEngine:
+    """Движок распознавания, который всегда отказывает."""
+
+    def read(self, path: Path):
+        raise OCRError(f"{path.name}: изображение не распознано")
 
 
 def test_photo_goes_through_the_engine(tmp_path):
@@ -64,3 +73,50 @@ def test_sample_pdf_is_read_as_pdf(samples_dir):
     document = read_document(path)
     assert document.source == SOURCE_PDF
     assert document.table.rows
+
+
+# Регресс: read_document — единственный вход, но раньше пропускал наружу
+# PdfError, OCRError и LabTableError необёрнутыми. Коуч, ловящий заявленный
+# DocumentError, получал бы необработанное исключение на самом обычном
+# случае — сфотографированном бланке, сохранённом как PDF без текстового
+# слоя. Все четыре пути ниже должны давать DocumentError с исходной
+# причиной в __cause__.
+
+
+def test_a_photo_saved_as_pdf_is_wrapped_not_leaked(tmp_path):
+    """Файл с расширением .pdf, но не PDF по содержимому — типичный случай
+    сфотографированного бланка, сохранённого не тем приложением."""
+    path = tmp_path / "бланк.pdf"
+    path.write_bytes(b"\xff\xd8\xff")  # байты JPEG под чужим расширением
+    with pytest.raises(DocumentError) as exc_info:
+        read_document(path)
+    assert path.name in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, PdfError)
+
+
+def test_a_missing_pdf_is_wrapped_not_leaked(tmp_path):
+    path = tmp_path / "нет.pdf"
+    with pytest.raises(DocumentError) as exc_info:
+        read_document(path)
+    assert isinstance(exc_info.value.__cause__, PdfError)
+
+
+def test_a_pdf_without_a_recognisable_table_is_wrapped_not_leaked(tmp_path, monkeypatch):
+    """Скан без текстового слоя даёт пустые строки — разбору нечего искать,
+    и `parse_lab_lines` отказывает LabTableError."""
+    path = tmp_path / "скан.pdf"
+    path.write_bytes(b"%PDF-1.4 content is irrelevant, read_pdf_lines is patched")
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: []
+    )
+    with pytest.raises(DocumentError) as exc_info:
+        read_document(path)
+    assert isinstance(exc_info.value.__cause__, LabTableError)
+
+
+def test_an_ocr_failure_is_wrapped_not_leaked(tmp_path):
+    path = tmp_path / "бланк.jpg"
+    path.write_bytes(b"\xff\xd8\xff")
+    with pytest.raises(DocumentError) as exc_info:
+        read_document(path, FailingEngine())
+    assert isinstance(exc_info.value.__cause__, OCRError)

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from healthcoach.knowledge.references import Interval, load_references
 from healthcoach.scoring.references import (
+    STATUS_NO_VALUE,
     Measurement,
     Subject,
     check_measurements,
@@ -99,6 +100,20 @@ def test_unit_mismatch_is_not_interpreted():
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert verdict.status == "единицы не сопоставлены"
+    assert verdict.rule_missing is True
+
+
+def test_missing_value_is_reported_not_computed():
+    """Регресс: подтверждённое измерение с value=None («<0.60» в бланке)
+    раньше падало на сравнении `value > target.optimal.low` (None > float).
+    Теперь оно получает свой статус раньше, чем доходит до сравнения."""
+    (verdict,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", None, "нг/мл")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == STATUS_NO_VALUE
+    assert verdict.value is None
     assert verdict.rule_missing is True
 
 

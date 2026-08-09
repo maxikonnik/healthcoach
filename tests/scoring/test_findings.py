@@ -11,7 +11,12 @@ from healthcoach.knowledge.questionnaire import (
 from healthcoach.knowledge.questionnaire import load_questionnaire
 from healthcoach.knowledge.references import load_references
 from healthcoach.scoring.findings import collect_findings
-from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.scoring.references import (
+    STATUS_NO_VALUE,
+    STATUS_NOT_COMPUTED,
+    Measurement,
+    Subject,
+)
 
 REFS = Path(__file__).parents[2] / "knowledge" / "references"
 SPEC = Path(__file__).parents[2] / "knowledge" / "questionnaire.yaml"
@@ -70,6 +75,32 @@ def test_collects_all_three_kinds():
     )
     kinds = {f.kind for f in findings}
     assert kinds == {"показатель", "производный", "опросник"}
+
+
+def test_missing_value_measurement_does_not_crash_derived_findings():
+    """Регресс, воспроизведённый по HTTP: `GET /snapshots/{id}/findings` с
+    подтверждённым «кальций»=None (значение «<0.60» в бланке) и «калий»
+    4.3 ммоль/л падал в TypeError внутри compute_derived — formula.py делил
+    None. Ничего не должно упасть, а соотношение кальций/калий должно
+    получить объяснённый отказ, а не тихо исчезнуть."""
+    findings = collect_findings(
+        _questionnaire(),
+        load_references(REFS),
+        answers={},
+        measurements=[
+            Measurement("кальций", None, "мг/дл", label="Кальций"),
+            Measurement("калий", 4.3, "ммоль/л", label="Калий"),
+        ],
+        subject=SUBJECT,
+    )
+    by_id = {f.subject_id: f for f in findings}
+
+    assert by_id["кальций"].status == STATUS_NO_VALUE
+    assert by_id["кальций"].value is None
+
+    assert by_id["кальций_калий"].status == STATUS_NOT_COMPUTED
+    assert by_id["кальций_калий"].value is None
+    assert "значение не распознано" in by_id["кальций_калий"].note
 
 
 def test_questionnaire_finding_carries_degree_as_status():
