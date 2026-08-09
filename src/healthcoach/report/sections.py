@@ -8,9 +8,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-KIND_ANALYTE = "показатель"
-KIND_DERIVED = "производный"
-KIND_QUESTIONNAIRE = "опросник"
+# Виды находок объявлены там, где находки собираются, и сюда только
+# ввозятся. Своя копия литералов рядом с этой разошлась бы с той молча:
+# раздел стоял бы на виде, которого никто не выставляет, и остался бы
+# без находок, ничем не пожаловавшись.
+from healthcoach.scoring.findings import (
+    KIND_ANALYTE,
+    KIND_DERIVED,
+    KIND_QUESTIONNAIRE,
+)
 
 
 @dataclass(frozen=True)

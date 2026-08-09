@@ -356,3 +356,27 @@ def test_reapproving_a_frozen_draft_is_refused(client):
     assert response.status_code == 409
     with context.session() as repo:
         assert repo.drafts.approved_at(snapshot_id) == first_approval
+
+
+def test_the_rewrite_request_button_is_gone_once_the_draft_is_approved(client):
+    """Маршрут отвечает на переписывание запроса 409-м, как только черновик
+    утверждён. Кнопка, которая всегда отказывает, — обещание, которого
+    экран не держит: форма правки раздела закрыта тем же условием."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    before = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "Переписать запрос" in before
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    after = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "Переписать запрос" not in after
+    # И правка раздела тоже — на неё маршрут отвечает тем же 409-м.
+    assert "Сохранить правку" not in after

@@ -37,11 +37,17 @@
 {% endif %}
 {% endif %}
 
+{% if not approved_at %}
+{# После утверждения маршрут отвечает на переписывание запроса 409-м:
+   рядом с утверждёнными разделами оказался бы посторонний текст. Кнопка,
+   которая всегда отказывает, — та же ошибка, что и форма правки раздела
+   ниже, и закрыта тем же условием. #}
 <form method="post" action="/snapshots/{{ snapshot.id }}/request">
   <label>Переписать запрос<textarea name="raw" rows="3" cols="70" required
     >{{ client_request.raw }}</textarea></label>
   <button type="submit">Заменить</button>
 </form>
+{% endif %}
 {% endif %}
 
 <h2>Разделы</h2>
