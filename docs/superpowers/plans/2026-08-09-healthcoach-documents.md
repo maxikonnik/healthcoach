@@ -951,7 +951,7 @@ def parse_lab_lines(lines: Sequence[str]) -> LabTable:
 uv run pytest tests/intake/test_lab_table.py -v
 ```
 
-Ожидается: 9 PASS. Если `_split_row` не сходится на образцах — править реализацию, не тесты: тесты списаны со структуры настоящих выгрузок.
+Ожидается: 10 PASS. Если `_split_row` не сходится на образцах — править реализацию, не тесты: тесты списаны со структуры настоящих выгрузок.
 
 - [ ] **Step 6: Прогнать весь набор и закоммитить**
 
@@ -961,7 +961,7 @@ git add src/healthcoach/intake/lab_table.py tests/intake
 git commit -m "feat: разбор строк выгрузки лаборатории по шапке таблицы"
 ```
 
-Ожидается: 284 проходящих.
+Ожидается: 285 проходящих.
 
 ---
 
@@ -1111,7 +1111,7 @@ git add pyproject.toml uv.lock src/healthcoach/intake/pdf.py tests/intake/test_p
 git commit -m "feat: чтение строк текста из PDF-выгрузки"
 ```
 
-Ожидается: 288 проходящих.
+Ожидается: 289 проходящих.
 
 ---
 
@@ -1364,7 +1364,7 @@ git add pyproject.toml uv.lock src/healthcoach/intake/ocr.py tests/intake/test_o
 git commit -m "feat: распознавание фотографий бланка средствами macOS"
 ```
 
-Ожидается: 295 проходящих.
+Ожидается: 296 проходящих.
 
 ---
 
@@ -1734,7 +1734,7 @@ git add src/healthcoach/intake src/healthcoach/scoring tests/intake
 git commit -m "feat: запись бланка превращается в измерение среза, ничего не теряя"
 ```
 
-Ожидается: 304 проходящих.
+Ожидается: 305 проходящих.
 
 ---
 
