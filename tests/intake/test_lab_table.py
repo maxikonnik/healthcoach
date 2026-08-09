@@ -142,18 +142,52 @@ def test_header_with_an_unknown_reference_word_is_refused():
     assert "референс" in str(exc_info.value)
 
 
-def test_units_last_header_with_a_spaced_reference_range_is_reported_not_truncated():
+def test_units_last_header_with_a_spaced_reference_range_is_parsed_as_a_range():
     """«117.00 - 155.00» с пробелами вокруг тире, как в smclinic — но здесь
-    единицы стоят последними в шапке, и без проверки весь хвост строки
-    достался бы им, обрубив референс до голой нижней границы.
+    единицы стоят последними в шапке. Диапазон опознаётся по тире между
+    двумя числами и забирает три токена целиком, оставляя единицам
+    ровно один — «г/л», а не весь хвост строки.
     """
     lines = [
         "Параметр Результат Референсные значения Ед. изм.",
         "Гемоглобин (Hb) 134.00 117.00 - 155.00 г/л",
     ]
     table = parse_lab_lines(lines)
+    row = next(r for r in table.rows if "Гемоглобин" in r.name)
+    assert row.value_text == "134.00"
+    assert row.reference_text == "117.00 - 155.00"
+    assert row.units == "г/л"
+
+
+def test_photograph_reference_range_with_comma_decimals_and_spaced_dash():
+    """Реальная фотография: разделитель — запятая, референс — с пробелами
+    вокруг тире. Диапазон опознаётся явно (число, тире, число), а не по
+    счёту слов — иначе единицы получили бы «- 9,23 10%/л».
+    """
+    lines = [
+        "Параметр Результат Референсные значения Ед. изм.",
+        "Общее количество лейкоцитов (WBC) 7,93 3,89 - 9,23 10%/л",
+    ]
+    table = parse_lab_lines(lines)
+    row = next(r for r in table.rows if "лейкоцитов" in r.name)
+    assert row.value_text == "7,93"
+    assert row.reference_text == "3,89 - 9,23"
+    assert row.units == "10%/л"
+
+
+def test_non_range_tail_still_refuses_rather_than_smearing_into_units():
+    """Если хвост после значения не складывается ни в одну из форм
+    диапазона, референс, как и раньше, берёт только один токен — а раз
+    единицам в конце достаётся больше одного токена, строка отказывается,
+    а не смешивает лишние слова с единицами.
+    """
+    lines = [
+        "Параметр Результат Референсные значения Ед. изм.",
+        "Триглицериды 0.98 Смотри текст ммоль/л",
+    ]
+    table = parse_lab_lines(lines)
     assert not table.rows
-    assert any("117.00 - 155.00" in line for line in table.unparsed)
+    assert any("Смотри текст ммоль/л" in line for line in table.unparsed)
 
 
 def test_a_line_resembling_a_header_but_carrying_a_digit_is_not_dropped():

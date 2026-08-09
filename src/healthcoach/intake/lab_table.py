@@ -37,6 +37,8 @@ _STARTS_WITH_NUMBER = re.compile(r"^\s*[<>]?\d")
 _HAS_DIGIT = re.compile(r"\d")
 _SERVICE = re.compile(r"^\s*(Дата исследования|Штрихкод|Материал|Вн\.№)")
 _SPACES = re.compile(r"\s+")
+_RANGE_DASH = re.compile(r"^[-–—]$")
+_COMPARISON_SIGN = re.compile(r"^[<>≤≥]$")
 
 
 class LabTableError(Exception):
@@ -135,6 +137,28 @@ def _strip_lab_code(line: str) -> str:
     return _SPACES.sub(" ", _LAB_CODE.sub("", line)).strip()
 
 
+def _consume_reference(rest: list[str]) -> tuple[str, list[str]]:
+    """Взять из остатка явный диапазон референса, если он там есть.
+
+    На фото референс иногда печатается с пробелами вокруг тире
+    («3,89 - 9,23») или с отдельным знаком сравнения («< 5») — тогда он
+    занимает не один токен, а два-три. Диапазон опознаётся однозначно —
+    по тире между двумя числами или по знаку сравнения перед числом, а
+    не по счёту слов вслепую. Если ни одна из форм не подошла, референс,
+    как и любая другая непоследняя колонка, забирает один токен.
+    """
+    if (
+        len(rest) >= 3
+        and _NUMBER.match(rest[0])
+        and _RANGE_DASH.match(rest[1])
+        and _NUMBER.match(rest[2])
+    ):
+        return " ".join(rest[:3]), rest[3:]
+    if len(rest) >= 2 and _COMPARISON_SIGN.match(rest[0]) and _NUMBER.match(rest[1]):
+        return " ".join(rest[:2]), rest[2:]
+    return rest[0], rest[1:]
+
+
 def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
     """Разобрать строку результата или вернуть None, если не читается."""
     tokens = _SPACES.split(line.strip())
@@ -161,6 +185,8 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
                 return None
             fields[role] = " ".join(rest)
             rest = []
+        elif role == ROLE_REFERENCE:
+            fields[role], rest = _consume_reference(rest)
         else:
             fields[role] = rest.pop(0)
 
