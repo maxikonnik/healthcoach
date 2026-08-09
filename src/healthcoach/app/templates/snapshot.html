@@ -46,17 +46,29 @@
 {% if document_import %}
 <p>«{{ document_import.filename }}» ({{ document_import.source }}):
   импортировано показателей: {{ document_import.count }}.</p>
+{% endif %}
 
-{% if document_import.unparsed %}
-<h3 class="warn">Не понято — впишите вручную ({{ document_import.unparsed | length }})</h3>
-<p class="muted">Эти строки бланка разбор не сумел превратить в показатель.
-  Они нигде не сохранены — впишите нужное через форму ниже.</p>
+{% if documents %}
 <ul>
-  {% for line in document_import.unparsed %}
-  <li class="muted">{{ line }}</li>
+  {% for document in documents %}
+  <li>«{{ document.filename }}» — {{ document.added_at.strftime('%Y-%m-%d %H:%M') }}
+    {% if document.unparsed %}
+    <details>
+      <summary class="warn">Не понято — впишите вручную ({{ document.unparsed | length }})</summary>
+      <p class="muted">Эти строки бланка разбор не сумел превратить в показатель.
+        Они нигде не сохранены — впишите нужное через форму ниже.</p>
+      <ul>
+        {% for line in document.unparsed %}
+        <li class="muted">{{ line }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </li>
   {% endfor %}
 </ul>
-{% endif %}
+{% else %}
+<p class="muted">Документы не загружены.</p>
 {% endif %}
 
 <h2>Показатели</h2>

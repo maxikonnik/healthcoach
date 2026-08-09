@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -19,9 +20,14 @@ def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
     @router.post("/snapshots/{snapshot_id}/documents", response_class=HTMLResponse)
-    async def upload_document(
+    def upload_document(
         request: Request, snapshot_id: int, file: UploadFile = File(...)
     ):
+        # Синхронный def: чтение файла, обращения к sqlite и распознавание
+        # фотографии — блокирующая работа. FastAPI выполняет такой
+        # обработчик в пуле потоков; будь он async def, вся эта работа шла
+        # бы прямо на цикле событий, и сервер не отвечал бы никому на время
+        # разбора одной фотографии.
         with context.session() as repo:
             snapshot = repo.snapshots.get(snapshot_id)
             if snapshot is None:
@@ -29,27 +35,44 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404, detail=f"нет среза {snapshot_id}"
                 )
 
-        payload = await file.read()
+        payload = file.file.read()
         suffix = Path(file.filename or "").suffix.casefold()
         folder = context.documents_dir / str(snapshot_id)
         folder.mkdir(parents=True, exist_ok=True)
 
+        # Файл сперва пишется во временное имя и читается им же: запись в
+        # базу и постоянное, названное идентификатором документа имя на
+        # диске появляются только после того, как read_document подтвердит,
+        # что документ вообще пригоден. Иначе неудачная загрузка (плохой
+        # PDF, чужой формат, битое фото) оставляла бы висячую строку в
+        # documents и файл на диске, которые коуч не может ни увидеть, ни
+        # удалить.
+        staging_path = folder / f".upload-{uuid4().hex}{suffix}"
+        staging_path.write_bytes(payload)
+
+        try:
+            read = read_document(staging_path, context.ocr)
+        except DocumentError as exc:
+            staging_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400, detail=_coach_facing(exc, staging_path, file)
+            ) from exc
+
+        prepared = prepare_measurements(context.references, read.table)
+
         added_at = datetime.now()
         with context.session() as repo:
             document = repo.documents.add(
-                snapshot_id, file.filename or "без имени", "", added_at
+                snapshot_id,
+                file.filename or "без имени",
+                "",
+                added_at,
+                unparsed=read.table.unparsed,
             )
+            stored_path = folder / f"{document.id}{suffix}"
+            staging_path.rename(stored_path)
+            repo.documents.set_stored_path(document.id, str(stored_path))
 
-        stored_path = folder / f"{document.id}{suffix}"
-        stored_path.write_bytes(payload)
-
-        try:
-            read = read_document(stored_path, context.ocr)
-        except DocumentError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        prepared = prepare_measurements(context.references, read.table)
-        with context.session() as repo:
             for item in prepared:
                 repo.snapshots.add_measurement(
                     snapshot_id,
@@ -64,11 +87,15 @@ def build_router(context: Context, templates) -> APIRouter:
                 )
 
         # Редирект на /snapshots/{id} не пережил бы то, что нужно показать
-        # один раз: сколько показателей вошло и какие строки разбор не
-        # понял вовсе. Страница рендерится напрямую — тем же приёмом, что
-        # и загрузка анкеты в routes_snapshots.py.
+        # один раз: сколько показателей вошло и из какого документа.
+        # Страница рендерится напрямую — тем же приёмом, что и загрузка
+        # анкеты в routes_snapshots.py.
         with context.session() as repo:
             snapshot = repo.snapshots.get(snapshot_id)
+            if snapshot is None:
+                raise HTTPException(
+                    status_code=404, detail=f"нет среза {snapshot_id}"
+                )
             return render_snapshot_page(
                 request,
                 templates,
@@ -79,7 +106,6 @@ def build_router(context: Context, templates) -> APIRouter:
                     filename=document.filename,
                     source=read.source,
                     count=len(prepared),
-                    unparsed=read.table.unparsed,
                 ),
             )
 
@@ -95,11 +121,44 @@ def build_router(context: Context, templates) -> APIRouter:
                 raise HTTPException(
                     status_code=404, detail=f"нет среза {snapshot_id}"
                 )
-            if not repo.snapshots.set_value(measurement_id, snapshot_id, number):
+            measurement = next(
+                (
+                    m
+                    for m in repo.snapshots.measurements(snapshot_id)
+                    if m.id == measurement_id
+                ),
+                None,
+            )
+            if measurement is None:
                 raise HTTPException(
                     status_code=404,
                     detail=f"в срезе {snapshot_id} нет показателя {measurement_id}",
                 )
+            # Строка существует, но не пуста — set_value заполняет только
+            # пропуск. 404 здесь означал бы коучу, что его число потерялось,
+            # хотя оно на месте: двойная отправка или отклик по старой
+            # вкладке — не то же самое, что опечатка в идентификаторе.
+            if measurement.value is not None or not repo.snapshots.set_value(
+                measurement_id, snapshot_id, number
+            ):
+                raise HTTPException(status_code=409, detail="число уже вписано")
         return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
 
     return router
+
+
+def _coach_facing(exc: DocumentError, staging_path: Path, file: UploadFile) -> str:
+    """Сообщение об ошибке с именем файла коуча, а не служебным именем на
+    диске, и один раз, а не дважды.
+
+    `read_document` заворачивает причину в DocumentError, добавляя перед
+    ней имя файла на диске (`staging_path.name`, вроде «a1b2…9f.pdf»); если
+    причина сама уже начиналась с того же имени (так делает `read_pdf_lines`
+    и часть сообщений OCR), оно оказывается упомянуто дважды подряд. Коуч
+    не знает и не должен знать это служебное имя — он загружал «бланк.pdf».
+    """
+    stored_name = staging_path.name
+    original_name = file.filename or "файл"
+    message = str(exc)
+    message = message.replace(f"{stored_name}: {stored_name}: ", f"{stored_name}: ")
+    return message.replace(stored_name, original_name)
