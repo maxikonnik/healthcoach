@@ -498,3 +498,52 @@ def test_document_of_this_client_is_not_flagged(client):
     page = _upload_text_document(test_client, snapshot_id, lines)
 
     assert "не найдена" not in page
+
+
+# Раунд ревью 1: фамилия короче четырёх букв выпадает из name_stems, и
+# stems[0] оказывается именем, а не фамилией.
+
+SHORT_SURNAME = {"full_name": "Ким Мария Сергеевна", "sex": "ж", "birth_date": "1990-05-17"}
+"""«Ким» короче MIN_PART: name_stems даёт ['Мария', 'Сергеев'] — без
+фамилии вовсе. Первый элемент — не фамилия, а имя."""
+
+
+def _snapshot_short_surname(test_client) -> int:
+    test_client.post("/clients", data=SHORT_SURNAME)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    return 1
+
+
+def test_stranger_document_warns_for_client_with_short_surname(client):
+    """До правки проверялся только stems[0] = 'Мария' — совпадение по
+    распространённому имени давало чужому документу пройти незамеченным,
+    хотя фамилия («Петрова») никак не связана с клиентом («Ким»)."""
+    test_client, context = client
+    snapshot_id = _snapshot_short_surname(test_client)
+
+    lines = [
+        "Ф.И.О. пациента: Петрова Анна Викторовна",
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    page = _upload_text_document(test_client, snapshot_id, lines)
+
+    assert "не найдена" in page
+
+
+def test_own_document_of_short_surname_client_is_not_flagged(client):
+    """До правки та же ошибка била и в обратную сторону: имя усечено
+    распознаванием до инициала («М.»), и stems[0] = 'Мария' не находился —
+    ложная тревога на собственном документе клиента, хотя отчество
+    («Сергеевна») в тексте читается полностью."""
+    test_client, context = client
+    snapshot_id = _snapshot_short_surname(test_client)
+
+    lines = [
+        "Ф.И.О. пациента: Ким М. Сергеевна",
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    page = _upload_text_document(test_client, snapshot_id, lines)
+
+    assert "не найдена" not in page
