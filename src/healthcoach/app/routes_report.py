@@ -79,10 +79,23 @@ def build_router(context: Context, templates) -> APIRouter:
             snapshot, client = _snapshot_and_client(repo, snapshot_id)
             return _page(request, repo, snapshot, client)
 
+    def _refuse_if_draft_is_frozen(repo: Repositories, snapshot_id: int) -> None:
+        """Заморозка черновика распространяется и на запрос: иначе рядом с
+        утверждёнными разделами оказался бы посторонний текст, а то, что
+        реально ушло модели, было бы стёрто следующей правкой. Проверка
+        только здесь, в маршруте — хранилище запроса ничего не знает про
+        черновики, и это не место эту связь заводить."""
+        if repo.drafts.approved_at(snapshot_id) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="черновик утверждён — запрос клиента больше не меняется",
+            )
+
     @router.post("/snapshots/{snapshot_id}/request")
     def save_request(snapshot_id: int, raw: str = Form(...)):
         with context.session() as repo:
             _snapshot_and_client(repo, snapshot_id)
+            _refuse_if_draft_is_frozen(repo, snapshot_id)
             repo.requests.save(snapshot_id, raw)
         return RedirectResponse(f"/snapshots/{snapshot_id}/draft", status_code=303)
 
@@ -90,6 +103,7 @@ def build_router(context: Context, templates) -> APIRouter:
     def save_redaction(snapshot_id: int, redacted: str = Form(...)):
         with context.session() as repo:
             _snapshot_and_client(repo, snapshot_id)
+            _refuse_if_draft_is_frozen(repo, snapshot_id)
             if not repo.requests.set_redacted(snapshot_id, redacted):
                 raise HTTPException(
                     status_code=400, detail="запрос клиента ещё не введён"
@@ -147,14 +161,19 @@ def build_router(context: Context, templates) -> APIRouter:
         except DraftError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-        with context.session() as repo:
-            for section in generated:
-                repo.drafts.save_section(
-                    snapshot_id,
-                    section.section_id,
-                    section.text,
-                    section.finding_ids,
-                )
+        try:
+            with context.session() as repo:
+                for section in generated:
+                    repo.drafts.save_section(
+                        snapshot_id,
+                        section.section_id,
+                        section.text,
+                        section.finding_ids,
+                    )
+        except ValueError as exc:
+            # Между проверкой approved_at выше и этой записью черновик мог
+            # утвердить другой запрос — та же гонка, что и в edit_section.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(f"/snapshots/{snapshot_id}/draft", status_code=303)
 
     @router.post("/snapshots/{snapshot_id}/draft/{section_row_id}/edit")
@@ -166,7 +185,13 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=409,
                     detail="черновик утверждён — разделы больше не правятся",
                 )
-            if not repo.drafts.edit_section(section_row_id, snapshot_id, text):
+            try:
+                found = repo.drafts.edit_section(section_row_id, snapshot_id, text)
+            except ValueError as exc:
+                # Утверждение могло случиться между проверкой строкой выше и
+                # самой записью — это тоже 409, а не необработанный 500.
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            if not found:
                 raise HTTPException(
                     status_code=404,
                     detail=f"в срезе {snapshot_id} нет раздела {section_row_id}",
@@ -177,6 +202,14 @@ def build_router(context: Context, templates) -> APIRouter:
     def approve_draft(snapshot_id: int):
         with context.session() as repo:
             _snapshot_and_client(repo, snapshot_id)
+            if repo.drafts.approved_at(snapshot_id) is not None:
+                # DraftRepository.approve делает upsert: без этой проверки
+                # повторное утверждение молча сдвинуло бы отметку времени —
+                # это данные аудита, а не то, что можно переписать задним
+                # числом.
+                raise HTTPException(
+                    status_code=409, detail="черновик уже утверждён"
+                )
             if not repo.drafts.approve(
                 snapshot_id, datetime.now(), context.questionnaire.version
             ):

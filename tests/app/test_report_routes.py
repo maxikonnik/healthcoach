@@ -1,4 +1,3 @@
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -65,8 +64,20 @@ def test_request_is_saved_and_redaction_is_offered(client):
     )
     page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
 
-    assert "усталостью" in page
-    assert "Королькова" not in page.split("ИСХОДНЫЙ")[-1] or True
+    # Исходный текст показан как есть — коуч должен видеть, с чем пришёл клиент.
+    assert "Королькова Евгения хочет разобраться с усталостью" in page
+
+    # Предложенная вычитка — содержимое поля «Уйдёт модели»: имя клиента из
+    # неё убрано, а остальной текст запроса цел. Ниже на той же странице
+    # есть форма «Переписать запрос», которая намеренно показывает исходный
+    # текст ещё раз — окно среза нужно сузить до самого поля вычитки, чтобы
+    # не зацепить её.
+    start = page.index("Уйдёт модели") + len("Уйдёт модели")
+    end = page.index("Сохранить вычитку", start)
+    suggestion = page[start:end]
+    assert "усталостью" in suggestion
+    assert "Королькова" not in suggestion
+    assert "Евгения" not in suggestion
 
 
 def test_draft_is_refused_until_the_request_is_approved(client):
@@ -187,3 +198,161 @@ def test_draft_without_findings_is_refused(client):
 def test_unknown_snapshot_is_404(client):
     test_client, _, _ = client
     assert test_client.get("/snapshots/999/draft").status_code == 404
+
+
+def test_approving_a_request_without_proofreading_is_refused(client):
+    """Утвердить нечего, пока правая часть (вычитка) не заполнена."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/request/approve", follow_redirects=False
+    )
+
+    assert response.status_code == 400
+    with context.session() as repo:
+        stored = repo.requests.get(snapshot_id)
+    assert not stored.approved
+
+
+def test_leak_in_the_approved_request_is_refused_not_sent(client):
+    """Сторож проверяет payload целиком, включая текст запроса, а не только
+    находки — коуч мог вписать в правую часть то, что не стоило."""
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact",
+        data={"redacted": "Королькова Евгения устала"},
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/draft", follow_redirects=False
+    )
+
+    assert response.status_code == 400
+    assert provider.prompts == []
+    with context.session() as repo:
+        assert repo.drafts.sections(snapshot_id) == []
+
+
+def test_editing_an_unknown_section_is_404_not_409(client):
+    """404 — раздела нет в этом срезе; 409 — черновик заморожен утверждением.
+    Это два разных отказа, и код обязан их различать."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/draft/999999/edit",
+        data={"text": "Правка"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 404
+
+
+def test_rebuilding_an_approved_draft_is_refused_before_calling_the_model(client):
+    """Отказ после утверждения не должен стоить ни одного обращения к
+    модели — находка не должна быть собрана заново, потом отвергнута."""
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+    provider.prompts.clear()
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/draft", follow_redirects=False
+    )
+
+    assert response.status_code == 409
+    assert provider.prompts == []
+
+
+def test_request_is_frozen_once_the_draft_is_approved(client):
+    """После утверждения черновика запрос клиента не переписывается: иначе
+    рядом с замороженными разделами оказался бы посторонний запрос, а текст,
+    реально утверждённый и отправленный модели, был бы стёрт."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/request",
+        data={"raw": "Подменённый текст"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 409
+    with context.session() as repo:
+        stored = repo.requests.get(snapshot_id)
+    assert stored.raw == "Устал"
+    assert stored.redacted == "Устал"
+    assert stored.approved
+
+
+def test_request_redaction_is_frozen_once_the_draft_is_approved(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact",
+        data={"redacted": "Подменённая вычитка"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 409
+    with context.session() as repo:
+        stored = repo.requests.get(snapshot_id)
+    assert stored.redacted == "Устал"
+
+
+def test_reapproving_a_frozen_draft_is_refused(client):
+    """`DraftRepository.approve` делает upsert: без этой проверки повторное
+    утверждение молча сдвинуло бы отметку времени утверждения — это данные
+    аудита, а не то, что можно переписать задним числом."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    with context.session() as repo:
+        first_approval = repo.drafts.approved_at(snapshot_id)
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/draft/approve", follow_redirects=False
+    )
+
+    assert response.status_code == 409
+    with context.session() as repo:
+        assert repo.drafts.approved_at(snapshot_id) == first_approval
