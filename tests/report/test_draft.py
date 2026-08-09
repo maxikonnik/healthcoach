@@ -98,12 +98,61 @@ def test_findings_reach_every_prompt():
 
 
 def test_model_failure_stops_the_draft_and_names_the_section():
-    """Половина черновика молча — хуже, чем отказ: коуч решит, что это всё."""
-    provider = FakeProvider(fail_on="ключевые показатели")
-    with pytest.raises(DraftError, match="показатели"):
+    """Половина черновика молча — хуже, чем отказ: коуч решит, что это всё.
+
+    Раздел взят из середины порядка («врачи», 5-й из 8), чтобы «после него
+    вызовов не было» было содержательным утверждением, а не совпадением
+    из-за того, что упавший раздел был последним.
+    """
+    order = [s.id for s in SECTIONS]
+    failing_index = order.index("врачи")
+    failing_section = SECTIONS[failing_index]
+    provider = FakeProvider(fail_on=failing_section.title)
+
+    with pytest.raises(DraftError, match="врачи"):
         generate_draft(
             provider, [ANALYTE], Subject(sex="ж", age=39), "", _specialties(), CLIENT,
         )
+
+    # Вызван провайдер ровно для разделов до отказавшего включительно —
+    # ни одним больше, ни одним меньше.
+    assert len(provider.prompts) == failing_index + 1
+    for later_section in SECTIONS[failing_index + 1 :]:
+        for prompt in provider.prompts:
+            assert later_section.title not in prompt
+
+
+def test_the_request_section_stands_on_no_findings():
+    """«Запрос» пересказывает цели клиента и не трактует ни одной находки —
+    привязывать его ко всем находкам было бы нечем обосновать."""
+    provider = FakeProvider()
+    sections = generate_draft(
+        provider, [ANALYTE, QUESTIONNAIRE], Subject(sex="ж", age=39), "",
+        _specialties(), CLIENT,
+    )
+    by_id = {s.section_id: s for s in sections}
+    assert by_id["запрос"].finding_ids == ()
+
+
+def test_doctors_section_stands_on_every_kind_of_finding():
+    provider = FakeProvider()
+    sections = generate_draft(
+        provider, [ANALYTE, QUESTIONNAIRE], Subject(sex="ж", age=39), "",
+        _specialties(), CLIENT,
+    )
+    by_id = {s.section_id: s for s in sections}
+    assert "показатель/ферритин" in by_id["врачи"].finding_ids
+    assert "опросник/obraz_zizni/весь" in by_id["врачи"].finding_ids
+
+
+def test_key_indicators_section_carries_only_the_analyte_finding():
+    provider = FakeProvider()
+    sections = generate_draft(
+        provider, [ANALYTE, QUESTIONNAIRE], Subject(sex="ж", age=39), "",
+        _specialties(), CLIENT,
+    )
+    by_id = {s.section_id: s for s in sections}
+    assert by_id["показатели"].finding_ids == ("показатель/ферритин",)
 
 
 def test_request_that_names_the_client_never_reaches_the_model():

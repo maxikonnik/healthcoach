@@ -33,8 +33,11 @@ class GeneratedSection:
 
 
 def _section_findings(section: Section, findings: Sequence[Finding]) -> tuple[str, ...]:
-    if not section.kinds:
-        return tuple(finding_id(f) for f in findings)
+    """Находки, на которых стоит раздел.
+
+    Пустой ``section.kinds`` даёт пустой результат: привязка не
+    подразумевается по умолчанию, её нужно объявить явно.
+    """
     return tuple(finding_id(f) for f in findings if f.kind in section.kinds)
 
 
