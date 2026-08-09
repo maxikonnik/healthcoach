@@ -62,6 +62,7 @@ def prepare_measurements(
                 # разойдутся с референсом.
                 try:
                     convert_to_reference(resolution.analyte, 1.0, row.units)
+                    units = resolution.analyte.units
                 except UnitError:
                     problem = _unit_problem(row.units)
             else:

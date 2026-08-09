@@ -9,6 +9,7 @@ from healthcoach.knowledge.formula import (
     validate_formula,
 )
 from healthcoach.knowledge.references import References
+from healthcoach.knowledge.units import units_match
 from healthcoach.scoring.references import (
     STATUS_ABOVE,
     STATUS_BELOW,
@@ -54,9 +55,7 @@ def compute_derived(
             unusable[key] = f"{title}: {STATUS_NO_VALUE}"
             continue
 
-        if analyte is not None and (
-            measurement.units.strip().casefold() != analyte.units.strip().casefold()
-        ):
+        if analyte is not None and not units_match(analyte, measurement.units):
             unusable[key] = (
                 f"{analyte.name}: референс задан в единицах {analyte.units!r}, "
                 f"измерение пришло в {measurement.units!r}"

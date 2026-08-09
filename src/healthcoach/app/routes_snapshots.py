@@ -12,7 +12,7 @@ from healthcoach.app.deps import Context, Repositories
 from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
-from healthcoach.knowledge.units import UnitError, convert_to_reference
+from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
 from healthcoach.storage.snapshots import StoredMeasurement
@@ -58,7 +58,7 @@ def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
             )
             continue
         problem = None
-        if measurement.units.strip().casefold() != analyte.units.strip().casefold():
+        if not units_match(analyte, measurement.units):
             problem = f"единицы не сопоставлены: {measurement.units}"
         rows.append(Row(measurement, analyte.name, problem))
     return rows

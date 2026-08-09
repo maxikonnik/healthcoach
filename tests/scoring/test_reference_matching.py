@@ -96,11 +96,26 @@ def test_unknown_analyte_is_reported_not_dropped():
 def test_unit_mismatch_is_not_interpreted():
     (verdict,) = check_measurements(
         _refs(),
-        [Measurement("ферритин", 18, "мкг/л")],
+        [Measurement("ферритин", 18, "пмоль/л")],
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert verdict.status == "единицы не сопоставлены"
     assert verdict.rule_missing is True
+
+
+def test_declared_unit_synonym_is_not_a_mismatch():
+    """Регресс: check_measurements сравнивал единицы напрямую строкой и не
+    знал про объявленные синонимы (`синонимы_единиц` в ferritin.yaml) — тот
+    же самый показатель отвергался как «единицы не сопоставлены» из-за
+    написания, которое коуч сам объявил равнозначным. Правило теперь одно —
+    `units_match`, оно же используется `convert_to_reference`."""
+    (verdict,) = check_measurements(
+        _refs(),
+        [Measurement("ферритин", 18, "мкг/л")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "дефицит"
+    assert verdict.rule_missing is False
 
 
 def test_missing_value_is_reported_not_computed():

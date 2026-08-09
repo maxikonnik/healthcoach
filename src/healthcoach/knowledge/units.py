@@ -45,3 +45,21 @@ def convert_to_reference(analyte: Analyte, value: float, units: str) -> float:
         f"показатель {analyte.id!r}: единицы {units!r} не сопоставлены; "
         f"референс задан в {analyte.units!r}, известны также {known[1:]!r}"
     )
+
+
+def units_match(analyte: Analyte, units: str) -> bool:
+    """Сопоставлены ли единицы измерения с единицами показателя.
+
+    Единственное правило сопоставления в проекте — то же самое, что решает
+    `convert_to_reference`: единицы референса, объявленные синонимы и
+    источники объявленных пересчётов, и ничего сверх этого. Реализация
+    буквально переиспользует `convert_to_reference`, а не пересказывает его
+    логику своей копией: три места, сравнивавшие единицы напрямую строкой
+    (`scoring/references.py`, `scoring/derived.py`, `app/routes_snapshots.py`),
+    разошлись с этим правилом — оказались строже него — и отвергали ровно
+    объявленный синоним показателя как несопоставленный."""
+    try:
+        convert_to_reference(analyte, 1.0, units)
+    except UnitError:
+        return False
+    return True

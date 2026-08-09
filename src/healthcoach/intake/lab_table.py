@@ -13,6 +13,8 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from healthcoach.intake.resolve import LAB_CODE
+
 ROLE_NAME = "название"
 ROLE_VALUE = "значение"
 ROLE_UNITS = "единицы"
@@ -31,7 +33,6 @@ _HEADER_WORDS = {
     "референсные": ROLE_REFERENCE,
 }
 
-_LAB_CODE = re.compile(r"\bA\d{2}\.\d{2}\.\d{3}\b\s*(\([^()]*\))?")
 _NUMBER = re.compile(r"^[<>]?\d+(?:[.,]\d+)?$")
 _STARTS_WITH_NUMBER = re.compile(r"^\s*[<>]?\d")
 _HAS_DIGIT = re.compile(r"\d")
@@ -134,7 +135,13 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
 
 
 def _strip_lab_code(line: str) -> str:
-    return _SPACES.sub(" ", _LAB_CODE.sub("", line)).strip()
+    """Стереть код номенклатуры услуги — тем же правилом, что и resolve.py.
+
+    Общий объект `LAB_CODE`, а не вторая копия регулярки: копия однажды уже
+    разошлась с оригиналом и съедала квалифицирующую скобку («ионизированный»),
+    из-за чего ионизированный кальций читался как общий.
+    """
+    return _SPACES.sub(" ", LAB_CODE.sub("", line)).strip()
 
 
 def _consume_reference(rest: list[str]) -> tuple[str, list[str]]:
@@ -208,6 +215,11 @@ def parse_lab_lines(lines: Sequence[str]) -> LabTable:
     rows: list[LabRow] = []
     unparsed: list[str] = []
     pending_name = ""
+    pending_line = ""
+    """Исходный текст строки, из которой взято `pending_name` — на случай,
+    если следующая строка со значением всё равно не разберётся: имя не
+    должно пропасть из того, что видит коуч, только потому что оно жило
+    отдельной строкой."""
 
     for index, line in enumerate(lines):
         if index == header_index:
@@ -218,29 +230,38 @@ def parse_lab_lines(lines: Sequence[str]) -> LabTable:
 
         if pending_name and _STARTS_WITH_NUMBER.match(stripped):
             candidate = f"{pending_name} {stripped}"
+            display = f"{pending_line} {line}"
             pending_name = ""
+            pending_line = ""
         else:
             candidate = stripped
+            display = line
 
         cleaned = _strip_lab_code(candidate)
         if "(" in cleaned and cleaned.count("(") != cleaned.count(")"):
-            unparsed.append(line)
+            unparsed.append(display)
             pending_name = ""
+            pending_line = ""
             continue
 
         row = _split_row(cleaned, roles)
         if row is not None:
             rows.append(row)
             pending_name = ""
+            pending_line = ""
         elif _HAS_DIGIT.search(cleaned):
             # В строке есть число, а записи не вышло: это может быть
             # результат, который разбор не осилил. Молча выбросить его
-            # нельзя — он доходит до коуча текстом.
-            unparsed.append(line)
+            # нельзя — он доходит до коуча текстом. Перенесённое с
+            # предыдущей строки имя уходит вместе с ней: иначе коуч увидел
+            # бы голое число без названия показателя.
+            unparsed.append(display)
             pending_name = ""
+            pending_line = ""
         elif cleaned:
             # Числа нет вовсе, значит это не результат: либо перенесённое
             # название, либо проза бланка. Ждём следующую строку.
             pending_name = cleaned
+            pending_line = line
 
     return LabTable(rows=tuple(rows), unparsed=tuple(unparsed))

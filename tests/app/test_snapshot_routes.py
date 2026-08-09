@@ -134,6 +134,30 @@ def test_unmatched_units_are_stored_and_flagged(client):
     assert "единицы" in page
 
 
+def test_declared_unit_synonym_is_not_flagged_as_a_mismatch(client):
+    """Регресс: `_rows` (routes_snapshots.py) сравнивал единицы прямым
+    равенством строк и не знал про объявленные синонимы — измерение,
+    хранящееся в объявленном (но не канонизированном) синониме, выглядело
+    бы для коуча как несопоставленное, хотя коуч сам объявил его равным."""
+    from datetime import date
+
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    with context.session() as repo:
+        repo.snapshots.add_measurement(
+            snapshot_id,
+            analyte_id="ферритин",
+            raw_name="Ферритин",
+            value=75.0,
+            raw_value="75",
+            units="мкг/л",
+            taken_on=date(2026, 8, 20),
+        )
+
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert "единицы не сопоставлены" not in page
+
+
 def test_confirming_a_measurement_shows_it_as_confirmed(client):
     test_client, context = client
     snapshot_id = _snapshot(test_client)
