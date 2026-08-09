@@ -89,3 +89,17 @@ def test_saving_a_section_after_approval_is_refused(repositories):
 
     with pytest.raises(ValueError, match="утвержд"):
         drafts.save_section(snapshot.id, "показатели", "Другой текст", ())
+
+
+def test_editing_a_section_after_approval_is_refused(repositories):
+    """Утверждённый отчёт заморожен целиком: правка не должна тайком менять
+    то, что клиент получит после того, как коуч уже всё утвердил."""
+    snapshot, _, drafts = repositories
+    saved = drafts.save_section(snapshot.id, "показатели", "Текст", ())
+    drafts.approve(snapshot.id, datetime(2026, 9, 2))
+
+    with pytest.raises(ValueError, match="утвержд"):
+        drafts.edit_section(saved.id, snapshot.id, "Правка после утверждения")
+
+    (read_back,) = drafts.sections(snapshot.id)
+    assert read_back.edited == ""

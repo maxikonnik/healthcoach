@@ -191,6 +191,12 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         "DROP TABLE documents_v3_links",
     ),
     4: (
+        # На свежей базе эти CREATE TABLE не делают ничего: SCHEMA уже
+        # создала requests/draft_sections/draft_approvals через executescript
+        # раньше, чем _migrate дойдёт до этого перехода, и IF NOT EXISTS
+        # делает повтор безвредным. Работает только сам факт наличия ключа
+        # 4 — он и поднимает user_version у старой базы до 5. Тела
+        # переходов здесь ради единообразия со старыми записями словаря.
         """
         CREATE TABLE IF NOT EXISTS requests (
             snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,

@@ -12,6 +12,10 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
+# Раздел склеивает finding_ids через "\n" и режет по нему обратно —
+# без экранирования. Id находок сегодня внутренние (мы их формируем сами,
+# не берём от клиента), но если это когда-нибудь изменится, id с переводом
+# строки внутри тихо порвёт кортеж на два.
 _SEPARATOR = "\n"
 
 
@@ -76,7 +80,15 @@ class DraftRepository:
         return _section(row)
 
     def edit_section(self, section_row_id: int, snapshot_id: int, text: str) -> bool:
-        """Записать правку коуча. False — раздела нет в этом срезе."""
+        """Записать правку коуча. False — раздела нет в этом срезе.
+
+        После утверждения — исключение, не False: это не «раздела нет», а
+        «правку внести нельзя», и вызывающий обязан различать эти случаи.
+        """
+        if self.approved_at(snapshot_id) is not None:
+            raise ValueError(
+                f"черновик среза {snapshot_id} утверждён — правки не вносятся"
+            )
         cursor = self._connection.execute(
             "UPDATE draft_sections SET edited = ? WHERE id = ? AND snapshot_id = ?",
             (text, section_row_id, snapshot_id),
