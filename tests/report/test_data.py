@@ -554,6 +554,64 @@ def test_series_appears_for_an_indicator_absent_from_the_primary_snapshot(
     assert [p.value for p in series.points] == [9.5]
 
 
+# Task 7: даты в клиентском PDF.
+
+
+def test_covers_several_dates_is_false_for_a_single_snapshot_scope(repo, knowledge):
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    assert data.covers_several_dates is False
+
+
+def test_covers_several_dates_is_true_when_the_scope_spans_two_dates(repo, knowledge):
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    new_only = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.snapshots.confirm_measurement(new_only.id, september.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    assert data.covers_several_dates is True
+
+
+def test_covers_several_dates_is_false_when_a_multi_snapshot_scope_shares_one_measurement_date(
+    repo, knowledge
+):
+    """Решают даты значений, а не число срезов: оба забора в один день."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    shared_date = date(2026, 8, 20)
+    old = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", shared_date
+    )
+    new = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", shared_date
+    )
+    repo.snapshots.confirm_measurement(old.id, march.id)
+    repo.snapshots.confirm_measurement(new.id, september.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    assert data.covers_several_dates is False
+
+
 def test_a_single_member_scope_matches_todays_behaviour(repo, knowledge):
     """Правило 7: срез без сохранённого набора отчёт собирает как раньше."""
     client, snapshot = _client_with_snapshot(repo)

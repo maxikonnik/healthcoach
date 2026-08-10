@@ -65,6 +65,13 @@ class ReportData:
     findings: tuple[Finding, ...]
     series: tuple[Series, ...]
     approved_at: datetime
+    covers_several_dates: bool = False
+    """Значения отчёта относятся больше чем к одной дате измерения (свод по
+    набору срезов, правило 1). Печать (`report/pdf.py`) решает по этому
+    полю, показывать ли клиенту дату у каждого показателя: один срез —
+    прежний вид без колонки, набор с разными датами — колонка появляется.
+    По умолчанию `False`, чтобы существующая сборка `ReportData` без этого
+    поля осталась рабочей."""
 
 
 def collect_report(
@@ -122,6 +129,7 @@ def collect_report(
             repo, references, subject, client.code, snapshot.taken_on, scoped.measurements
         ),
         approved_at=approved_at,
+        covers_several_dates=len(scoped.dates) > 1,
     )
 
 
