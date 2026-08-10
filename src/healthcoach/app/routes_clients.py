@@ -127,6 +127,46 @@ def build_router(context: Context, templates) -> APIRouter:
             repo.snapshots.create(code, when, note=note or None)
         return RedirectResponse(f"/clients/{code}", status_code=303)
 
+    @router.post("/clients/{code}/reports")
+    def build_report(code: str, snapshot_ids: list[int] = Form(default=[])):
+        """Собрать отчёт по выбранным срезам: см. Task 5 плана.
+
+        Порядок проверок объявлен планом и важен: набор сохраняется, только
+        когда клиент существует, выбор непуст, все срезы — его собственные,
+        а первичный (самый свежий) ещё не заморожен утверждённым черновиком.
+        """
+        with context.session() as repo:
+            if repo.clients.get(code) is None:
+                raise HTTPException(status_code=404, detail=f"нет клиента {code}")
+            if not snapshot_ids:
+                raise HTTPException(
+                    status_code=400, detail="не выбрано ни одного среза"
+                )
+            own = {s.id: s for s in repo.snapshots.for_client(code)}
+            if any(sid not in own for sid in snapshot_ids):
+                # Чужой срез в наборе означал бы чужие анализы в отчёте —
+                # это проверка безопасности, а не подсказка про опечатку.
+                raise HTTPException(
+                    status_code=400,
+                    detail="в наборе есть срез, не принадлежащий этому клиенту",
+                )
+            primary = max(
+                (own[sid] for sid in snapshot_ids), key=lambda s: (s.taken_on, s.id)
+            )
+            if repo.drafts.approved_at(primary.id) is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="черновик утверждён и не пересобирается",
+                )
+            try:
+                repo.scopes.set_members(primary.id, snapshot_ids)
+            except ValueError as exc:
+                # Между проверкой approved_at выше и этой записью черновик
+                # мог утвердить другой запрос — та же гонка, что у разделов
+                # черновика (`drafts.save_section`), и тот же 409.
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(f"/snapshots/{primary.id}/draft", status_code=303)
+
     @router.get("/clients/{code}/questionnaire")
     def questionnaire_file(code: str, extra: list[str] = Query(default=())):
         with context.session() as repo:

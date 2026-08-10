@@ -537,6 +537,73 @@ def test_report_is_503_when_the_print_engine_is_unavailable(client, monkeypatch)
     assert "pango" in response.text
 
 
+# План 4, задача 4: отчёт по набору срезов.
+
+
+def test_report_pdf_is_built_for_a_scope_of_two_snapshots(client):
+    """Утверждённый отчёт по набору из двух срезов собирается в PDF."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    with context.session() as repo:
+        older = next(
+            s for s in repo.snapshots.for_client("CL-0001") if s.id != snapshot_id
+        )
+    test_client.post(
+        f"/snapshots/{older.id}/measurements",
+        data={
+            "raw_name": "Витамин Д", "value": "30", "units": "нг/мл",
+            "taken_on": "2026-02-20",
+        },
+    )
+    with context.session() as repo:
+        (stored,) = repo.snapshots.measurements(older.id)
+    test_client.post(f"/snapshots/{older.id}/measurements/{stored.id}/confirm")
+    with context.session() as repo:
+        repo.scopes.set_members(snapshot_id, [older.id, snapshot_id])
+
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 200
+    assert response.content[:5] == b"%PDF-"
+
+
+# План, задача 6: набор срезов виден коучу на экране черновика.
+
+
+def test_draft_page_lists_the_dates_of_every_snapshot_in_scope(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    with context.session() as repo:
+        older = next(
+            s for s in repo.snapshots.for_client("CL-0001") if s.id != snapshot_id
+        )
+        repo.scopes.set_members(snapshot_id, [older.id, snapshot_id])
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+
+    assert f"/snapshots/{older.id}" in page
+    assert "2026-03-01" in page
+
+
+def test_draft_page_has_no_scope_block_for_a_single_snapshot(client):
+    """Хард-требование: срез без сохранённого набора выглядит ровно как
+    сегодня — блока с перечислением дат нет вовсе."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+
+    assert "Отчёт собран по срезам" not in page
+
+
 def test_report_of_a_client_with_an_incomplete_card_is_400_not_409(client):
     """Незаполненная карточка (только у строк со схемы версии 1) — это
     некорректный запрос про клиента, а не конфликт с состоянием черновика.
@@ -558,3 +625,57 @@ def test_report_of_a_client_with_an_incomplete_card_is_400_not_409(client):
     response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
 
     assert response.status_code == 400
+
+
+# Ревью: модели сказано, что у каждой находки своя дата рядом с ней, —
+# значит она должна быть и у находок опросника.
+
+
+def test_questionnaire_finding_reaches_the_model_with_its_snapshot_date(client):
+    """Анкета есть только в мартовском срезе, отчёт — на август.
+
+    Без даты «ОБРАЗ ЖИЗНИ: 8 баллов» приходил к модели голым числом, и
+    пятимесячная карта симптомов читалась как сегодняшняя.
+    """
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    with context.session() as repo:
+        march = next(
+            s for s in repo.snapshots.for_client("CL-0001") if s.id != snapshot_id
+        )
+        repo.snapshots.save_answers(march.id, {"obraz_zizni.1": 1, "obraz_zizni.2": 1})
+        repo.scopes.set_members(snapshot_id, [march.id, snapshot_id])
+    _approve_request(test_client, snapshot_id)
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    (line,) = [
+        line
+        for line in provider.prompts[0].splitlines()
+        if line.startswith("[опросник/obraz_zizni/весь]")
+    ]
+    assert "(от 01.03.2026)" in line
+
+
+def test_a_single_snapshot_draft_keeps_the_questionnaire_date_of_that_snapshot(
+    client,
+):
+    """Отчёт по одному срезу не меняется: у анкеты дата этого же среза, а
+    не пусто и не чужой срез."""
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    with context.session() as repo:
+        repo.snapshots.save_answers(
+            snapshot_id, {"obraz_zizni.1": 1, "obraz_zizni.2": 1}
+        )
+    _approve_request(test_client, snapshot_id)
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    (line,) = [
+        line
+        for line in provider.prompts[0].splitlines()
+        if line.startswith("[опросник/obraz_zizni/весь]")
+    ]
+    assert "(от 01.09.2026)" in line

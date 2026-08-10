@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS identities (
@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS draft_approvals (
     snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
     approved_at  TEXT NOT NULL,
     knowledge    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS report_snapshots (
+    snapshot_id        INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    member_snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    PRIMARY KEY (snapshot_id, member_snapshot_id)
 );
 """
 
@@ -221,6 +227,21 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
             snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
             approved_at  TEXT NOT NULL,
             knowledge    TEXT NOT NULL DEFAULT ''
+        )
+        """,
+    ),
+    5: (
+        # На свежей базе этот CREATE TABLE не делает ничего — как и в
+        # переходе 4 → 5, SCHEMA уже создала таблицу через executescript
+        # раньше, чем _migrate дойдёт до этого перехода, и IF NOT EXISTS
+        # делает повтор безвредным. Данные не переносятся: старых записей
+        # набора срезов не существует, отсутствие строки — объявленное
+        # поведение по умолчанию (см. ReportScopeRepository.members).
+        """
+        CREATE TABLE IF NOT EXISTS report_snapshots (
+            snapshot_id        INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            member_snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            PRIMARY KEY (snapshot_id, member_snapshot_id)
         )
         """,
     ),

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -155,6 +156,49 @@ def test_key_indicators_section_carries_only_the_analyte_finding():
     assert by_id["показатели"].finding_ids == ("показатель/ферритин",)
 
 
+# План, задача 6: если отчёт охватывает несколько дат, модель предупреждена
+# об этом один раз в общем контексте, а не за находку и не за раздел.
+
+
+def test_prompt_warns_once_when_findings_span_several_dates():
+    provider = FakeProvider()
+    early = replace(ANALYTE, taken_on=date(2026, 3, 10))
+    late = replace(
+        ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1)
+    )
+    generate_draft(
+        provider, [early, late], Subject(sex="ж", age=39), "", _specialties(), CLIENT,
+    )
+    assert provider.prompts
+    for prompt in provider.prompts:
+        assert "разных дат" in prompt
+
+
+def test_prompt_has_no_warning_when_every_dated_finding_shares_one_date():
+    provider = FakeProvider()
+    same_a = replace(ANALYTE, taken_on=date(2026, 8, 1))
+    same_b = replace(
+        ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1)
+    )
+    generate_draft(
+        provider, [same_a, same_b], Subject(sex="ж", age=39), "", _specialties(), CLIENT,
+    )
+    for prompt in provider.prompts:
+        assert "разных дат" not in prompt
+
+
+def test_prompt_has_no_warning_when_findings_carry_no_date():
+    """Находки без даты (обратная совместимость до задачи 6) не должны
+    внезапно обзавестись предупреждением, которого не было ни разу."""
+    provider = FakeProvider()
+    generate_draft(
+        provider, [ANALYTE, QUESTIONNAIRE], Subject(sex="ж", age=39), "",
+        _specialties(), CLIENT,
+    )
+    for prompt in provider.prompts:
+        assert "разных дат" not in prompt
+
+
 def test_request_that_names_the_client_never_reaches_the_model():
     from healthcoach.privacy.leak import LeakError
 
@@ -163,5 +207,34 @@ def test_request_that_names_the_client_never_reaches_the_model():
         generate_draft(
             provider, [ANALYTE], Subject(sex="ж", age=39),
             "Соловьёва жалуется на усталость", _specialties(), CLIENT,
+        )
+    assert provider.prompts == []
+
+
+def test_the_multi_date_warning_passes_through_the_leak_guard(monkeypatch):
+    """Ревью: предупреждение приписывалось к запросу уже после того, как
+    `build_payload` прогнал текст через сторожа утечки.
+
+    Сегодня текст статичен и не течёт, но естественная следующая правка —
+    подставить в него сами даты, и она пошла бы мимо проверки. Подмена
+    предупреждения строкой с фамилией клиента показывает, где именно оно
+    склеивается с запросом: сторож обязан отказать, а не пропустить.
+    """
+    from healthcoach.llm import payload as payload_module
+    from healthcoach.privacy.leak import LeakError
+
+    monkeypatch.setattr(
+        payload_module,
+        "_MULTI_DATE_WARNING",
+        f"ВНИМАНИЕ: разных дат много, клиент — {CLIENT.full_name}",
+    )
+    provider = FakeProvider()
+    early = replace(ANALYTE, taken_on=date(2026, 3, 10))
+    late = replace(ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1))
+
+    with pytest.raises(LeakError):
+        generate_draft(
+            provider, [early, late], Subject(sex="ж", age=39), "", _specialties(),
+            CLIENT,
         )
     assert provider.prompts == []

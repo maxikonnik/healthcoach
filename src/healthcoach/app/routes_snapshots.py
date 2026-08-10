@@ -14,8 +14,14 @@ from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answ
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
 from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.scoring.findings import collect_findings
-from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.scoring.references import Subject
 from healthcoach.storage.snapshots import StoredMeasurement
 
 UNRESOLVED = ""
@@ -215,12 +221,18 @@ def build_router(context: Context, templates) -> APIRouter:
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
     def findings(snapshot_id: int):
-        """Находки текстом: полноценный отчёт собирает план 4.
+        """Находки текстом — тем же путём, что и отчёт (`report/scope.py`).
 
         Пол и возраст берутся из карточки клиента и нигде не подставляются
         по умолчанию: почти каждый целевой коридор задан для пола и
         возрастного диапазона, и подстановка молча считала бы находки для
-        другого человека. Возраст — на дату среза, а не на сегодня.
+        другого человека. Возраст — на дату среза, а не на сегодня; для
+        измерений из более старых срезов набора — на дату самого измерения
+        (правило 4 плана многосрезового отчёта).
+
+        Показатели и анкета собираются по набору срезов (`repo.scopes`), а
+        не только по этому срезу, — иначе выгрузка на экране среза
+        разошлась бы с тем, что видит клиент в отчёте.
         """
         with context.session() as repo:
             snapshot = _snapshot_or_404(repo, snapshot_id)
@@ -229,14 +241,10 @@ def build_router(context: Context, templates) -> APIRouter:
                 raise HTTPException(
                     status_code=404, detail=f"нет клиента {snapshot.client_code}"
                 )
-            measurements = [
-                Measurement(
-                    m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id
-                )
-                for m in repo.snapshots.measurements(snapshot_id)
-                if m.confirmed
-            ]
-            answers = repo.snapshots.answers(snapshot_id)
+            scoped = collect_inputs(repo, snapshot)
+            measurements = to_measurements(scoped.measurements)
+            answers = scoped.answers
+            answers_on = answers_taken_on(repo, scoped)
 
         if not client.is_complete:
             raise HTTPException(
@@ -256,12 +264,16 @@ def build_router(context: Context, templates) -> APIRouter:
                 detail=f"в карточке клиента {client.code} неверный пол: {exc}",
             ) from exc
 
+        subject_at = build_subject_at(client)
+
         found = collect_findings(
             context.questionnaire,
             context.references,
             answers,
             measurements,
             subject,
+            subject_at=subject_at,
+            answers_taken_on=answers_on,
         )
         lines = [
             f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}",

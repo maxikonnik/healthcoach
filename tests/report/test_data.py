@@ -14,6 +14,7 @@ from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.pdf import render_report_html
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import (
+    STATUS_NOT_COMPUTED,
     STATUS_NO_RULE,
     STATUS_UNIT_MISMATCH,
     Measurement,
@@ -22,6 +23,7 @@ from healthcoach.scoring.references import (
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.drafts import DraftRepository
+from healthcoach.storage.scopes import ReportScopeRepository
 from healthcoach.storage.snapshots import SnapshotRepository
 
 REFS = Path(__file__).parents[2] / "knowledge" / "references"
@@ -42,12 +44,13 @@ def _collect(repo, knowledge, snapshot_id):
 
 
 class Repos:
-    """Три хранилища на одном соединении — как их выдаёт Context.session()."""
+    """Хранилища на одном соединении — как их выдаёт Context.session()."""
 
     def __init__(self, connection):
         self.clients = ClientRepository(connection)
         self.snapshots = SnapshotRepository(connection)
         self.drafts = DraftRepository(connection)
+        self.scopes = ReportScopeRepository(connection)
 
 
 @pytest.fixture
@@ -506,3 +509,307 @@ def test_incomplete_client_card_is_refused(repo, knowledge):
 
     with pytest.raises(ReportError, match="CL-0001"):
         _collect(repo, knowledge, snapshot.id)
+
+
+# План 4, задача 4: свод по набору срезов доходит до отчёта.
+
+
+def test_report_includes_an_indicator_submitted_only_in_an_older_member(
+    repo, knowledge
+):
+    """Показатель, сданный лишь в старом срезе набора, доходит до отчёта."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "кальций"]
+    assert finding.value == 9.5
+    # Дата находки — дата самого измерения, а не дата отчёта.
+    assert finding.taken_on == date(2026, 3, 1)
+
+
+def test_series_appears_for_an_indicator_absent_from_the_primary_snapshot(
+    repo, knowledge
+):
+    """Список показателей графика берётся из свода, а не из первичного среза."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = data.series
+    assert series.analyte_id == "кальций"
+    assert [p.value for p in series.points] == [9.5]
+
+
+# Task 7: даты в клиентском PDF.
+
+
+def test_covers_several_dates_is_false_for_a_single_snapshot_scope(repo, knowledge):
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    assert data.covers_several_dates is False
+
+
+def test_covers_several_dates_is_true_when_the_scope_spans_two_dates(repo, knowledge):
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    new_only = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.snapshots.confirm_measurement(new_only.id, september.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    assert data.covers_several_dates is True
+
+
+def test_covers_several_dates_is_false_when_a_multi_snapshot_scope_shares_one_measurement_date(
+    repo, knowledge
+):
+    """Решают даты значений, а не число срезов: оба забора в один день."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    shared_date = date(2026, 8, 20)
+    old = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", shared_date
+    )
+    new = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", shared_date
+    )
+    repo.snapshots.confirm_measurement(old.id, march.id)
+    repo.snapshots.confirm_measurement(new.id, september.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    assert data.covers_several_dates is False
+
+
+def test_a_single_member_scope_matches_todays_behaviour(repo, knowledge):
+    """Правило 7: срез без сохранённого набора отчёт собирает как раньше."""
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "ферритин"]
+    assert finding.value == 18.0
+    (series,) = data.series
+    assert series.analyte_id == "ферритин"
+
+
+def test_table_and_chart_agree_when_an_older_member_holds_a_later_draw(
+    repo, knowledge
+):
+    """Ревью: два числа у одного показателя на одной странице.
+
+    Мартовский срез несёт кальций, взятый 01.09; августовский (первичный) —
+    свой кальций от 05.08 и калий. Пока свёртка сравнивала даты самих
+    измерений, в таблице печатался кальций 9.5 от 01.09, а график,
+    обрезанный датой первичного среза, заканчивался на 9.8 от 05.08 — и
+    соотношение кальций/калий отказывалось считаться «значениями из разных
+    срезов», хотя целая пара была в августовском срезе.
+    """
+    client, march = _client_with_snapshot(repo, date(2026, 3, 10))
+    august = repo.snapshots.create(client.code, date(2026, 8, 5))
+    stale = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 9, 1)
+    )
+    fresh = repo.snapshots.add_measurement(
+        august.id, "кальций", "Кальций", 9.8, "9.8", "мг/дл", date(2026, 8, 5)
+    )
+    potassium = repo.snapshots.add_measurement(
+        august.id, "калий", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 8, 5)
+    )
+    for stored, snapshot in ((stale, march), (fresh, august), (potassium, august)):
+        repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    repo.scopes.set_members(august.id, [march.id, august.id])
+    _approved_draft(repo, august.id)
+
+    data = _collect(repo, knowledge, august.id)
+
+    (calcium,) = [f for f in data.findings if f.subject_id == "кальций"]
+    assert calcium.value == 9.8
+    assert calcium.taken_on == date(2026, 8, 5)
+    (series,) = [s for s in data.series if s.analyte_id == "кальций"]
+    # Таблица и график говорят об одном показателе одно и то же.
+    assert series.points[-1].value == calcium.value
+    assert series.points[-1].taken_on == calcium.taken_on
+    (ratio,) = [f for f in data.findings if f.subject_id == "кальций_калий"]
+    assert ratio.status != STATUS_NOT_COMPUTED
+    assert ratio.value is not None
+
+
+def test_an_excluded_member_puts_no_point_on_the_chart(repo, knowledge):
+    """Ревью: срез, который коуч снял галочкой, всё равно попадал на график.
+
+    Январь (ферритин 18) и сентябрь отмечены, июнь (ферритин 25) снят.
+    Ряд строился по всей истории клиента: в таблице стояло 18, а последняя
+    точка графика — 25, из среза, который в отчёт не брали.
+    """
+    client, january = _client_with_snapshot(repo, date(2026, 1, 10))
+    june = repo.snapshots.create(client.code, date(2026, 6, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    chosen = repo.snapshots.add_measurement(
+        january.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 1, 10)
+    )
+    dropped = repo.snapshots.add_measurement(
+        june.id, "ферритин", "Ферритин", 25.0, "25", "нг/мл", date(2026, 6, 10)
+    )
+    repo.snapshots.confirm_measurement(chosen.id, january.id)
+    repo.snapshots.confirm_measurement(dropped.id, june.id)
+    repo.scopes.set_members(september.id, [january.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "ферритин"]
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert finding.value == 18.0
+    assert [p.value for p in series.points] == [18.0]
+
+
+def test_an_included_older_member_does_put_its_point_on_the_chart(repo, knowledge):
+    """Обратная половина: отмеченный старый срез рисуется, иначе от границы
+    по набору не осталось бы динамики вовсе."""
+    client, january = _client_with_snapshot(repo, date(2026, 1, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    older = repo.snapshots.add_measurement(
+        january.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 1, 10)
+    )
+    newer = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 45.0, "45", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(older.id, january.id)
+    repo.snapshots.confirm_measurement(newer.id, september.id)
+    repo.scopes.set_members(september.id, [january.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert [p.value for p in series.points] == [18.0, 45.0]
+
+
+def test_a_scope_of_one_snapshot_keeps_the_whole_history_on_the_chart(
+    repo, knowledge
+):
+    """Набор из одного среза — это сегодняшнее поведение (правило 7).
+
+    `members()` отдаёт `[snapshot_id]` и для сохранённого набора из одного
+    среза, и для среза, про который коуч ничего не говорил: домен объявил
+    эти два состояния одинаковыми. Значит и график у них обязан быть один
+    и тот же — история целиком, обрезанная датой первичного среза.
+    """
+    client, june = _client_with_snapshot(repo, date(2026, 6, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    older = repo.snapshots.add_measurement(
+        june.id, "ферритин", "Ферритин", 25.0, "25", "нг/мл", date(2026, 6, 10)
+    )
+    newer = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 45.0, "45", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(older.id, june.id)
+    repo.snapshots.confirm_measurement(newer.id, september.id)
+    repo.scopes.set_members(september.id, [september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert [p.value for p in series.points] == [25.0, 45.0]
+
+
+# Правило 4 целиком, через сборку отчёта: коридор по возрасту на дату
+# измерения. До сих пор его держали только замыкания в юнит-тестах —
+# мутация `age_on(date.today())` в `build_subject_at` и удаление
+# `subject_at=subject_at` из `collect_report` не роняли ни одного теста.
+
+
+AGE_SPLIT = (
+    "показатели:\n"
+    "  - id: тестостерон\n"
+    "    название: Тестостерон\n"
+    "    единицы: нмоль/л\n"
+    "    целевые:\n"
+    "      - условие: {возраст: [null, 39]}\n"
+    "        оптимум: [10.0, 20.0]\n"
+    "      - условие: {возраст: [40, null]}\n"
+    "        оптимум: [20.0, 30.0]\n"
+    "  - id: кортизол\n"
+    "    название: Кортизол\n"
+    "    единицы: нмоль/л\n"
+    "    целевые:\n"
+    "      - условие: {возраст: [null, 39]}\n"
+    "        оптимум: [10.0, 20.0]\n"
+    "      - условие: {возраст: [40, null]}\n"
+    "        оптимум: [20.0, 30.0]\n"
+)
+
+
+def test_age_corridor_of_each_finding_follows_its_own_measurement_date(
+    repo, knowledge, tmp_path
+):
+    """День рождения клиентки лежит между мартовским и августовским
+    измерениями: мартовское обязано сверяться с коридором для 39 лет,
+    августовское — для 40. Оба коридора описаны одинаково у обоих
+    показателей, так что разойтись они могут только по возрасту."""
+    questionnaire, _ = knowledge
+    refs_dir = tmp_path / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "age.yaml").write_text(AGE_SPLIT, encoding="utf-8")
+    references = load_references(refs_dir)
+
+    client = repo.clients.add("Соловьёва Ирина", "ж", date(1986, 6, 15))
+    march = repo.snapshots.create(client.code, date(2026, 3, 10))
+    august = repo.snapshots.create(client.code, date(2026, 8, 9))
+    before = repo.snapshots.add_measurement(
+        march.id, "тестостерон", "Тестостерон", 15.0, "15", "нмоль/л", date(2026, 3, 10)
+    )
+    after = repo.snapshots.add_measurement(
+        august.id, "кортизол", "Кортизол", 15.0, "15", "нмоль/л", date(2026, 8, 9)
+    )
+    repo.snapshots.confirm_measurement(before.id, march.id)
+    repo.snapshots.confirm_measurement(after.id, august.id)
+    repo.scopes.set_members(august.id, [march.id, august.id])
+    _approved_draft(repo, august.id)
+
+    data = collect_report(repo, questionnaire, references, COACH, august.id)
+
+    by_id = {f.subject_id: f for f in data.findings}
+    assert client.age_on(date(2026, 3, 10)) == 39
+    assert client.age_on(date(2026, 8, 9)) == 40
+    assert by_id["тестостерон"].target == Interval(10.0, 20.0)
+    assert by_id["кортизол"].target == Interval(20.0, 30.0)

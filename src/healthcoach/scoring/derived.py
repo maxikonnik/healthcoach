@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from healthcoach.knowledge.formula import (
     FormulaError,
     MissingOperand,
@@ -42,8 +44,16 @@ def compute_derived(
     формула его использует, она должна отказаться с объяснением, а не
     получить None вместо float. `values` копит только настоящие числа;
     отсутствующее значение сразу помечает операнд негодным.
+
+    Правило 5 плана многосрезового отчёта: индекс считается, лишь когда
+    все его операнды пришли из одного среза. `snapshots`/`taken_on_by_key`
+    копят происхождение каждого операнда, а несовпадение проверяется на
+    уровне формулы (см. ниже) — единого среза может не быть даже тогда,
+    когда у каждого отдельного операнда со значением всё в порядке.
     """
     values: dict[str, float] = {}
+    snapshots: dict[str, int | None] = {}
+    taken_on_by_key: dict[str, date | None] = {}
     unusable: dict[str, str] = {}
 
     for measurement in measurements:
@@ -70,14 +80,51 @@ def compute_derived(
                 f"{key}: два разных измерения — {values[key]} и {measurement.value}"
             )
         values[key] = measurement.value
+        snapshots[key] = measurement.snapshot_id
+        taken_on_by_key[key] = measurement.taken_on
 
     verdicts: list[AnalyteVerdict] = []
     for derived in references.derived:
-        blocked = [
-            unusable[name]
-            for name in dict.fromkeys(validate_formula(derived.formula))
-            if name in unusable
-        ]
+        operand_names = tuple(dict.fromkeys(validate_formula(derived.formula)))
+
+        # Совсем отсутствующий операнд (ни одного измерения на этот id) —
+        # не пробел в данных, а несобранный набор анализов, и должен
+        # пропустить производный молча (см. докстроку выше). Эта проверка
+        # обязана идти раньше правила 5: иначе у формулы с тремя и более
+        # операндами «не хватает одного» превращалось в «значения из
+        # разных срезов», как только два оставшихся операнда были
+        # разнесены по срезам — реально отсутствующий операнд подменял
+        # диагноз, вместо того чтобы промолчать.
+        if any(name not in values and name not in unusable for name in operand_names):
+            continue
+
+        blocked = [unusable[name] for name in operand_names if name in unusable]
+
+        operand_snapshots = {
+            snapshots[name] for name in operand_names if snapshots.get(name) is not None
+        }
+        if len(operand_snapshots) > 1:
+            operand_dates = sorted(
+                {
+                    taken_on_by_key[name]
+                    for name in operand_names
+                    if taken_on_by_key.get(name) is not None
+                }
+            )
+            if len(operand_dates) > 1:
+                detail = " и ".join(d.strftime("%d.%m") for d in operand_dates)
+            else:
+                # Дата не различает операнды: либо она у обоих одна и та
+                # же (срезы сданы в один день), либо её вовсе нет. То, что
+                # различает их по-настоящему, — номер среза; называем его,
+                # а не оставляем тире висеть в пустоте.
+                detail = " и ".join(
+                    f"{name} (срез {snapshots[name]})"
+                    for name in operand_names
+                    if snapshots.get(name) is not None
+                )
+            blocked.append(f"значения из разных срезов — {detail}")
+
         if blocked:
             verdicts.append(
                 AnalyteVerdict(
@@ -90,6 +137,11 @@ def compute_derived(
                     lab_range=None,
                     note="; ".join(blocked),
                     rule_missing=True,
+                    # Причина отказа — рабочий разбор кода для коуча
+                    # («два разных измерения», «значения из разных
+                    # срезов — …»), а не клиническая находка: клиенту она
+                    # ничего не объясняет и не должна доходить.
+                    note_private=True,
                 )
             )
             continue

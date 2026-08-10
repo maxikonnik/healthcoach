@@ -14,9 +14,14 @@ from healthcoach.privacy.redact import redact
 from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.draft import DraftError, generate_draft
 from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.report.sections import SECTIONS
 from healthcoach.scoring.findings import collect_findings
-from healthcoach.scoring.references import Measurement, Subject
 
 
 _in_flight: dict[int, int] = {}
@@ -51,15 +56,18 @@ def build_router(context: Context, templates) -> APIRouter:
                     f"даты рождения целевой коридор не выбрать"
                 ),
             )
-        measurements = [
-            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
-            for m in repo.snapshots.measurements(snapshot.id)
-            if m.confirmed
-        ]
-        answers = repo.snapshots.answers(snapshot.id)
-        subject = Subject(sex=client.sex, age=client.age_on(snapshot.taken_on))
+        scoped = collect_inputs(repo, snapshot)
+        measurements = to_measurements(scoped.measurements)
+        subject_at = build_subject_at(client)
+        subject = subject_at(snapshot.taken_on)
         return collect_findings(
-            context.questionnaire, context.references, answers, measurements, subject
+            context.questionnaire,
+            context.references,
+            scoped.answers,
+            measurements,
+            subject,
+            subject_at=subject_at,
+            answers_taken_on=answers_taken_on(repo, scoped),
         ), subject
 
     def _page(request: Request, repo: Repositories, snapshot, client):
@@ -68,6 +76,15 @@ def build_router(context: Context, templates) -> APIRouter:
         if stored is not None and not stored.redacted:
             suggested = redact(stored.raw, client).text
         titles = {section.id: section.title for section in SECTIONS}
+        # Набор виден коучу выше запроса (задача 6) — но только когда он
+        # шире одного среза: срез без сохранённого набора обязан выглядеть
+        # ровно как сегодня, без блока, перечисляющего единственную дату.
+        member_ids = collect_inputs(repo, snapshot).member_ids
+        scope_members = (
+            [repo.snapshots.get(member_id) for member_id in member_ids]
+            if len(member_ids) > 1
+            else []
+        )
         return templates.TemplateResponse(
             request,
             "report.html",
@@ -82,6 +99,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 "sections": repo.drafts.sections(snapshot.id),
                 "titles": titles,
                 "approved_at": repo.drafts.approved_at(snapshot.id),
+                "scope_members": scope_members,
             },
         )
 

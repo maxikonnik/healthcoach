@@ -33,7 +33,7 @@
 <div class="title-page">
   <p class="client">{{ data.client_name }}</p>
   <h1>Отчёт по результатам обследования</h1>
-  <p class="meta">Срез от {{ data.taken_on.strftime("%d.%m.%Y") }}</p>
+  <p class="meta">{{ header_period }}</p>
   <p class="meta">{{ data.coach.name }}{% if data.coach.title %}, {{ data.coach.title }}{% endif %}</p>
 </div>
 
@@ -48,6 +48,7 @@
   <thead>
     <tr>
       <th>Показатель</th>
+      {% if data.covers_several_dates %}<th>Дата сдачи анализа</th>{% endif %}
       <th>Значение</th>
       <th>Целевой коридор</th>
       <th>Лабораторный интервал</th>
@@ -58,6 +59,7 @@
   {% for row in indicators %}
     <tr>
       <td>{{ row.title }}</td>
+      {% if data.covers_several_dates %}<td>{{ row.taken_on }}</td>{% endif %}
       <td>{{ row.value }}</td>
       <td>{{ row.target }}</td>
       <td>{{ row.lab_range }}</td>

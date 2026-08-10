@@ -37,6 +37,10 @@ class StoredMeasurement:
     confirmed: bool
     source: str
     document_id: int | None
+    snapshot_id: int
+    """Свой срез: свод по набору срезов (`report/scope.py`) сравнивает
+    и подписывает выжившие измерения по нему, а не по владеющему срезу
+    отчёта."""
 
 
 def _snapshot(row: sqlite3.Row) -> Snapshot:
@@ -60,6 +64,7 @@ def _measurement(row: sqlite3.Row) -> StoredMeasurement:
         confirmed=bool(row["confirmed"]),
         source=row["source"],
         document_id=row["document_id"],
+        snapshot_id=row["snapshot_id"],
     )
 
 
@@ -135,6 +140,7 @@ class SnapshotRepository:
             confirmed=False,
             source=source,
             document_id=document_id,
+            snapshot_id=snapshot_id,
         )
 
     def measurements(self, snapshot_id: int) -> list[StoredMeasurement]:

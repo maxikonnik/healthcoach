@@ -136,9 +136,46 @@ def _indicator_rows(findings) -> list[dict[str, str]]:
                 "target": _interval_text(finding.target),
                 "lab_range": _interval_text(finding.lab_range),
                 "status": finding.status,
+                "taken_on": finding.taken_on.strftime("%d.%m.%Y") if finding.taken_on else NOTHING,
             }
         )
     return rows
+
+
+def _header_period(data) -> str:
+    """Текст шапки: дата среза, а когда значения отчёта из разных дат — охват.
+
+    Одна дата — тот же текст, что печатался всегда («Срез от X»); менять
+    его нельзя, иначе отчёт по одному срезу перестал бы быть побайтово тем
+    же документом, что печатался раньше (`data.covers_several_dates` для
+    этого и заведено). Несколько дат — клиент должен видеть, что за чем
+    стоит, а не читать пятимесячный анализ как сегодняшний.
+
+    Формулировка называет вещи своими именами: «Анализы сданы с … по …».
+    Отчёт читает не коуч, а клиент, и прежнее «Данные с … по …» не
+    отличало дату забора крови от даты, когда отчёт был сделан.
+
+    Диапазон берётся из дат самих находок (`Finding.taken_on`), а не из
+    отдельного поля `ReportData`: это те же даты, что уходят в колонку
+    таблицы показателей, — раздваивать источник незачем. Находки
+    опросника из него исключены, как и из самой таблицы: их дата — дата
+    среза, к которому подшита анкета, а шапка говорит про сдачу анализов.
+    """
+    if not data.covers_several_dates:
+        return f"Срез от {data.taken_on.strftime('%d.%m.%Y')}"
+    dates = sorted(
+        {
+            f.taken_on
+            for f in data.findings
+            if f.taken_on is not None and f.kind != KIND_QUESTIONNAIRE
+        }
+    )
+    if not dates:
+        return f"Срез от {data.taken_on.strftime('%d.%m.%Y')}"
+    return (
+        f"Анализы сданы с {dates[0].strftime('%d.%m.%Y')} "
+        f"по {dates[-1].strftime('%d.%m.%Y')}"
+    )
 
 
 def render_report_html(data, templates) -> str:
@@ -163,4 +200,5 @@ def render_report_html(data, templates) -> str:
         titles=titles,
         paragraphs=paragraphs,
         indicators=_indicator_rows(data.findings),
+        header_period=_header_period(data),
     )

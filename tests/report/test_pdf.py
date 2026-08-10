@@ -27,7 +27,7 @@ def _section(section_id: str, text: str) -> DraftSection:
     )
 
 
-def _data(sections=None, series=(), findings=()) -> ReportData:
+def _data(sections=None, series=(), findings=(), covers_several_dates=False) -> ReportData:
     return ReportData(
         client_name="Соловьёва Ирина Анатольевна",
         client_code="CL-0001",
@@ -37,6 +37,7 @@ def _data(sections=None, series=(), findings=()) -> ReportData:
         findings=tuple(findings),
         series=series,
         approved_at=datetime(2026, 9, 2, 10, 0),
+        covers_several_dates=covers_several_dates,
     )
 
 
@@ -186,8 +187,10 @@ def _all_sections():
     return [_section(s.id, f"Текст раздела «{s.id}».") for s in SECTIONS]
 
 
-def _rendered_with(findings):
-    data = _data(sections=_all_sections(), findings=findings)
+def _rendered_with(findings, covers_several_dates=False):
+    data = _data(
+        sections=_all_sections(), findings=findings, covers_several_dates=covers_several_dates
+    )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     return render_report_html(data, templates)
 
@@ -429,3 +432,132 @@ def test_html_is_escaped_before_markdown_is_converted():
 def test_plain_paragraph_is_unchanged():
     html = _rendered("Обычный текст без разметки.")
     assert "<p>Обычный текст без разметки.</p>" in html
+
+
+# Task 7: даты в клиентском PDF.
+
+
+def test_single_date_report_has_no_date_column_and_the_old_header():
+    """Хард-требование: отчёт по одному сроку не меняется ни в чём.
+
+    Мутация «сделать колонку безусловной» ломает именно этот тест — им
+    проверено то немногое, что должно остаться прежним побайтово.
+    """
+    html = _rendered_with([_finding(taken_on=date(2026, 8, 20))], covers_several_dates=False)
+
+    assert "Дата сдачи" not in html
+    assert "Срез от 01.09.2026" in html
+    assert "Анализы сданы" not in html
+
+
+def test_multi_date_report_shows_a_date_per_row_and_the_span_in_the_header():
+    html = _rendered_with(
+        [
+            _finding(taken_on=date(2026, 3, 1)),
+            _finding(
+                subject_id="витамин_д",
+                title="Витамин Д",
+                value=22.0,
+                units="нг/мл",
+                status="в пределах нормы",
+                target=Interval(30, 60),
+                lab_range=Interval(10, 100),
+                taken_on=date(2026, 8, 25),
+            ),
+        ],
+        covers_several_dates=True,
+    )
+
+    # Клиент не коуч: «Дата» и «Данные с» ни о чём ему не говорили — из
+    # шапки нельзя было понять, дата это забора крови или изготовления
+    # отчёта.
+    assert "<th>Дата сдачи анализа</th>" in html
+    assert "<td>01.03.2026</td>" in html
+    assert "<td>25.08.2026</td>" in html
+    assert "Анализы сданы с 01.03.2026 по 25.08.2026" in html
+    assert "Срез от" not in html
+
+
+def test_pdf_builds_for_a_single_date_report():
+    import io
+
+    import pdfplumber
+
+    data = _data(sections=_all_sections(), findings=[_finding(taken_on=date(2026, 8, 20))])
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    html = render_report_html(data, templates)
+
+    pdf = report_pdf(html)
+
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        text = "\n".join(page.extract_text() or "" for page in doc.pages)
+    assert "Срез от 01.09.2026" in text
+    assert "Дата" not in text
+
+
+def test_pdf_builds_for_a_multi_date_report_with_the_date_column():
+    import io
+
+    import pdfplumber
+
+    data = _data(
+        sections=_all_sections(),
+        findings=[
+            _finding(taken_on=date(2026, 3, 1)),
+            _finding(
+                subject_id="витамин_д",
+                title="Витамин Д",
+                value=22.0,
+                units="нг/мл",
+                status="в пределах нормы",
+                target=Interval(30, 60),
+                lab_range=Interval(10, 100),
+                taken_on=date(2026, 8, 25),
+            ),
+        ],
+        covers_several_dates=True,
+    )
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    html = render_report_html(data, templates)
+
+    pdf = report_pdf(html)
+
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        text = "\n".join(page.extract_text() or "" for page in doc.pages)
+    assert "Анализы сданы с 01.03.2026 по 25.08.2026" in text
+    assert "Дата сдачи анализа" in text
+
+
+def test_header_span_names_the_lab_dates_only_not_the_questionnaire_date():
+    """Шапка обещает клиенту даты сдачи анализов — значит дата анкеты её
+    не расширяет. Анкета несёт дату своего среза (правило 3), и попади
+    она в диапазон, «анализы сданы с 01.03» было бы неправдой."""
+    from healthcoach.scoring.findings import KIND_QUESTIONNAIRE
+
+    html = _rendered_with(
+        [
+            _finding(taken_on=date(2026, 8, 20)),
+            _finding(
+                subject_id="витамин_д",
+                title="Витамин Д",
+                value=22.0,
+                units="нг/мл",
+                taken_on=date(2026, 8, 25),
+            ),
+            _finding(
+                kind=KIND_QUESTIONNAIRE,
+                subject_id="obraz_zizni/весь",
+                title="ОБРАЗ ЖИЗНИ",
+                value=8.0,
+                units="баллов",
+                status="в пределах нормы",
+                target=None,
+                lab_range=None,
+                taken_on=date(2026, 3, 1),
+            ),
+        ],
+        covers_several_dates=True,
+    )
+
+    assert "Анализы сданы с 20.08.2026 по 25.08.2026" in html
+    assert "01.03.2026" not in html

@@ -480,3 +480,113 @@ def test_version_four_database_gains_the_report_tables(tmp_path):
     assert {"requests", "draft_sections", "draft_approvals"} <= names
     assert stored.value == 18.0
     assert stored.confirmed is True
+
+
+SCHEMA_V5 = (
+    SCHEMA_V4
+    + """
+CREATE TABLE requests (
+    snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    raw          TEXT NOT NULL,
+    redacted     TEXT NOT NULL DEFAULT '',
+    approved     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE draft_sections (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id  INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    section_id   TEXT NOT NULL,
+    generated    TEXT NOT NULL,
+    edited       TEXT NOT NULL DEFAULT '',
+    finding_ids  TEXT NOT NULL DEFAULT '',
+    UNIQUE (snapshot_id, section_id)
+);
+
+CREATE TABLE draft_approvals (
+    snapshot_id  INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    approved_at  TEXT NOT NULL,
+    knowledge    TEXT NOT NULL DEFAULT ''
+);
+"""
+)
+
+
+def _version_five_database(path: Path) -> None:
+    connection = sqlite3.connect(path)
+    connection.executescript(SCHEMA_V5)
+    connection.execute(
+        "INSERT INTO identities VALUES (?, ?, ?, ?, ?, ?)",
+        ("CL-0001", "Иванова Мария", "ж", "1990-05-17", "@masha", None),
+    )
+    connection.execute(
+        "INSERT INTO snapshots (id, client_code, taken_on, note) VALUES (?, ?, ?, ?)",
+        (1, "CL-0001", "2026-09-01", None),
+    )
+    connection.execute(
+        "INSERT INTO snapshots (id, client_code, taken_on, note) VALUES (?, ?, ?, ?)",
+        (2, "CL-0001", "2026-01-15", None),
+    )
+    connection.execute("PRAGMA user_version = 5")
+    connection.commit()
+    connection.close()
+
+
+def test_version_five_database_gains_the_scope_table(tmp_path):
+    """Переход 5 → 6 добавляет таблицу набора срезов и не трогает срезы."""
+    path = tmp_path / "db.sqlite"
+    _version_five_database(path)
+
+    with open_database(path) as connection:
+        (version,) = connection.execute("PRAGMA user_version").fetchone()
+        names = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        snapshot_ids = {
+            row["id"] for row in connection.execute("SELECT id FROM snapshots")
+        }
+
+    assert version == SCHEMA_VERSION
+    assert "report_snapshots" in names
+    assert snapshot_ids == {1, 2}
+
+
+def test_interrupted_migration_from_five_leaves_no_half_applied_state(
+    tmp_path, monkeypatch
+):
+    """Обрыв перехода 5 → 6 не должен поднимать `user_version` — второй,
+    чинёный прогон обязан пройти как обычный переход.
+
+    `report_snapshots` не годится в свидетели отката сама по себе: её
+    `CREATE TABLE IF NOT EXISTS` уже выполнил безусловный `executescript`
+    схемы до входа в транзакцию перехода, так же как для requests и
+    draft_sections в переходе 4 → 5. Единственный надёжный признак не
+    прошедшего перехода — версия, которая осталась прежней.
+    """
+    path = tmp_path / "db.sqlite"
+    _version_five_database(path)
+
+    broken = ("ЭТО НЕ SQL СОВСЕМ",) + MIGRATIONS[5]
+    with monkeypatch.context() as patched:
+        patched.setitem(MIGRATIONS, 5, broken)
+        with pytest.raises(sqlite3.OperationalError):
+            open_database(path)
+
+    raw = sqlite3.connect(path)
+    (version,) = raw.execute("PRAGMA user_version").fetchone()
+    raw.close()
+    assert version == 5
+
+    with open_database(path) as connection:
+        (version,) = connection.execute("PRAGMA user_version").fetchone()
+        names = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+
+    assert version == SCHEMA_VERSION
+    assert "report_snapshots" in names

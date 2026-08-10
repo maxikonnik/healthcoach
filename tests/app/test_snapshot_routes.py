@@ -403,6 +403,75 @@ def test_findings_refuse_an_incomplete_client_card(client):
     assert "не заполнена" in response.text
 
 
+def test_findings_use_the_recorded_scope_not_just_this_snapshot(client):
+    """Текстовая выгрузка находок идёт тем же путём, что и отчёт (план 4, задача 4)."""
+    test_client, context = client
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        old_id, new_id = [s.id for s in repo.snapshots.for_client("CL-0001")]
+    test_client.post(
+        f"/snapshots/{old_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-02-20",
+        },
+    )
+    (stored,) = _measurements(context, old_id)
+    test_client.post(f"/snapshots/{old_id}/measurements/{stored.id}/confirm")
+    with context.session() as repo:
+        repo.scopes.set_members(new_id, [old_id, new_id])
+
+    report = test_client.get(f"/snapshots/{new_id}/findings").text
+
+    assert "Ферритин" in report
+    assert "18" in report
+
+
+def test_findings_dump_blocks_derived_index_across_snapshots(client):
+    """Ревью: `to_measurements` — единственная проекция StoredMeasurement →
+    Measurement, разделяемая routes_report.py, routes_snapshots.py и
+    report/data.py. Если бы этот сайт (или одна из его прежних трёх копий)
+    забыл snapshot_id, compute_derived перестал бы видеть, что операнды
+    из разных срезов, и посчитал бы производный индекс из мартовского
+    кальция и августовского калия — то, что не должен означать (правило
+    5). Дамп находок на экране среза обязан отказаться считать его так
+    же, как отказывается PDF."""
+    test_client, context = client
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        old_id, new_id = [s.id for s in repo.snapshots.for_client("CL-0001")]
+    test_client.post(
+        f"/snapshots/{old_id}/measurements",
+        data={
+            "raw_name": "Кальций", "value": "10", "units": "мг/дл",
+            "taken_on": "2026-03-10",
+        },
+    )
+    test_client.post(
+        f"/snapshots/{new_id}/measurements",
+        data={
+            "raw_name": "Калий", "value": "4", "units": "ммоль/л",
+            "taken_on": "2026-08-09",
+        },
+    )
+    (calcium,) = _measurements(context, old_id)
+    (potassium,) = _measurements(context, new_id)
+    test_client.post(f"/snapshots/{old_id}/measurements/{calcium.id}/confirm")
+    test_client.post(f"/snapshots/{new_id}/measurements/{potassium.id}/confirm")
+    with context.session() as repo:
+        repo.scopes.set_members(new_id, [old_id, new_id])
+
+    report = test_client.get(f"/snapshots/{new_id}/findings").text
+
+    assert "Соотношение кальций/калий" in report
+    assert "не удалось вычислить" in report
+    assert "2.5" not in report
+
+
 class FakeProvider:
     """Заглушка модели для теста, доводящего срез до утверждённого черновика —
     без этого использовался бы настоящий ClaudeCodeProvider по умолчанию."""

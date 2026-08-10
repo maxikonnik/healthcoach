@@ -29,6 +29,7 @@ from healthcoach.storage.db import open_database
 from healthcoach.storage.documents import DocumentRepository
 from healthcoach.storage.drafts import DraftRepository
 from healthcoach.storage.requests import RequestRepository
+from healthcoach.storage.scopes import ReportScopeRepository
 from healthcoach.storage.snapshots import SnapshotRepository
 
 
@@ -41,6 +42,7 @@ class Repositories:
     documents: DocumentRepository
     requests: RequestRepository
     drafts: DraftRepository
+    scopes: ReportScopeRepository
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class Context:
                 documents=DocumentRepository(connection),
                 requests=RequestRepository(connection),
                 drafts=DraftRepository(connection),
+                scopes=ReportScopeRepository(connection),
             )
         finally:
             connection.close()

@@ -21,8 +21,14 @@ from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.units import units_match
 from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.scoring.findings import Finding, collect_findings
-from healthcoach.scoring.references import Measurement, Subject, select_target
+from healthcoach.scoring.references import select_target
 from healthcoach.storage.drafts import DraftSection
 
 
@@ -64,6 +70,13 @@ class ReportData:
     findings: tuple[Finding, ...]
     series: tuple[Series, ...]
     approved_at: datetime
+    covers_several_dates: bool = False
+    """Значения отчёта относятся больше чем к одной дате измерения (свод по
+    набору срезов, правило 1). Печать (`report/pdf.py`) решает по этому
+    полю, показывать ли клиенту дату у каждого показателя: один срез —
+    прежний вид без колонки, набор с разными датами — колонка появляется.
+    По умолчанию `False`, чтобы существующая сборка `ReportData` без этого
+    поля осталась рабочей."""
 
 
 def collect_report(
@@ -93,17 +106,17 @@ def collect_report(
             f"рождения целевой коридор не выбрать"
         )
 
-    confirmed = [m for m in repo.snapshots.measurements(snapshot_id) if m.confirmed]
-    subject = Subject(sex=client.sex, age=client.age_on(snapshot.taken_on))
+    scoped = collect_inputs(repo, snapshot)
+    subject_at = build_subject_at(client)
+    subject = subject_at(snapshot.taken_on)
     findings = collect_findings(
         questionnaire,
         references,
-        repo.snapshots.answers(snapshot_id),
-        [
-            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
-            for m in confirmed
-        ],
+        scoped.answers,
+        to_measurements(scoped.measurements),
         subject,
+        subject_at=subject_at,
+        answers_taken_on=answers_taken_on(repo, scoped),
     )
 
     return ReportData(
@@ -119,18 +132,50 @@ def collect_report(
         # `privacy/findings.py`.
         findings=tuple(safe_finding(f, audience=FOR_CLIENT) for f in findings),
         series=_series(
-            repo, references, subject, client.code, snapshot.taken_on, confirmed
+            repo,
+            references,
+            subject,
+            client.code,
+            snapshot.taken_on,
+            scoped.measurements,
+            scoped.member_ids,
         ),
         approved_at=approved_at,
+        covers_several_dates=len(scoped.dates) > 1,
     )
 
 
 def _series(
-    repo, references, subject, client_code, taken_on: date, confirmed
+    repo,
+    references,
+    subject,
+    client_code,
+    taken_on: date,
+    measurements,
+    member_ids: tuple[int, ...] = (),
 ) -> tuple[Series, ...]:
-    """Ряды динамики по показателям этого среза.
+    """Ряды динамики по показателям свода (`report.scope.collect_inputs`).
 
-    Три условия, и каждое отсекает точку, которой на графике быть не должно.
+    Список показателей берётся из всего набора срезов, а не только из
+    первичного, — график может появиться для показателя, которого в
+    первичном срезе нет вовсе. Верхняя граница истории (`taken_on`) при
+    этом не меняется: она остаётся датой первичного среза, а не самой
+    свежей датой набора.
+
+    Когда коуч отметил несколько срезов, точки берутся только из них.
+    Выбор — это утверждение о том, из чего собран отчёт: точка из среза,
+    который сняли галочкой, ему противоречит, и клиент видел в таблице
+    одно число, а в конце графика другое, из среза, который в отчёт не
+    брали.
+
+    Набор из одного среза границей не считается: `scopes.members` отдаёт
+    `[snapshot_id]` и сохранённому набору из одного среза, и срезу, про
+    который коуч ничего не говорил (правило 7 плана объявляет эти
+    состояния одинаковыми). Различать их здесь значило бы завести
+    расхождение, которого домен не знает, — и молча лишить динамики
+    отчёт, собранный кнопкой с карточки по умолчанию.
+
+    Четыре условия, и каждое отсекает точку, которой на графике быть не должно.
 
     Сверенность: клиент не должен увидеть точку, которую коуч не проверил.
 
@@ -150,8 +195,9 @@ def _series(
     Отдельного сравнения здесь нет намеренно: две копии одного правила уже
     расходились в этом проекте.
     """
+    picked = set(member_ids) if len(member_ids) > 1 else None
     result: list[Series] = []
-    for analyte_id in dict.fromkeys(m.analyte_id for m in confirmed if m.analyte_id):
+    for analyte_id in dict.fromkeys(m.analyte_id for m in measurements if m.analyte_id):
         analyte = references.analyte(analyte_id)
         if analyte is None:
             continue
@@ -161,6 +207,7 @@ def _series(
             if m.confirmed
             and m.value is not None
             and m.taken_on <= taken_on
+            and (picked is None or m.snapshot_id in picked)
             and units_match(analyte, m.units)
         )
         if not points:

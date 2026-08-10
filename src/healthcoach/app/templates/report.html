@@ -9,6 +9,15 @@
 <p><a href="/snapshots/{{ snapshot.id }}/report.pdf">Скачать отчёт для клиента (PDF)</a></p>
 {% endif %}
 
+{% if scope_members %}
+<h2>Отчёт собран по срезам</h2>
+<ul>
+  {% for member in scope_members %}
+  <li><a href="/snapshots/{{ member.id }}">{{ member.taken_on }}</a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
 <h2>Запрос клиента</h2>
 {% if not client_request %}
 <form method="post" action="/snapshots/{{ snapshot.id }}/request">
