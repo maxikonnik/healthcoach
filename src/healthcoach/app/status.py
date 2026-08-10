@@ -35,16 +35,12 @@ class Step:
 def client_overview(repo, client: Client) -> Overview:
     """Плашки клиента — по последнему срезу, плюс долг по прошлым."""
     snapshots = repo.snapshots.for_client(client.code)
-    latest_taken_on = (
-        max(snapshots, key=lambda s: (s.taken_on, s.id)).taken_on
-        if snapshots
-        else None
-    )
+    latest = max(snapshots, key=lambda s: (s.taken_on, s.id)) if snapshots else None
     if not client.is_complete:
+        latest_taken_on = latest.taken_on if latest is not None else None
         return Overview(latest_taken_on, (Badge("bad", "карточка не заполнена"),))
-    if not snapshots:
+    if latest is None:
         return Overview(None, (Badge("muted", "нет срезов"),))
-    latest = max(snapshots, key=lambda s: (s.taken_on, s.id))
     badges = list(_snapshot_badges(repo, latest.id))
     debt = _snapshots_with_unfinished_work(repo, client.code) - {latest.id}
     if debt:
@@ -60,7 +56,7 @@ def _snapshots_with_unfinished_work(repo, client_code: str) -> set[int]:
     предупреждения в _snapshot_badges — иначе рабочий стол и воронка среза
     расскажут разные истории об одном и том же срезе.
     """
-    unverified = repo.snapshots.unverified_counts_by_snapshot(client_code)
+    unverified = repo.snapshots.unverified_snapshot_ids(client_code)
     unapproved_requests = repo.requests.unapproved_snapshot_ids(client_code)
     unapproved_drafts = repo.drafts.unapproved_snapshot_ids(client_code)
     return set(unverified) | set(unapproved_requests) | set(unapproved_drafts)

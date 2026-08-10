@@ -115,7 +115,7 @@ def test_saving_answers_replaces_previous(repositories):
     assert snapshots.answers(snapshot.id) == {"pitanie.а.1": 3}
 
 
-def test_unverified_counts_by_snapshot_only_counts_unconfirmed(repositories):
+def test_unverified_snapshot_ids_only_include_unconfirmed_measurements(repositories):
     code, snapshots = repositories
     fully_confirmed = snapshots.create(code, date(2026, 1, 1))
     m = snapshots.add_measurement(
@@ -130,10 +130,10 @@ def test_unverified_counts_by_snapshot_only_counts_unconfirmed(repositories):
         partly.id, "", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 2, 20)
     )
     snapshots.confirm_measurement(a.id, partly.id)
-    assert snapshots.unverified_counts_by_snapshot(code) == {partly.id: 1}
+    assert snapshots.unverified_snapshot_ids(code) == [partly.id]
 
 
-def test_unverified_counts_by_snapshot_are_scoped_to_the_client(repositories):
+def test_unverified_snapshot_ids_are_scoped_to_the_client(repositories):
     """Иначе долг одного клиента подмешивался бы в счётчик другого."""
     code, snapshots = repositories
     other = ClientRepository(snapshots._connection).add(
@@ -147,7 +147,7 @@ def test_unverified_counts_by_snapshot_are_scoped_to_the_client(repositories):
     snapshots.add_measurement(
         theirs.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 2, 20)
     )
-    assert snapshots.unverified_counts_by_snapshot(code) == {mine.id: 1}
+    assert snapshots.unverified_snapshot_ids(code) == [mine.id]
 
 
 def _guarded_storage_modules() -> list[Path]:

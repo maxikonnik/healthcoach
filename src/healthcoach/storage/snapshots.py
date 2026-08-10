@@ -199,21 +199,20 @@ class SnapshotRepository:
                 [(snapshot_id, qid, score) for qid, score in answers.items()],
             )
 
-    def unverified_counts_by_snapshot(self, client_code: str) -> dict[int, int]:
-        """Сколько неподтверждённых измерений в каждом срезе клиента.
+    def unverified_snapshot_ids(self, client_code: str) -> list[int]:
+        """Срезы клиента, где есть хотя бы одно неподтверждённое измерение.
 
-        Один агрегирующий запрос на клиента: опрос по каждому срезу в цикле
-        умножил бы число обращений к базе на количество его срезов.
+        Один запрос на клиента: опрос по каждому срезу в цикле умножил бы
+        число обращений к базе на количество его срезов.
         """
         rows = self._connection.execute(
-            "SELECT m.snapshot_id AS snapshot_id, COUNT(*) AS n "
+            "SELECT DISTINCT m.snapshot_id AS snapshot_id "
             "FROM measurements m "
             "JOIN snapshots s ON s.id = m.snapshot_id "
-            "WHERE s.client_code = ? AND m.confirmed = 0 "
-            "GROUP BY m.snapshot_id",
+            "WHERE s.client_code = ? AND m.confirmed = 0",
             (client_code,),
         ).fetchall()
-        return {row["snapshot_id"]: row["n"] for row in rows}
+        return [row["snapshot_id"] for row in rows]
 
     def answers(self, snapshot_id: int) -> Answers:
         rows = self._connection.execute(
