@@ -214,6 +214,54 @@ def test_member_ids_cover_the_whole_scope_in_date_order(repo):
     assert result.member_ids == (old.id, new.id)
 
 
+def test_two_draws_in_one_snapshot_both_survive(repo):
+    """Ревью: свёртка не должна применяться внутри одного среза (правило 1
+    говорит «среди выбранных срезов») — два бланка одного показателя,
+    сданные в один визит с разными датами забора, не «повторный ввод
+    того же среза», а нормальная запись, и обе должны попасть в находки."""
+    client = _client(repo)
+    snapshot = repo.snapshots.create(client.code, date(2026, 9, 1))
+    first = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    second = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 42.0, "42", "нг/мл", date(2026, 8, 28)
+    )
+    repo.snapshots.confirm_measurement(first.id, snapshot.id)
+    repo.snapshots.confirm_measurement(second.id, snapshot.id)
+
+    result = collect_inputs(repo, snapshot)
+
+    assert {m.id for m in result.measurements} == {first.id, second.id}
+    assert {m.value for m in result.measurements} == {18.0, 42.0}
+
+
+def test_within_snapshot_survival_and_cross_snapshot_collapse_combine(repo):
+    """Смешанный случай: новый срез несёт два бланка одного показателя (обе
+    даты забора внутри него выживают), а старый срез с тем же показателем
+    полностью проигрывает — его значение уже видно в динамике."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 1, 1))
+    new = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 9.0, "9", "нг/мл", date(2026, 1, 1)
+    )
+    new_first = repo.snapshots.add_measurement(
+        new.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    new_second = repo.snapshots.add_measurement(
+        new.id, "ферритин", "Ферритин", 42.0, "42", "нг/мл", date(2026, 8, 28)
+    )
+    repo.snapshots.confirm_measurement(old_m.id, old.id)
+    repo.snapshots.confirm_measurement(new_first.id, new.id)
+    repo.snapshots.confirm_measurement(new_second.id, new.id)
+    repo.scopes.set_members(new.id, [old.id, new.id])
+
+    result = collect_inputs(repo, new)
+
+    assert {m.id for m in result.measurements} == {new_first.id, new_second.id}
+
+
 def test_surviving_measurements_carry_their_own_snapshot_id(repo):
     """Задачам 3 и 4 нужен snapshot_id каждого выжившего измерения."""
     client = _client(repo)

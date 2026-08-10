@@ -34,17 +34,27 @@ class ScopedInputs:
 def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
     """Собрать сверенные измерения и анкету по набору срезов владеющего среза.
 
-    Свёртка (правило 1) сравнивает измерения одного показателя по ключу
-    `(taken_on, id)` самого измерения — не среза, который его несёт: дата
-    забора в бланке не обязана совпадать с датой среза, а `id` разрешает
-    спор двух измерений одной даты в пользу более позднего ввода.
+    Свёртка (правило 1) применяется «среди выбранных срезов» — то есть
+    только между измерениями из *разных* срезов набора. Внутри одного
+    среза два бланка одного показателя (например, два отдельных забора,
+    внесённые за один визит) — не повтор одного и того же среза, а
+    нормальная запись; свёртка их не трогает, обе строки идут в находки.
+
+    Реализовано в два прохода. Сначала измерения группируются по
+    `(analyte_id, snapshot_id, taken_on)`: это ловит только буквальный
+    дубль — одна и та же дата забора, тот же срез, — где выживает более
+    поздний ввод (`id`). Затем среди срезов, где показатель вообще
+    встретился, выбирается один «победивший» — тот, что несёт самое
+    свежее по `(taken_on, id)` измерение этого показателя; из него в
+    находки идут все его даты забора, а измерения показателя из
+    остальных срезов отбрасываются целиком — они уже видны в динамике.
     """
     members = sorted(
         (repo.snapshots.get(member_id) for member_id in repo.scopes.members(snapshot.id)),
         key=lambda s: (s.taken_on, s.id),
     )
 
-    latest_by_analyte: dict[str, StoredMeasurement] = {}
+    by_draw: dict[tuple[str, int, date], StoredMeasurement] = {}
     unrecognised: list[StoredMeasurement] = []
     for member in members:
         for measurement in repo.snapshots.measurements(member.id):
@@ -55,11 +65,23 @@ def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
                 # чем и не с кем — каждая строка идёт в находки отдельно.
                 unrecognised.append(measurement)
                 continue
-            current = latest_by_analyte.get(measurement.analyte_id)
-            key = (measurement.taken_on, measurement.id)
-            if current is None or key > (current.taken_on, current.id):
-                latest_by_analyte[measurement.analyte_id] = measurement
-    measurements = tuple(latest_by_analyte.values()) + tuple(unrecognised)
+            draw_key = (measurement.analyte_id, measurement.snapshot_id, measurement.taken_on)
+            current = by_draw.get(draw_key)
+            if current is None or measurement.id > current.id:
+                by_draw[draw_key] = measurement
+
+    winning_snapshot: dict[str, tuple[tuple[date, int], int]] = {}
+    for (analyte_id, member_id, _taken_on), measurement in by_draw.items():
+        rep_key = (measurement.taken_on, measurement.id)
+        best = winning_snapshot.get(analyte_id)
+        if best is None or rep_key > best[0]:
+            winning_snapshot[analyte_id] = (rep_key, member_id)
+
+    measurements = tuple(
+        measurement
+        for (analyte_id, member_id, _taken_on), measurement in by_draw.items()
+        if winning_snapshot[analyte_id][1] == member_id
+    ) + tuple(unrecognised)
 
     answers: Answers = {}
     answers_from: int | None = None
