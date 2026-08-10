@@ -279,6 +279,125 @@ def test_the_cross_snapshot_reason_is_coach_only():
     assert verdict.note_private is True
 
 
+def test_cross_snapshot_reason_names_snapshots_when_dates_coincide():
+    """Ревью: причина строилась из *множества* дат — два разных среза,
+    сданных в один день, схлопывались в одну дату, и текст «значения из
+    разных срезов — 10.03» выглядел так, будто дата всего одна. Дата тут
+    ничего не различает — а вот номер среза различает, и причина обязана
+    его назвать."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement(
+                "кальций", 10.0, "мг/дл", taken_on=date(2026, 3, 10), snapshot_id=1
+            ),
+            Measurement(
+                "калий", 4.0, "ммоль/л", taken_on=date(2026, 3, 10), snapshot_id=2
+            ),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert "разных срезов" in verdict.note
+    assert "срез 1" in verdict.note
+    assert "срез 2" in verdict.note
+
+
+def test_cross_snapshot_reason_has_no_dangling_dash_when_dates_are_unknown():
+    """Ревью: операнды без даты (например, вызовы, что ещё не собирают свод
+    по нескольким срезам) давали пустое множество дат — причина
+    заканчивалась висящим тире без единого слова после него."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл", snapshot_id=1),
+            Measurement("калий", 4.0, "ммоль/л", snapshot_id=2),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert "разных срезов" in verdict.note
+    assert not verdict.note.rstrip().endswith("—")
+    assert "срез 1" in verdict.note
+    assert "срез 2" in verdict.note
+
+
+def test_conflicting_measurements_reason_is_coach_only_by_deliberate_choice():
+    """Ревью: задача 3 расширила `note_private=True` на весь blocked-список
+    без теста — «два разных измерения» и «единицы не сопоставлены» раньше
+    доходили и до клиента. Решение зафиксировано здесь осознанно: это
+    разбор кода для коуча (конфликт значений, несопоставленные единицы
+    бланка), а не клиническая находка, которую клиент может использовать —
+    поэтому они остаются коуч-только, и это поведение теперь закреплено
+    тестом, а не побочный эффект правки."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 4.0, "ммоль/л"),
+            Measurement("калий", 5.0, "ммоль/л"),
+        ],
+    )
+    assert "два разных измерения" in verdict.note
+    assert verdict.note_private is True
+
+
+def test_unit_mismatch_reason_is_coach_only_by_deliberate_choice():
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл"),
+            Measurement("калий", 16.0, "мг/дл"),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.note_private is True
+
+
+def test_derived_with_a_wholly_absent_third_operand_is_skipped_silently_even_when_the_other_two_disagree_on_snapshot(
+    tmp_path,
+):
+    """Ревью: порядок проверок в `compute_derived` — правило 5 (разные
+    срезы) шло раньше пропуска отсутствующего операнда. С двумя операндами
+    в бою (сегодняшняя единственная формула) это не заметно; с тремя —
+    заметно: если один операнд вовсе не сдан, а два других разнесены по
+    срезам, отсутствующий операнд должен молча пропустить производный, а
+    не потеряться за поводом «значения из разных срезов»."""
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: a\n"
+        "    название: A\n"
+        "    единицы: ед\n"
+        "    целевые:\n"
+        "      - оптимум: [0.0, 100.0]\n"
+        "  - id: b\n"
+        "    название: B\n"
+        "    единицы: ед\n"
+        "    целевые:\n"
+        "      - оптимум: [0.0, 100.0]\n"
+        "  - id: c\n"
+        "    название: C\n"
+        "    единицы: ед\n"
+        "    целевые:\n"
+        "      - оптимум: [0.0, 100.0]\n"
+        "производные:\n"
+        "  - id: a_b_c\n"
+        "    название: A+B+C\n"
+        "    формула: a + b + c\n"
+        "    оптимум: [0.0, 300.0]\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+
+    verdicts = compute_derived(
+        references,
+        [
+            Measurement("a", 1.0, "ед", taken_on=date(2026, 3, 10), snapshot_id=1),
+            Measurement("b", 2.0, "ед", taken_on=date(2026, 8, 9), snapshot_id=2),
+            # "c" вовсе не сдан — ни одного измерения на этот id.
+        ],
+    )
+    assert verdicts == []
+
+
 def test_the_blocked_note_does_not_echo_the_units_written_on_the_form():
     """Причина отказа уходит в note, а note уходит модели. Ручной ввод
     сохраняет подпись единиц дословно — пересказывать её наружу значит
