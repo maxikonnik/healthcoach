@@ -14,6 +14,7 @@ from healthcoach.privacy.redact import redact
 from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.draft import DraftError, generate_draft
 from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
+from healthcoach.report.scope import collect_inputs
 from healthcoach.report.sections import SECTIONS
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
@@ -51,15 +52,28 @@ def build_router(context: Context, templates) -> APIRouter:
                     f"даты рождения целевой коридор не выбрать"
                 ),
             )
+        scoped = collect_inputs(repo, snapshot)
         measurements = [
-            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
-            for m in repo.snapshots.measurements(snapshot.id)
-            if m.confirmed
+            Measurement(
+                m.analyte_id,
+                m.value,
+                m.units,
+                label=m.raw_name,
+                row_id=m.id,
+                taken_on=m.taken_on,
+                snapshot_id=m.snapshot_id,
+            )
+            for m in scoped.measurements
         ]
-        answers = repo.snapshots.answers(snapshot.id)
-        subject = Subject(sex=client.sex, age=client.age_on(snapshot.taken_on))
+        subject_at = lambda d: Subject(sex=client.sex, age=client.age_on(d))  # noqa: E731
+        subject = subject_at(snapshot.taken_on)
         return collect_findings(
-            context.questionnaire, context.references, answers, measurements, subject
+            context.questionnaire,
+            context.references,
+            scoped.answers,
+            measurements,
+            subject,
+            subject_at=subject_at,
         ), subject
 
     def _page(request: Request, repo: Repositories, snapshot, client):

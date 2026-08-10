@@ -403,6 +403,32 @@ def test_findings_refuse_an_incomplete_client_card(client):
     assert "не заполнена" in response.text
 
 
+def test_findings_use_the_recorded_scope_not_just_this_snapshot(client):
+    """Текстовая выгрузка находок идёт тем же путём, что и отчёт (план 4, задача 4)."""
+    test_client, context = client
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        old_id, new_id = [s.id for s in repo.snapshots.for_client("CL-0001")]
+    test_client.post(
+        f"/snapshots/{old_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-02-20",
+        },
+    )
+    (stored,) = _measurements(context, old_id)
+    test_client.post(f"/snapshots/{old_id}/measurements/{stored.id}/confirm")
+    with context.session() as repo:
+        repo.scopes.set_members(new_id, [old_id, new_id])
+
+    report = test_client.get(f"/snapshots/{new_id}/findings").text
+
+    assert "Ферритин" in report
+    assert "18" in report
+
+
 class FakeProvider:
     """Заглушка модели для теста, доводящего срез до утверждённого черновика —
     без этого использовался бы настоящий ClaudeCodeProvider по умолчанию."""

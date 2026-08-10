@@ -22,6 +22,7 @@ from healthcoach.scoring.references import (
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.drafts import DraftRepository
+from healthcoach.storage.scopes import ReportScopeRepository
 from healthcoach.storage.snapshots import SnapshotRepository
 
 REFS = Path(__file__).parents[2] / "knowledge" / "references"
@@ -42,12 +43,13 @@ def _collect(repo, knowledge, snapshot_id):
 
 
 class Repos:
-    """Три хранилища на одном соединении — как их выдаёт Context.session()."""
+    """Хранилища на одном соединении — как их выдаёт Context.session()."""
 
     def __init__(self, connection):
         self.clients = ClientRepository(connection)
         self.snapshots = SnapshotRepository(connection)
         self.drafts = DraftRepository(connection)
+        self.scopes = ReportScopeRepository(connection)
 
 
 @pytest.fixture
@@ -506,3 +508,64 @@ def test_incomplete_client_card_is_refused(repo, knowledge):
 
     with pytest.raises(ReportError, match="CL-0001"):
         _collect(repo, knowledge, snapshot.id)
+
+
+# План 4, задача 4: свод по набору срезов доходит до отчёта.
+
+
+def test_report_includes_an_indicator_submitted_only_in_an_older_member(
+    repo, knowledge
+):
+    """Показатель, сданный лишь в старом срезе набора, доходит до отчёта."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "кальций"]
+    assert finding.value == 9.5
+    # Дата находки — дата самого измерения, а не дата отчёта.
+    assert finding.taken_on == date(2026, 3, 1)
+
+
+def test_series_appears_for_an_indicator_absent_from_the_primary_snapshot(
+    repo, knowledge
+):
+    """Список показателей графика берётся из свода, а не из первичного среза."""
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    old_only = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 3, 1)
+    )
+    repo.snapshots.confirm_measurement(old_only.id, march.id)
+    repo.scopes.set_members(september.id, [march.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = data.series
+    assert series.analyte_id == "кальций"
+    assert [p.value for p in series.points] == [9.5]
+
+
+def test_a_single_member_scope_matches_todays_behaviour(repo, knowledge):
+    """Правило 7: срез без сохранённого набора отчёт собирает как раньше."""
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "ферритин"]
+    assert finding.value == 18.0
+    (series,) = data.series
+    assert series.analyte_id == "ферритин"

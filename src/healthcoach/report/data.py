@@ -21,6 +21,7 @@ from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.units import units_match
 from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
+from healthcoach.report.scope import collect_inputs
 from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import Measurement, Subject, select_target
 from healthcoach.storage.drafts import DraftSection
@@ -93,17 +94,27 @@ def collect_report(
             f"рождения целевой коридор не выбрать"
         )
 
-    confirmed = [m for m in repo.snapshots.measurements(snapshot_id) if m.confirmed]
-    subject = Subject(sex=client.sex, age=client.age_on(snapshot.taken_on))
+    scoped = collect_inputs(repo, snapshot)
+    subject_at = lambda d: Subject(sex=client.sex, age=client.age_on(d))  # noqa: E731
+    subject = subject_at(snapshot.taken_on)
     findings = collect_findings(
         questionnaire,
         references,
-        repo.snapshots.answers(snapshot_id),
+        scoped.answers,
         [
-            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
-            for m in confirmed
+            Measurement(
+                m.analyte_id,
+                m.value,
+                m.units,
+                label=m.raw_name,
+                row_id=m.id,
+                taken_on=m.taken_on,
+                snapshot_id=m.snapshot_id,
+            )
+            for m in scoped.measurements
         ],
         subject,
+        subject_at=subject_at,
     )
 
     return ReportData(
@@ -119,16 +130,22 @@ def collect_report(
         # `privacy/findings.py`.
         findings=tuple(safe_finding(f, audience=FOR_CLIENT) for f in findings),
         series=_series(
-            repo, references, subject, client.code, snapshot.taken_on, confirmed
+            repo, references, subject, client.code, snapshot.taken_on, scoped.measurements
         ),
         approved_at=approved_at,
     )
 
 
 def _series(
-    repo, references, subject, client_code, taken_on: date, confirmed
+    repo, references, subject, client_code, taken_on: date, measurements
 ) -> tuple[Series, ...]:
-    """Ряды динамики по показателям этого среза.
+    """Ряды динамики по показателям свода (`report.scope.collect_inputs`).
+
+    Список показателей берётся из всего набора срезов, а не только из
+    первичного, — график может появиться для показателя, которого в
+    первичном срезе нет вовсе. Верхняя граница истории (`taken_on`) при
+    этом не меняется: она остаётся датой первичного среза, а не самой
+    свежей датой набора.
 
     Три условия, и каждое отсекает точку, которой на графике быть не должно.
 
@@ -151,7 +168,7 @@ def _series(
     расходились в этом проекте.
     """
     result: list[Series] = []
-    for analyte_id in dict.fromkeys(m.analyte_id for m in confirmed if m.analyte_id):
+    for analyte_id in dict.fromkeys(m.analyte_id for m in measurements if m.analyte_id):
         analyte = references.analyte(analyte_id)
         if analyte is None:
             continue
