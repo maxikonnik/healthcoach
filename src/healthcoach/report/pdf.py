@@ -84,26 +84,30 @@ NOTHING = "—"
 `llm/payload.py` печатает находку без значения."""
 
 
-def _number(value: float) -> str:
+def format_number(value: float) -> str:
     """Число так, как его печатают точки на графике: без хвоста «.0»."""
     return f"{value:g}"
 
 
-def _interval_text(interval: Interval | None) -> str:
+def interval_text(interval: Interval | None) -> str:
     """Коридор словами клиента: «60–90», «от 60», «до 30», прочерк.
 
     Границы, заданной с одной стороны, в базе знаний хватает («дефицит:
     [null, 30]»), а печатать «None–30» клиенту нельзя. Больше правил тут
     нет: чего в находке не посчитано, то и не печатается.
+
+    Публичная — экран находок коуча (`report/findings_view.py`)
+    форматирует те же интервалы этой же функцией, чтобы не завести вторую,
+    которая однажды разъедется с клиентским PDF.
     """
     if interval is None:
         return NOTHING
     if interval.low is not None and interval.high is not None:
-        return f"{_number(interval.low)}–{_number(interval.high)}"
+        return f"{format_number(interval.low)}–{format_number(interval.high)}"
     if interval.low is not None:
-        return f"от {_number(interval.low)}"
+        return f"от {format_number(interval.low)}"
     if interval.high is not None:
-        return f"до {_number(interval.high)}"
+        return f"до {format_number(interval.high)}"
     return NOTHING
 
 
@@ -128,13 +132,13 @@ def _indicator_rows(findings) -> list[dict[str, str]]:
     for finding in findings:
         if finding.kind == KIND_QUESTIONNAIRE:
             continue
-        value = NOTHING if finding.value is None else _number(finding.value)
+        value = NOTHING if finding.value is None else format_number(finding.value)
         rows.append(
             {
                 "title": finding.title,
                 "value": f"{value} {finding.units}".strip(),
-                "target": _interval_text(finding.target),
-                "lab_range": _interval_text(finding.lab_range),
+                "target": interval_text(finding.target),
+                "lab_range": interval_text(finding.lab_range),
                 "status": finding.status,
                 "taken_on": finding.taken_on.strftime("%d.%m.%Y") if finding.taken_on else NOTHING,
             }
