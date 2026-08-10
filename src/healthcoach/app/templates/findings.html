@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Находки — срез {{ snapshot.taken_on }}{% endblock %}
+{% block body %}
+<nav>
+  <a href="/snapshots/{{ snapshot.id }}">← Срез {{ snapshot.taken_on }}</a>
+</nav>
+<h1>Находки</h1>
+<p>Срез {{ snapshot.taken_on }}, клиент {{ snapshot.client_code }} ·
+  Считано для: пол {{ subject.sex }}, возраст {{ age }} на дату среза ·
+  <a href="/snapshots/{{ snapshot.id }}/findings.txt">Открыть текстом</a></p>
+
+{% macro finding_block(row) %}
+<div class="finding">
+  <h3>{{ row.finding.title }}
+    {% if row.finding.title_from_document %}<span class="tag muted">с бланка</span>{% endif %}
+    <span class="tag {{ row.tone }}">{{ row.finding.status }}</span>
+  </h3>
+  <p>{{ row.value_text }}</p>
+  {% if row.scale %}
+  <div class="scale">
+    <div class="scale-target" style="left:{{ row.scale.target_from_pct }}%;width:{{ row.scale.target_to_pct - row.scale.target_from_pct }}%"></div>
+    <div class="scale-mark{% if row.scale.value_outside %} outside{% endif %}" style="left:{{ row.scale.value_pct }}%"></div>
+  </div>
+  <div class="scale-ends"><span>{{ row.axis_low_text }}</span><span>{{ row.axis_high_text }}</span></div>
+  {% endif %}
+  <p class="muted">Целевой коридор: {{ row.target_text }} ·
+    Лабораторный интервал: {{ row.lab_text }}
+    {% if row.finding.taken_on %}· Дата анализа: {{ row.finding.taken_on.strftime('%d.%m.%Y') }}{% endif %}
+  </p>
+  {% if row.finding.note %}<p class="muted">{{ row.finding.note }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% set has_findings = view.attention.rows or view.normal.rows or view.unjudged.rows or view.questionnaire.rows %}
+{% if not has_findings %}
+<p class="muted">Находок нет: в находки идут только подтверждённые показатели.</p>
+{% else %}
+
+<h2>{{ view.attention.title }} — {{ view.attention.rows | length }}</h2>
+{% if view.attention.rows %}
+{% for row in view.attention.rows %}{{ finding_block(row) }}{% endfor %}
+{% else %}
+<p class="muted">Нет находок, требующих внимания.</p>
+{% endif %}
+
+{% if view.normal.rows %}
+<details>
+  <summary class="warn">{{ view.normal.title }} — {{ view.normal.rows | length }}</summary>
+  {% for row in view.normal.rows %}{{ finding_block(row) }}{% endfor %}
+</details>
+{% endif %}
+
+{% if view.unjudged.rows %}
+<details>
+  <summary class="warn">{{ view.unjudged.title }} — {{ view.unjudged.rows | length }}</summary>
+  {% for row in view.unjudged.rows %}{{ finding_block(row) }}{% endfor %}
+</details>
+{% endif %}
+
+{% if view.questionnaire.rows %}
+<h2>{{ view.questionnaire.title }}</h2>
+<table>
+  <tr><th>Шкала</th><th>Баллы</th><th>Степень</th><th></th></tr>
+  {% for row in view.questionnaire.rows %}
+  <tr>
+    <td>{{ row.finding.title }}</td>
+    <td>{{ row.value_text }}</td>
+    <td><span class="tag {{ row.tone }}">{{ row.finding.status }}</span></td>
+    <td class="muted">
+      {% if row.finding.partial %}заполнено {{ row.finding.answered }} из {{ row.finding.total }}{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endif %}
+
+{% if view.missing_rules %}
+<h2>Нет правила в базе знаний</h2>
+<p class="muted">Эти показатели останутся без оценки, пока правило не добавлено
+  в <code>knowledge/references/</code>.</p>
+<ul>
+  {% for title in view.missing_rules %}
+  <li>{{ title }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

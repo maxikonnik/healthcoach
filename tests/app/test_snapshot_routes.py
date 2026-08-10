@@ -617,3 +617,108 @@ def test_findings_use_only_confirmed_measurements(client):
     after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" in after
     assert "дефицит" in after
+
+
+# Task 3: экран находок (HTML) вместо текстовой простыни.
+
+
+def test_findings_page_is_html_and_shows_indicator_and_status(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/findings")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Ферритин" in response.text
+    assert "дефицит" in response.text
+
+
+def test_findings_txt_route_is_plain_text_with_the_same_content(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/findings.txt")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "пол м" in response.text
+    assert "возраст 41" in response.text
+    assert "дефицит" in response.text
+
+
+def test_findings_page_links_to_the_txt_dump(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert f'href="/snapshots/{snapshot_id}/findings.txt"' in page
+    assert "текстом" in page
+
+
+def test_snapshot_page_links_to_both_findings_routes(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert f'href="/snapshots/{snapshot_id}/findings"' in page
+    assert f'href="/snapshots/{snapshot_id}/findings.txt"' in page
+
+
+def test_attention_finding_is_visible_and_normal_finding_is_folded(client):
+    """Плашка «Требуют внимания» — сразу видна; «В норме» — под сгибом."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    for value, taken_on in (("20", "2026-08-01"), ("70", "2026-08-20")):
+        test_client.post(
+            f"/snapshots/{snapshot_id}/measurements",
+            data={
+                "raw_name": "Ферритин", "value": value, "units": "нг/мл",
+                "taken_on": taken_on,
+            },
+        )
+    for measurement in _measurements(context, snapshot_id):
+        test_client.post(f"/snapshots/{snapshot_id}/measurements/{measurement.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "дефицит" in page
+    assert "в целевом" in page
+    assert "<details" in page
+    assert page.index("дефицит") < page.index("<details")
+    assert page.index("<details") < page.index("в целевом")
+
+
+def test_finding_without_a_rule_has_no_scale_markup(client):
+    """Без коридора и лабораторного интервала строить шкалу нечестно."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин", "value": "12", "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Гомоцистеин" in page
+    assert 'class="scale"' not in page
+
+
+def test_missing_rule_indicator_is_named_in_the_missing_rules_block(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин", "value": "12", "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Нет правила в базе знаний" in page
+    assert "Гомоцистеин" in page
+    assert page.index("Нет правила в базе знаний") < page.rindex("Гомоцистеин")
