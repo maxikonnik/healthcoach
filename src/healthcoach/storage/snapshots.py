@@ -199,6 +199,22 @@ class SnapshotRepository:
                 [(snapshot_id, qid, score) for qid, score in answers.items()],
             )
 
+    def unverified_counts_by_snapshot(self, client_code: str) -> dict[int, int]:
+        """Сколько неподтверждённых измерений в каждом срезе клиента.
+
+        Один агрегирующий запрос на клиента: опрос по каждому срезу в цикле
+        умножил бы число обращений к базе на количество его срезов.
+        """
+        rows = self._connection.execute(
+            "SELECT m.snapshot_id AS snapshot_id, COUNT(*) AS n "
+            "FROM measurements m "
+            "JOIN snapshots s ON s.id = m.snapshot_id "
+            "WHERE s.client_code = ? AND m.confirmed = 0 "
+            "GROUP BY m.snapshot_id",
+            (client_code,),
+        ).fetchall()
+        return {row["snapshot_id"]: row["n"] for row in rows}
+
     def answers(self, snapshot_id: int) -> Answers:
         rows = self._connection.execute(
             "SELECT question_id, score FROM answers WHERE snapshot_id = ?",

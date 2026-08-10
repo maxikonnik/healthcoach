@@ -115,6 +115,41 @@ def test_saving_answers_replaces_previous(repositories):
     assert snapshots.answers(snapshot.id) == {"pitanie.а.1": 3}
 
 
+def test_unverified_counts_by_snapshot_only_counts_unconfirmed(repositories):
+    code, snapshots = repositories
+    fully_confirmed = snapshots.create(code, date(2026, 1, 1))
+    m = snapshots.add_measurement(
+        fully_confirmed.id, "натрий", "Натрий", 140.0, "140", "ммоль/л", date(2025, 12, 20)
+    )
+    snapshots.confirm_measurement(m.id, fully_confirmed.id)
+    partly = snapshots.create(code, date(2026, 3, 1))
+    a = snapshots.add_measurement(
+        partly.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 2, 20)
+    )
+    snapshots.add_measurement(
+        partly.id, "", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 2, 20)
+    )
+    snapshots.confirm_measurement(a.id, partly.id)
+    assert snapshots.unverified_counts_by_snapshot(code) == {partly.id: 1}
+
+
+def test_unverified_counts_by_snapshot_are_scoped_to_the_client(repositories):
+    """Иначе долг одного клиента подмешивался бы в счётчик другого."""
+    code, snapshots = repositories
+    other = ClientRepository(snapshots._connection).add(
+        "Петров Олег", "м", date(1980, 1, 1)
+    )
+    mine = snapshots.create(code, date(2026, 3, 1))
+    snapshots.add_measurement(
+        mine.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 2, 20)
+    )
+    theirs = snapshots.create(other.code, date(2026, 3, 1))
+    snapshots.add_measurement(
+        theirs.id, "ферритин", "Ферритин", 18.0, "18.0", "нг/мл", date(2026, 2, 20)
+    )
+    assert snapshots.unverified_counts_by_snapshot(code) == {mine.id: 1}
+
+
 def _guarded_storage_modules() -> list[Path]:
     """Модули хранилища, которым имя клиента знать не положено.
 

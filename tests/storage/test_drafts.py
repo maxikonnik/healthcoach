@@ -103,3 +103,27 @@ def test_editing_a_section_after_approval_is_refused(repositories):
 
     (read_back,) = drafts.sections(snapshot.id)
     assert read_back.edited == ""
+
+
+def test_unapproved_snapshot_ids_lists_drafts_without_approval(repositories):
+    snapshot, snapshots, drafts = repositories
+    approved = snapshots.create(snapshot.client_code, date(2026, 10, 1))
+    drafts.save_section(approved.id, "показатели", "Текст", ())
+    drafts.approve(approved.id, datetime(2026, 10, 2))
+    drafts.save_section(snapshot.id, "показатели", "Текст", ())
+    snapshots.create(snapshot.client_code, date(2026, 11, 1))  # без черновика вовсе
+
+    assert drafts.unapproved_snapshot_ids(snapshot.client_code) == [snapshot.id]
+
+
+def test_unapproved_snapshot_ids_are_scoped_to_the_client(repositories):
+    """Иначе долг одного клиента подмешивался бы в счётчик другого."""
+    snapshot, snapshots, drafts = repositories
+    drafts.save_section(snapshot.id, "показатели", "Текст", ())
+    other = ClientRepository(snapshots._connection).add(
+        "Петров Олег", "м", date(1980, 1, 1)
+    )
+    theirs = snapshots.create(other.code, date(2026, 10, 1))
+    drafts.save_section(theirs.id, "показатели", "Текст", ())
+
+    assert drafts.unapproved_snapshot_ids(snapshot.client_code) == [snapshot.id]

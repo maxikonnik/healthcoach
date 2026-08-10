@@ -119,6 +119,22 @@ class DraftRepository:
         self._connection.commit()
         return True
 
+    def unapproved_snapshot_ids(self, client_code: str) -> list[int]:
+        """Срезы клиента с черновиком, но без утверждения.
+
+        Один запрос на клиента: опрос по каждому срезу в цикле умножил бы
+        число обращений к базе на количество его срезов.
+        """
+        rows = self._connection.execute(
+            "SELECT DISTINCT ds.snapshot_id AS snapshot_id "
+            "FROM draft_sections ds "
+            "JOIN snapshots s ON s.id = ds.snapshot_id "
+            "LEFT JOIN draft_approvals da ON da.snapshot_id = ds.snapshot_id "
+            "WHERE s.client_code = ? AND da.snapshot_id IS NULL",
+            (client_code,),
+        ).fetchall()
+        return [row["snapshot_id"] for row in rows]
+
     def approved_at(self, snapshot_id: int) -> datetime | None:
         row = self._connection.execute(
             "SELECT approved_at FROM draft_approvals WHERE snapshot_id = ?",

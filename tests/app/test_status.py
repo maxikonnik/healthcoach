@@ -74,7 +74,8 @@ def test_unverified_measurements_are_counted(repo):
 def test_badges_come_from_the_latest_snapshot_only(repo):
     client = _client(repo)
     old = repo.snapshots.create(client.code, date(2026, 3, 1))
-    repo.snapshots.add_measurement(old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20))
+    a = repo.snapshots.add_measurement(old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20))
+    repo.snapshots.confirm_measurement(a.id, old.id)  # старый срез закрыт — долга по нему нет
     fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
     repo.drafts.save_section(fresh.id, "запрос", "Текст", ())
     repo.drafts.approve(fresh.id, datetime(2026, 9, 2))
@@ -126,6 +127,58 @@ def test_pdf_step_is_done_only_after_approval(repo):
     steps = snapshot_steps(repo, s.id)
     assert steps[3].state == "done"
     assert steps[4].state == "done"
+
+
+def test_unfinished_older_snapshots_are_reported_as_debt(repo):
+    client = _client(repo)
+    old_unverified = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old_unverified.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    old_draft = repo.snapshots.create(client.code, date(2026, 4, 1))
+    repo.drafts.save_section(old_draft.id, "запрос", "Текст", ())
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m = repo.snapshots.add_measurement(
+        fresh.id, "ферритин", "Ферритин", 20.0, "20", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, fresh.id)
+    repo.drafts.save_section(fresh.id, "запрос", "Текст", ())
+    repo.drafts.approve(fresh.id, datetime(2026, 9, 2))
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "отчёт готов",
+        "долг по прошлым срезам: 2",
+    ]
+
+
+def test_no_debt_badge_when_older_snapshots_are_finished(repo):
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    over = client_overview(repo, client)
+    assert not any("долг" in b.text for b in over.badges)
+
+
+def test_incomplete_card_ignores_debt_from_old_snapshots(repo):
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.clients._connection.execute(
+        "UPDATE identities SET sex='', birth_date='' WHERE code=?", (client.code,)
+    )
+    repo.clients._connection.commit()
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    over = client_overview(repo, repo.clients.get(client.code))
+    assert [b.kind for b in over.badges] == ["bad"]
 
 
 def test_request_states(repo):
