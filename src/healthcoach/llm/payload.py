@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from healthcoach.privacy.findings import FOR_MODEL, safe_finding
 from healthcoach.privacy.leak import assert_no_leak
 from healthcoach.scoring.findings import Finding
 from healthcoach.scoring.references import Subject
@@ -17,29 +18,6 @@ from healthcoach.storage.clients import Client
 
 class PayloadError(Exception):
     """Вход модели собрать нельзя."""
-
-
-UNRESOLVED_TITLE = "показатель из бланка, не распознан"
-"""Заголовок находки, чей настоящий title списан с бланка клиента
-(`measurement.label`, иногда OCR-ом с фотографии) и может содержать что
-угодно, вплоть до имени клиента. Модель всё равно не может истолковать
-показатель, которого нет в базе знаний, поэтому общая формулировка
-ничего не теряет.
-
-Маскируется ровно то, что помечено `title_from_document`, — и ничего
-больше. `rule_missing` для этой роли не годится: он поднят на четырёх
-разных путях, а заголовок из документа приходит только с одного
-(`scoring/references.py`, `_unresolved`). На трёх остальных — единицы не
-сопоставлены, нет целевого значения для пола и возраста, производный не
-посчитан — заголовок это `analyte.name`/`derived.name` из базы знаний
-коуча. Раздел «показатели» обязан такие находки назвать, а под маской
-назвать их нечем. Заголовок опросника из документа не приходит никогда."""
-
-DOCUMENT_UNITS = "единицы из бланка"
-"""Чем заменяются единицы, списанные с бланка. Ручной ввод сохраняет их
-дословно, так что маска на заголовке без маски на единицах не закрывает
-строку: `units` и отголосок исходного написания в `note` идут в той же
-строке, что и заголовок."""
 
 
 def finding_id(finding: Finding) -> str:
@@ -63,23 +41,21 @@ def finding_id(finding: Finding) -> str:
 
 
 def _finding_line(finding: Finding) -> str:
-    value = "—" if finding.value is None else finding.value
-    title = UNRESOLVED_TITLE if finding.title_from_document else finding.title
-    units = DOCUMENT_UNITS if finding.units_from_document else finding.units
+    # Единственная маска на оба пути наружу — вход модели и клиентский
+    # отчёт. Своей копии здесь нет намеренно: она уже однажды разошлась с
+    # копией в report/data.py.
+    safe = safe_finding(finding, audience=FOR_MODEL)
+    value = "—" if safe.value is None else safe.value
     parts = [
-        f"[{finding_id(finding)}]",
-        f"{title}:",
-        f"{value} {units}".strip(),
-        f"— {finding.status}",
+        f"[{finding_id(safe)}]",
+        f"{safe.title}:",
+        f"{value} {safe.units}".strip(),
+        f"— {safe.status}",
     ]
-    if finding.target is not None:
-        parts.append(f"(целевой коридор {finding.target.low}–{finding.target.high})")
-    # note на этом пути пересказывает исходное написание единиц
-    # («измерение пришло в …»), то есть проносит текст документа мимо
-    # маски. Статус «единицы не сопоставлены» остаётся — модель знает,
-    # что показатель не истолковать.
-    if finding.note and not finding.units_from_document:
-        parts.append(f"({finding.note})")
+    if safe.target is not None:
+        parts.append(f"(целевой коридор {safe.target.low}–{safe.target.high})")
+    if safe.note:
+        parts.append(f"({safe.note})")
     if finding.partial:
         parts.append(f"[заполнено {finding.answered} из {finding.total}]")
     return " ".join(str(p) for p in parts)

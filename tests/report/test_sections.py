@@ -31,6 +31,19 @@ def test_section_ids_are_unique():
     assert len(ids) == len(set(ids))
 
 
+def test_every_instruction_forbids_links_and_doctors_names():
+    """Спецификация, разделы 9 и 10: в клиентском PDF нет ни внешних ссылок,
+    ни имён и контактов врачей.
+
+    Инструкции этого не говорили нигде, кроме половины фразы в разделе
+    «врачи». Модель пишет текст, который коуч правит и утверждает, — правило
+    должно стоять там, где текст пишется, во всех разделах сразу.
+    """
+    for section in SECTIONS:
+        assert "Не давай ссылок" in section.instruction, section.id
+        assert "Не называй имён врачей" in section.instruction, section.id
+
+
 KINDS_BY_SECTION = {
     # «Запрос» пересказывает цели клиента его же словами и не трактует ни
     # одной находки — пустой кортеж здесь осознанный, а не забытый.

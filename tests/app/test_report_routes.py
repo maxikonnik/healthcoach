@@ -423,3 +423,98 @@ def test_draft_button_locks_itself_on_submit(client):
     assert "draft/progress" in page
     assert "<progress" in page
     assert 'id="draft-status"' in page
+
+
+def test_report_is_refused_until_the_draft_is_approved(client):
+    """До утверждения отдавать клиенту нечего."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 409
+
+
+def test_report_is_a_pdf_attachment_after_approval(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment" in response.headers.get("content-disposition", "")
+    assert response.content[:5] == b"%PDF-"
+
+
+def test_report_of_an_unknown_snapshot_is_404(client):
+    test_client, _, _ = client
+    assert test_client.get("/snapshots/999/report.pdf").status_code == 404
+
+
+def test_download_button_appears_only_after_approval(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    before = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "report.pdf" not in before
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    after = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "report.pdf" in after
+
+
+def test_report_is_503_when_the_print_engine_is_unavailable(client, monkeypatch):
+    """PdfBuildError должен доходить до коуча как 503 с указанием, что
+    поставить, а не как голая 500-ка."""
+    import healthcoach.app.routes_report as routes_report
+    from healthcoach.report.pdf import PdfBuildError
+
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    def _broken(html: str) -> bytes:
+        raise PdfBuildError(
+            "движок печати недоступен: нет pango. Нужен pango: brew install pango"
+        )
+
+    monkeypatch.setattr(routes_report, "report_pdf", _broken)
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 503
+    assert "pango" in response.text
+
+
+def test_report_of_a_client_with_an_incomplete_card_is_400_not_409(client):
+    """Незаполненная карточка (только у строк со схемы версии 1) — это
+    некорректный запрос про клиента, а не конфликт с состоянием черновика.
+    Тот же 400, что и при сборке черновика (build_draft/_findings), чтобы
+    409 этого маршрута надёжно значило одно: черновик не утверждён."""
+    import sqlite3
+
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    with sqlite3.connect(context.database_path) as connection:
+        connection.execute(
+            "UPDATE identities SET sex = '', birth_date = '' WHERE code = 'CL-0001'"
+        )
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 400

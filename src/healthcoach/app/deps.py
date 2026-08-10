@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from healthcoach.intake.ocr import AppleVisionEngine, OCREngine
+from healthcoach.knowledge.coach import Coach, load_coach
 from healthcoach.knowledge.questionnaire import Questionnaire, load_questionnaire
 from healthcoach.knowledge.references import References, load_references
 from healthcoach.knowledge.specialists import Specialists, load_specialists
@@ -47,6 +48,7 @@ class Context:
     questionnaire: Questionnaire
     references: References
     specialists: Specialists
+    coach: Coach
     documents_dir: Path
     database_path: Path
     ocr: OCREngine | None
@@ -87,6 +89,7 @@ def build_context(data_dir: Path, knowledge_dir: Path) -> Context:
         questionnaire=load_questionnaire(knowledge_dir / "questionnaire.yaml"),
         references=load_references(knowledge_dir / "references"),
         specialists=load_specialists(knowledge_dir / "specialists.yaml"),
+        coach=load_coach(knowledge_dir / "coach.yaml"),
         documents_dir=documents_dir,
         database_path=database_path,
         ocr=engine,

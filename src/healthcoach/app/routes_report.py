@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import quote
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from healthcoach.app.deps import Context, Repositories
 from healthcoach.privacy.leak import LeakError
 from healthcoach.privacy.redact import redact
+from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.draft import DraftError, generate_draft
+from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
 from healthcoach.report.sections import SECTIONS
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
@@ -249,5 +252,55 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=400, detail="черновика нет — утверждать нечего"
                 )
         return RedirectResponse(f"/snapshots/{snapshot_id}/draft", status_code=303)
+
+    @router.get("/snapshots/{snapshot_id}/report.pdf")
+    def report_file(snapshot_id: int):
+        with context.session() as repo:
+            snapshot, client = _snapshot_and_client(repo, snapshot_id)
+            # Незаполненная карточка (только у строк со схемы версии 1) —
+            # некорректный запрос про клиента, а не конфликт с состоянием
+            # черновика: тот же 400, что и при сборке черновика в
+            # build_draft/_findings выше. Проверка здесь, до collect_report,
+            # оставляет 409 этого маршрута означать ровно одно — черновик не
+            # утверждён, — а не смешивать с этим случаем.
+            if not client.is_complete:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"карточка клиента {client.code} не заполнена: без пола и "
+                        f"даты рождения целевой коридор не выбрать"
+                    ),
+                )
+            try:
+                data = collect_report(
+                    repo,
+                    context.questionnaire,
+                    context.references,
+                    context.coach,
+                    snapshot_id,
+                )
+            except ReportError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        try:
+            body = report_pdf(render_report_html(data, templates))
+        except PdfBuildError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        name = f"отчёт-{data.client_code}-{data.taken_on.isoformat()}.pdf"
+        # Заголовок HTTP — latin-1: кириллица в filename= его ломает, поэтому
+        # настоящее имя уходит только в filename* (RFC 5987), а filename=
+        # несёт ASCII-запасной вариант для клиентов, которые filename* не
+        # читают.
+        fallback = f"report-{data.client_code}-{data.taken_on.isoformat()}.pdf"
+        disposition = (
+            f'attachment; filename="{fallback}"; '
+            f"filename*=UTF-8''{quote(name)}"
+        )
+        return Response(
+            content=body,
+            media_type="application/pdf",
+            headers={"content-disposition": disposition},
+        )
 
     return router

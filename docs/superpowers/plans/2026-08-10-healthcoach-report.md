@@ -292,7 +292,7 @@ def test_two_snapshots_give_dynamics_sorted_by_sampling_date(repo, knowledge):
     repo.snapshots.confirm_measurement(earlier.id, first.id)
     _approved_draft(repo, second.id)
 
-    data = collect_report(repo, load_references(REFS), COACH, second.id)
+    data = _collect(repo, knowledge, second.id)
 
     (series,) = data.series
     assert series.has_dynamics is True
@@ -313,7 +313,7 @@ def test_unconfirmed_history_does_not_reach_the_chart(repo, knowledge):
     repo.snapshots.confirm_measurement(stored.id, second.id)
     _approved_draft(repo, second.id)
 
-    data = collect_report(repo, load_references(REFS), COACH, second.id)
+    data = _collect(repo, knowledge, second.id)
 
     (series,) = data.series
     assert [p.value for p in series.points] == [45.0]
