@@ -14,6 +14,7 @@ from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.pdf import render_report_html
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import (
+    STATUS_NOT_COMPUTED,
     STATUS_NO_RULE,
     STATUS_UNIT_MISMATCH,
     Measurement,
@@ -627,3 +628,45 @@ def test_a_single_member_scope_matches_todays_behaviour(repo, knowledge):
     assert finding.value == 18.0
     (series,) = data.series
     assert series.analyte_id == "ферритин"
+
+
+def test_table_and_chart_agree_when_an_older_member_holds_a_later_draw(
+    repo, knowledge
+):
+    """Ревью: два числа у одного показателя на одной странице.
+
+    Мартовский срез несёт кальций, взятый 01.09; августовский (первичный) —
+    свой кальций от 05.08 и калий. Пока свёртка сравнивала даты самих
+    измерений, в таблице печатался кальций 9.5 от 01.09, а график,
+    обрезанный датой первичного среза, заканчивался на 9.8 от 05.08 — и
+    соотношение кальций/калий отказывалось считаться «значениями из разных
+    срезов», хотя целая пара была в августовском срезе.
+    """
+    client, march = _client_with_snapshot(repo, date(2026, 3, 10))
+    august = repo.snapshots.create(client.code, date(2026, 8, 5))
+    stale = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 9, 1)
+    )
+    fresh = repo.snapshots.add_measurement(
+        august.id, "кальций", "Кальций", 9.8, "9.8", "мг/дл", date(2026, 8, 5)
+    )
+    potassium = repo.snapshots.add_measurement(
+        august.id, "калий", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 8, 5)
+    )
+    for stored, snapshot in ((stale, march), (fresh, august), (potassium, august)):
+        repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    repo.scopes.set_members(august.id, [march.id, august.id])
+    _approved_draft(repo, august.id)
+
+    data = _collect(repo, knowledge, august.id)
+
+    (calcium,) = [f for f in data.findings if f.subject_id == "кальций"]
+    assert calcium.value == 9.8
+    assert calcium.taken_on == date(2026, 8, 5)
+    (series,) = [s for s in data.series if s.analyte_id == "кальций"]
+    # Таблица и график говорят об одном показателе одно и то же.
+    assert series.points[-1].value == calcium.value
+    assert series.points[-1].taken_on == calcium.taken_on
+    (ratio,) = [f for f in data.findings if f.subject_id == "кальций_калий"]
+    assert ratio.status != STATUS_NOT_COMPUTED
+    assert ratio.value is not None

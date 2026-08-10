@@ -306,3 +306,37 @@ def test_build_subject_at_uses_clients_age_on_the_given_date(repo):
 
     assert subject.sex == "м"
     assert subject.age == client.age_on(date(2026, 9, 1))
+
+
+def test_the_newer_snapshot_wins_even_when_its_draw_date_is_older(repo):
+    """Ревью: «самое свежее среди выбранных срезов» — про срезы, а не про
+    дату забора.
+
+    Срез S1 от 10.03 несёт кальций, взятый 01.09 (дата забора вносится с
+    бланка и с датой среза совпадать не обязана); срез S2 от 05.08 — свой
+    кальций от 05.08 и калий. Ключ по дате самого измерения отдавал победу
+    мартовскому срезу: в отчёт шло значение из S1, а пара кальций/калий,
+    целая внутри S2, разваливалась ещё до правила 5.
+    """
+    client = _client(repo)
+    march = repo.snapshots.create(client.code, date(2026, 3, 10))
+    august = repo.snapshots.create(client.code, date(2026, 8, 5))
+    stale = repo.snapshots.add_measurement(
+        march.id, "кальций", "Кальций", 9.5, "9.5", "мг/дл", date(2026, 9, 1)
+    )
+    fresh = repo.snapshots.add_measurement(
+        august.id, "кальций", "Кальций", 9.8, "9.8", "мг/дл", date(2026, 8, 5)
+    )
+    potassium = repo.snapshots.add_measurement(
+        august.id, "калий", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 8, 5)
+    )
+    repo.snapshots.confirm_measurement(stale.id, march.id)
+    repo.snapshots.confirm_measurement(fresh.id, august.id)
+    repo.snapshots.confirm_measurement(potassium.id, august.id)
+    repo.scopes.set_members(august.id, [march.id, august.id])
+
+    result = collect_inputs(repo, august)
+
+    assert {m.id for m in result.measurements} == {fresh.id, potassium.id}
+    # Пара пришла из одного среза — правилу 5 есть что посчитать.
+    assert {m.snapshot_id for m in result.measurements} == {august.id}

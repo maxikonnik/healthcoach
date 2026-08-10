@@ -46,10 +46,19 @@ def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
     `(analyte_id, snapshot_id, taken_on)`: это ловит только буквальный
     дубль — одна и та же дата забора, тот же срез, — где выживает более
     поздний ввод (`id`). Затем среди срезов, где показатель вообще
-    встретился, выбирается один «победивший» — тот, что несёт самое
-    свежее по `(taken_on, id)` измерение этого показателя; из него в
-    находки идут все его даты забора, а измерения показателя из
-    остальных срезов отбрасываются целиком — они уже видны в динамике.
+    встретился, выбирается один «победивший» — самый свежий срез по
+    `(taken_on, id)` *среза*, а внутри него самое свежее по
+    `(taken_on, id)` измерение; из победившего среза в находки идут все
+    его даты забора, а измерения показателя из остальных срезов
+    отбрасываются целиком — они уже видны в динамике.
+
+    Порядок именно такой, потому что дата забора — свободное поле с
+    бланка и с датой среза совпадать не обязана. Сравнение по одной лишь
+    дате измерения отдавало победу старому срезу, если тот нёс бланк с
+    более поздним забором: в таблицу шло значение из старого среза, а
+    график, обрезанный датой первичного, показывал другое — два числа у
+    одного показателя на одной странице. Заодно ломалось правило 5:
+    целая пара операндов из одного среза растаскивалась по разным.
     """
     members = sorted(
         (repo.snapshots.get(member_id) for member_id in repo.scopes.members(snapshot.id)),
@@ -72,9 +81,11 @@ def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
             if current is None or measurement.id > current.id:
                 by_draw[draw_key] = measurement
 
-    winning_snapshot: dict[str, tuple[tuple[date, int], int]] = {}
+    member_key = {member.id: (member.taken_on, member.id) for member in members}
+
+    winning_snapshot: dict[str, tuple[tuple, int]] = {}
     for (analyte_id, member_id, _taken_on), measurement in by_draw.items():
-        rep_key = (measurement.taken_on, measurement.id)
+        rep_key = (member_key[member_id], measurement.taken_on, measurement.id)
         best = winning_snapshot.get(analyte_id)
         if best is None or rep_key > best[0]:
             winning_snapshot[analyte_id] = (rep_key, member_id)
