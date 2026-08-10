@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
 
+from healthcoach.scoring.references import Measurement, Subject
 from healthcoach.storage.snapshots import Answers, Snapshot, StoredMeasurement
 
 
@@ -103,3 +105,35 @@ def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
         member_ids=tuple(member.id for member in members),
         dates=dates,
     )
+
+
+def to_measurements(measurements: Iterable[StoredMeasurement]) -> list[Measurement]:
+    """Единая проекция `StoredMeasurement` → `scoring.Measurement`.
+
+    Раньше эта проекция была переписана дословно в трёх местах
+    (`routes_report.py`, `routes_snapshots.py`, `report/data.py`) — ревью
+    показало, что копии могут разойтись: пропажа одного `snapshot_id` в
+    одной из копий тихо отключает правило 5 (`compute_derived` считает
+    производный индекс, лишь когда все операнды из одного среза) именно
+    в том месте, где копия отстала. Один сайт исключает такое расхождение
+    по построению.
+    """
+    return [
+        Measurement(
+            m.analyte_id,
+            m.value,
+            m.units,
+            label=m.raw_name,
+            row_id=m.id,
+            taken_on=m.taken_on,
+            snapshot_id=m.snapshot_id,
+        )
+        for m in measurements
+    ]
+
+
+def build_subject_at(client) -> Callable[[date], Subject]:
+    """Единый способ построить `subject_at`: пол клиента фиксирован, а
+    возраст берётся на дату самого измерения (правило 4 плана), а не на
+    дату среза или отчёта."""
+    return lambda d: Subject(sex=client.sex, age=client.age_on(d))

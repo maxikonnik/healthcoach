@@ -14,9 +14,9 @@ from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answ
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
 from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
-from healthcoach.report.scope import collect_inputs
+from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
 from healthcoach.scoring.findings import collect_findings
-from healthcoach.scoring.references import Measurement, Subject
+from healthcoach.scoring.references import Subject
 from healthcoach.storage.snapshots import StoredMeasurement
 
 UNRESOLVED = ""
@@ -237,18 +237,7 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404, detail=f"нет клиента {snapshot.client_code}"
                 )
             scoped = collect_inputs(repo, snapshot)
-            measurements = [
-                Measurement(
-                    m.analyte_id,
-                    m.value,
-                    m.units,
-                    label=m.raw_name,
-                    row_id=m.id,
-                    taken_on=m.taken_on,
-                    snapshot_id=m.snapshot_id,
-                )
-                for m in scoped.measurements
-            ]
+            measurements = to_measurements(scoped.measurements)
             answers = scoped.answers
 
         if not client.is_complete:
@@ -269,7 +258,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 detail=f"в карточке клиента {client.code} неверный пол: {exc}",
             ) from exc
 
-        subject_at = lambda d: Subject(sex=client.sex, age=client.age_on(d))  # noqa: E731
+        subject_at = build_subject_at(client)
 
         found = collect_findings(
             context.questionnaire,

@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from healthcoach.report.scope import collect_inputs
+from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.scopes import ReportScopeRepository
@@ -277,3 +277,32 @@ def test_surviving_measurements_carry_their_own_snapshot_id(repo):
 
     (survivor,) = result.measurements
     assert survivor.snapshot_id == old.id
+
+
+def test_to_measurements_carries_snapshot_id(repo):
+    """Ревью: три копии этой проекции могли разойтись на snapshot_id — без
+    него compute_derived тихо перестаёт различать срезы операндов
+    (правило 5). Общий сайт обязан нести snapshot_id всегда."""
+    client = _client(repo)
+    snapshot = repo.snapshots.create(client.code, date(2026, 9, 1))
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+
+    (measurement,) = to_measurements([stored])
+
+    assert measurement.snapshot_id == snapshot.id
+    assert measurement.taken_on == date(2026, 8, 20)
+    assert measurement.analyte_id == "ферритин"
+    assert measurement.value == 18.0
+
+
+def test_build_subject_at_uses_clients_age_on_the_given_date(repo):
+    """Ревью: три копии `subject_at` строили один и тот же коллбэк — общий
+    сайт исключает расхождение."""
+    client = repo.clients.add("Петров Пётр", "м", date(1985, 3, 2))
+
+    subject = build_subject_at(client)(date(2026, 9, 1))
+
+    assert subject.sex == "м"
+    assert subject.age == client.age_on(date(2026, 9, 1))

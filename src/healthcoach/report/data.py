@@ -21,9 +21,9 @@ from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.units import units_match
 from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
-from healthcoach.report.scope import collect_inputs
+from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
 from healthcoach.scoring.findings import Finding, collect_findings
-from healthcoach.scoring.references import Measurement, Subject, select_target
+from healthcoach.scoring.references import select_target
 from healthcoach.storage.drafts import DraftSection
 
 
@@ -95,24 +95,13 @@ def collect_report(
         )
 
     scoped = collect_inputs(repo, snapshot)
-    subject_at = lambda d: Subject(sex=client.sex, age=client.age_on(d))  # noqa: E731
+    subject_at = build_subject_at(client)
     subject = subject_at(snapshot.taken_on)
     findings = collect_findings(
         questionnaire,
         references,
         scoped.answers,
-        [
-            Measurement(
-                m.analyte_id,
-                m.value,
-                m.units,
-                label=m.raw_name,
-                row_id=m.id,
-                taken_on=m.taken_on,
-                snapshot_id=m.snapshot_id,
-            )
-            for m in scoped.measurements
-        ],
+        to_measurements(scoped.measurements),
         subject,
         subject_at=subject_at,
     )

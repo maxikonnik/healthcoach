@@ -14,10 +14,9 @@ from healthcoach.privacy.redact import redact
 from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.draft import DraftError, generate_draft
 from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
-from healthcoach.report.scope import collect_inputs
+from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
 from healthcoach.report.sections import SECTIONS
 from healthcoach.scoring.findings import collect_findings
-from healthcoach.scoring.references import Measurement, Subject
 
 
 _in_flight: dict[int, int] = {}
@@ -53,19 +52,8 @@ def build_router(context: Context, templates) -> APIRouter:
                 ),
             )
         scoped = collect_inputs(repo, snapshot)
-        measurements = [
-            Measurement(
-                m.analyte_id,
-                m.value,
-                m.units,
-                label=m.raw_name,
-                row_id=m.id,
-                taken_on=m.taken_on,
-                snapshot_id=m.snapshot_id,
-            )
-            for m in scoped.measurements
-        ]
-        subject_at = lambda d: Subject(sex=client.sex, age=client.age_on(d))  # noqa: E731
+        measurements = to_measurements(scoped.measurements)
+        subject_at = build_subject_at(client)
         subject = subject_at(snapshot.taken_on)
         return collect_findings(
             context.questionnaire,
