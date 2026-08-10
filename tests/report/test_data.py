@@ -750,3 +750,66 @@ def test_a_scope_of_one_snapshot_keeps_the_whole_history_on_the_chart(
 
     (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
     assert [p.value for p in series.points] == [25.0, 45.0]
+
+
+# Правило 4 целиком, через сборку отчёта: коридор по возрасту на дату
+# измерения. До сих пор его держали только замыкания в юнит-тестах —
+# мутация `age_on(date.today())` в `build_subject_at` и удаление
+# `subject_at=subject_at` из `collect_report` не роняли ни одного теста.
+
+
+AGE_SPLIT = (
+    "показатели:\n"
+    "  - id: тестостерон\n"
+    "    название: Тестостерон\n"
+    "    единицы: нмоль/л\n"
+    "    целевые:\n"
+    "      - условие: {возраст: [null, 39]}\n"
+    "        оптимум: [10.0, 20.0]\n"
+    "      - условие: {возраст: [40, null]}\n"
+    "        оптимум: [20.0, 30.0]\n"
+    "  - id: кортизол\n"
+    "    название: Кортизол\n"
+    "    единицы: нмоль/л\n"
+    "    целевые:\n"
+    "      - условие: {возраст: [null, 39]}\n"
+    "        оптимум: [10.0, 20.0]\n"
+    "      - условие: {возраст: [40, null]}\n"
+    "        оптимум: [20.0, 30.0]\n"
+)
+
+
+def test_age_corridor_of_each_finding_follows_its_own_measurement_date(
+    repo, knowledge, tmp_path
+):
+    """День рождения клиентки лежит между мартовским и августовским
+    измерениями: мартовское обязано сверяться с коридором для 39 лет,
+    августовское — для 40. Оба коридора описаны одинаково у обоих
+    показателей, так что разойтись они могут только по возрасту."""
+    questionnaire, _ = knowledge
+    refs_dir = tmp_path / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "age.yaml").write_text(AGE_SPLIT, encoding="utf-8")
+    references = load_references(refs_dir)
+
+    client = repo.clients.add("Соловьёва Ирина", "ж", date(1986, 6, 15))
+    march = repo.snapshots.create(client.code, date(2026, 3, 10))
+    august = repo.snapshots.create(client.code, date(2026, 8, 9))
+    before = repo.snapshots.add_measurement(
+        march.id, "тестостерон", "Тестостерон", 15.0, "15", "нмоль/л", date(2026, 3, 10)
+    )
+    after = repo.snapshots.add_measurement(
+        august.id, "кортизол", "Кортизол", 15.0, "15", "нмоль/л", date(2026, 8, 9)
+    )
+    repo.snapshots.confirm_measurement(before.id, march.id)
+    repo.snapshots.confirm_measurement(after.id, august.id)
+    repo.scopes.set_members(august.id, [march.id, august.id])
+    _approved_draft(repo, august.id)
+
+    data = collect_report(repo, questionnaire, references, COACH, august.id)
+
+    by_id = {f.subject_id: f for f in data.findings}
+    assert client.age_on(date(2026, 3, 10)) == 39
+    assert client.age_on(date(2026, 8, 9)) == 40
+    assert by_id["тестостерон"].target == Interval(10.0, 20.0)
+    assert by_id["кортизол"].target == Interval(20.0, 30.0)
