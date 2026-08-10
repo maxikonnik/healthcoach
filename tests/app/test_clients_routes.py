@@ -115,3 +115,51 @@ def test_updating_an_unknown_client_is_404(client):
 def test_birth_date_in_the_future_is_refused(client):
     response = client.post("/clients", data=WOMAN | {"birth_date": "2099-01-01"})
     assert response.status_code == 400
+
+
+KUZNETSOVA = {"full_name": "Кузнецова Ольга", "sex": "ж", "birth_date": "1988-02-02"}
+
+
+def test_unconfirmed_measurement_badge_shows_on_dashboard(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    client.post(
+        "/snapshots/1/measurements",
+        data={
+            "raw_name": "Ферритин",
+            "value": "18",
+            "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    response = client.get("/")
+    assert "не сверено: 1" in response.text
+
+
+def test_client_with_later_snapshot_is_listed_first(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+    client.post("/clients", data=KUZNETSOVA)
+    client.post("/clients/CL-0002/snapshots", data={"taken_on": "2026-09-01"})
+    response = client.get("/")
+    text = response.text
+    assert text.index(KUZNETSOVA["full_name"]) < text.index(WOMAN["full_name"])
+
+
+def test_client_without_snapshots_is_listed_last(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+    client.post("/clients", data=KUZNETSOVA)
+    response = client.get("/")
+    text = response.text
+    assert text.index(WOMAN["full_name"]) < text.index(KUZNETSOVA["full_name"])
+    assert "нет срезов" in text
+
+
+def test_add_client_form_is_collapsed_in_details(client):
+    response = client.get("/")
+    text = response.text
+    details_start = text.index("<details>")
+    details_end = text.index("</details>")
+    form_start = text.index('action="/clients"')
+    assert details_start < form_start < details_end
