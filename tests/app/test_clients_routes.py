@@ -163,3 +163,46 @@ def test_add_client_form_is_collapsed_in_details(client):
     details_end = text.index("</details>")
     form_start = text.index('action="/clients"')
     assert details_start < form_start < details_end
+
+
+# План 4, задача 4: карточка ставит работу (срезы) выше паспорта.
+
+
+def test_snapshots_block_comes_before_the_passport_form(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    text = client.get("/clients/CL-0001").text
+    snapshots_heading = text.index("<h2>Срезы</h2>")
+    passport_form = text.index('action="/clients/CL-0001"')
+    assert snapshots_heading < passport_form
+
+
+def test_passport_form_is_open_when_the_card_is_incomplete(tmp_path):
+    """От схемы версии 1 карточки достаются пустыми — коуч обязан сразу
+    увидеть форму, а не искать её под свёрнутым <summary>."""
+    import sqlite3
+
+    context = build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE)
+    with TestClient(create_app(context)) as test_client:
+        test_client.post("/clients", data=WOMAN)
+        # Так выглядит карточка, доставшаяся от схемы версии 1.
+        connection = sqlite3.connect(context.database_path)
+        connection.execute("UPDATE identities SET sex = '', birth_date = ''")
+        connection.commit()
+        connection.close()
+
+        page = test_client.get("/clients/CL-0001").text
+
+    summary_start = page.index("<summary>Паспортные данные")
+    details_start = page.rindex("<details", 0, summary_start)
+    details_tag = page[details_start:summary_start]
+    assert "open" in details_tag
+
+
+def test_passport_form_is_collapsed_when_the_card_is_complete(client):
+    client.post("/clients", data=WOMAN | {"contacts": "@masha"})
+    page = client.get("/clients/CL-0001").text
+    summary_start = page.index("<summary>Паспортные данные")
+    details_start = page.rindex("<details", 0, summary_start)
+    details_tag = page[details_start:summary_start]
+    assert "open" not in details_tag
