@@ -8,6 +8,7 @@ HTML и печатается без промежуточных файлов.
 from __future__ import annotations
 
 import html
+import math
 
 from healthcoach.report.data import Series
 
@@ -21,11 +22,12 @@ class ChartError(Exception):
     """График построить нельзя."""
 
 
-def _scale(series: Series) -> tuple[float, float]:
-    """Нижняя и верхняя границы оси значений.
+def _data_bounds(series: Series) -> tuple[float, float]:
+    """Истинные границы диапазона — точки и коридор, без отступа геометрии.
 
-    Коридор включается в размах целиком: клиент должен видеть, куда
-    показатель идёт относительно цели, а не только сами точки.
+    Это то, что печатается на оси: клиент должен увидеть настоящий минимум
+    и максимум показателя, а не служебный запас места, который существует
+    только затем, чтобы точки не липли к рамке.
     """
     values = [p.value for p in series.points]
     if series.target is not None:
@@ -33,8 +35,17 @@ def _scale(series: Series) -> tuple[float, float]:
             values.append(series.target.low)
         if series.target.high is not None:
             values.append(series.target.high)
+    return min(values), max(values)
 
-    low, high = min(values), max(values)
+
+def _scale(series: Series) -> tuple[float, float]:
+    """Нижняя и верхняя границы оси для геометрии — с отступом на разброс.
+
+    Коридор включается в размах целиком: клиент должен видеть, куда
+    показатель идёт относительно цели, а не только сами точки. Отступ нужен
+    только геометрии — подписи оси печатаются по _data_bounds, без него.
+    """
+    low, high = _data_bounds(series)
     if low == high:
         # Все значения совпали и коридора нет — иначе делить не на что.
         spread = abs(low) * 0.1 or 1.0
@@ -42,6 +53,26 @@ def _scale(series: Series) -> tuple[float, float]:
 
     margin = (high - low) * 0.1
     return low - margin, high + margin
+
+
+def _label_decimals(span: float) -> int:
+    """Сколько знаков после запятой нужно подписи оси при таком размахе.
+
+    Размах меньше 10 требует одного знака, меньше 1 — двух, и так далее:
+    иначе близкие значения (0.05 и 0.09) обе округлятся до одной и той же
+    подписи, и подпись перестанет что-либо показывать.
+    """
+    if span <= 0:
+        return 0
+    return max(0, math.ceil(-math.log10(span)) + 1)
+
+
+def _format_label(value: float, decimals: int) -> str:
+    """Отформатировать подпись оси, не допуская врущего «-0»."""
+    text = f"{value:.{decimals}f}"
+    if text.startswith("-") and float(text) == 0:
+        text = text[1:]
+    return text
 
 
 def chart_svg(series: Series, width: int = 520, height: int = 180) -> str:
@@ -52,6 +83,8 @@ def chart_svg(series: Series, width: int = 520, height: int = 180) -> str:
         )
 
     low, high = _scale(series)
+    data_low, data_high = _data_bounds(series)
+    decimals = _label_decimals(data_high - data_low)
     plot_w = width - PADDING_LEFT - PADDING_RIGHT
     plot_h = height - PADDING_TOP - PADDING_BOTTOM
 
@@ -67,8 +100,13 @@ def chart_svg(series: Series, width: int = 520, height: int = 180) -> str:
         f'<title>{html.escape(series.title)}</title>',
     ]
 
-    if series.target is not None and series.target.low is not None and series.target.high is not None:
-        top, bottom = y(series.target.high), y(series.target.low)
+    target = series.target
+    if target is not None and (target.low is not None or target.high is not None):
+        # Открытая сторона коридора клэмпится к краю поля — иначе клиент
+        # видит пустое место без видимой цели там, где граница просто не
+        # задана.
+        top = y(target.high) if target.high is not None else PADDING_TOP
+        bottom = y(target.low) if target.low is not None else PADDING_TOP + plot_h
         parts.append(
             f'<rect x="{PADDING_LEFT}" y="{top:.1f}" width="{plot_w}" '
             f'height="{bottom - top:.1f}" fill="#e8f2e8"/>'
@@ -95,10 +133,12 @@ def chart_svg(series: Series, width: int = 520, height: int = 180) -> str:
         f'text-anchor="end" fill="#666">{last.taken_on.strftime("%m.%Y")}</text>'
     )
     parts.append(
-        f'<text x="4" y="{PADDING_TOP + 4}" font-size="9" fill="#666">{high:.0f}</text>'
+        f'<text x="4" y="{PADDING_TOP + 4}" font-size="9" fill="#666">'
+        f'{_format_label(data_high, decimals)}</text>'
     )
     parts.append(
-        f'<text x="4" y="{height - PADDING_BOTTOM}" font-size="9" fill="#666">{low:.0f}</text>'
+        f'<text x="4" y="{height - PADDING_BOTTOM}" font-size="9" fill="#666">'
+        f'{_format_label(data_low, decimals)}</text>'
     )
     parts.append(
         f'<text x="4" y="{height - 8}" font-size="9" fill="#666">'
