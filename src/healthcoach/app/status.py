@@ -63,9 +63,12 @@ def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
     badges: list[Badge] = []
     measurements = repo.snapshots.measurements(snapshot_id)
     answers = repo.snapshots.answers(snapshot_id)
+    request = repo.requests.get(snapshot_id)
     unverified = sum(1 for m in measurements if not m.confirmed)
     if unverified:
         badges.append(Badge("warn", f"не сверено: {unverified}"))
+    if request is not None and not request.approved:
+        badges.append(Badge("warn", "запрос не утверждён"))
     if repo.drafts.approved_at(snapshot_id) is not None:
         badges.append(Badge("ok", "отчёт готов"))
     elif repo.drafts.sections(snapshot_id):
@@ -74,7 +77,9 @@ def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
         return tuple(badges)
     if not measurements and not answers:
         return (Badge("muted", "ожидаем данные клиента"),)
-    return (Badge("muted", "в работе"),)
+    if request is None:
+        return (Badge("muted", "нужен запрос клиента"),)
+    return (Badge("muted", "черновик не собран"),)
 
 
 def snapshot_steps(repo, snapshot_id: int) -> tuple[Step, ...]:

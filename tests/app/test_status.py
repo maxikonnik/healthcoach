@@ -181,6 +181,90 @@ def test_incomplete_card_ignores_debt_from_old_snapshots(repo):
     assert [b.kind for b in over.badges] == ["bad"]
 
 
+def test_unapproved_request_badge_between_unverified_and_draft(repo):
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    a = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.add_measurement(
+        s.id, "", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(a.id, s.id)
+    repo.requests.save(s.id, "Устал")
+    repo.drafts.save_section(s.id, "запрос", "Текст", ())
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "не сверено: 1",
+        "запрос не утверждён",
+        "черновик ждёт утверждения",
+    ]
+
+
+def test_unapproved_request_and_waiting_draft_show_together(repo):
+    """set_redacted сбрасывает approved — оба предупреждения истинны разом."""
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.requests.save(s.id, "Устал")
+    repo.requests.set_redacted(s.id, "Устал, слабость")
+    repo.drafts.save_section(s.id, "запрос", "Текст", ())
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "запрос не утверждён",
+        "черновик ждёт утверждения",
+    ]
+
+
+def test_missing_request_says_so(repo):
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    a = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(a.id, s.id)
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == ["нужен запрос клиента"]
+
+
+def test_no_progress_says_awaits_client_data_not_in_progress(repo):
+    """«в работе» больше не существует — три исхода описаны отдельно."""
+    client = _client(repo)
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == ["ожидаем данные клиента"]
+    assert not any(b.text == "в работе" for b in over.badges)
+
+
+def test_dashboard_and_funnel_agree_on_request_and_draft_state(repo):
+    """Плашка рабочего стола не должна расходиться с шагом воронки."""
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, s.id)
+    repo.requests.save(s.id, "Устал")
+
+    # Запрос сохранён, но не утверждён: шаг "part", плашка предупреждает.
+    steps = snapshot_steps(repo, s.id)
+    over = client_overview(repo, client)
+    assert steps[2].state == "part"
+    assert any(b.text == "запрос не утверждён" for b in over.badges)
+
+    # Запрос утверждён — единственное незавершённое звено теперь черновик,
+    # и плашка рабочего стола говорит именно об этом, а не про "в работе".
+    repo.requests.set_redacted(s.id, "Устал")
+    repo.requests.approve(s.id)
+    steps = snapshot_steps(repo, s.id)
+    over = client_overview(repo, client)
+    assert steps[2].state == "done"
+    assert steps[3].state == "todo"
+    assert [b.text for b in over.badges] == ["черновик не собран"]
+
+
 def test_request_states(repo):
     client = _client(repo)
     s = repo.snapshots.create(client.code, date(2026, 9, 1))
