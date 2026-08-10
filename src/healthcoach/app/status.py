@@ -33,28 +33,45 @@ class Step:
 
 
 def client_overview(repo, client: Client) -> Overview:
-    """Плашки клиента — по последнему срезу."""
+    """Плашки клиента — по последнему срезу, плюс долг по прошлым."""
     snapshots = repo.snapshots.for_client(client.code)
-    latest_taken_on = (
-        max(snapshots, key=lambda s: (s.taken_on, s.id)).taken_on
-        if snapshots
-        else None
-    )
+    latest = max(snapshots, key=lambda s: (s.taken_on, s.id)) if snapshots else None
     if not client.is_complete:
+        latest_taken_on = latest.taken_on if latest is not None else None
         return Overview(latest_taken_on, (Badge("bad", "карточка не заполнена"),))
-    if not snapshots:
+    if latest is None:
         return Overview(None, (Badge("muted", "нет срезов"),))
-    latest = max(snapshots, key=lambda s: (s.taken_on, s.id))
-    return Overview(latest.taken_on, _snapshot_badges(repo, latest.id))
+    badges = list(_snapshot_badges(repo, latest.id))
+    debt = _snapshots_with_unfinished_work(repo, client.code) - {latest.id}
+    if debt:
+        badges.append(Badge("warn", f"долг по прошлым срезам: {len(debt)}"))
+    return Overview(latest.taken_on, tuple(badges))
+
+
+def _snapshots_with_unfinished_work(repo, client_code: str) -> set[int]:
+    """Срезы клиента с несверенным показателем, неутверждённым запросом или
+    черновиком без утверждения.
+
+    Определение «незакрыто» здесь обязано совпадать с тем, что решает
+    предупреждения в _snapshot_badges — иначе рабочий стол и воронка среза
+    расскажут разные истории об одном и том же срезе.
+    """
+    unverified = repo.snapshots.unverified_snapshot_ids(client_code)
+    unapproved_requests = repo.requests.unapproved_snapshot_ids(client_code)
+    unapproved_drafts = repo.drafts.unapproved_snapshot_ids(client_code)
+    return set(unverified) | set(unapproved_requests) | set(unapproved_drafts)
 
 
 def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
     badges: list[Badge] = []
     measurements = repo.snapshots.measurements(snapshot_id)
     answers = repo.snapshots.answers(snapshot_id)
+    request = repo.requests.get(snapshot_id)
     unverified = sum(1 for m in measurements if not m.confirmed)
     if unverified:
         badges.append(Badge("warn", f"не сверено: {unverified}"))
+    if request is not None and not request.approved:
+        badges.append(Badge("warn", "запрос не утверждён"))
     if repo.drafts.approved_at(snapshot_id) is not None:
         badges.append(Badge("ok", "отчёт готов"))
     elif repo.drafts.sections(snapshot_id):
@@ -63,7 +80,9 @@ def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
         return tuple(badges)
     if not measurements and not answers:
         return (Badge("muted", "ожидаем данные клиента"),)
-    return (Badge("muted", "в работе"),)
+    if request is None:
+        return (Badge("muted", "нужен запрос клиента"),)
+    return (Badge("muted", "черновик не собран"),)
 
 
 def snapshot_steps(repo, snapshot_id: int) -> tuple[Step, ...]:

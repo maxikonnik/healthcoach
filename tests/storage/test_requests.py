@@ -68,3 +68,30 @@ def test_unknown_snapshot_reports_failure(repositories):
     assert requests.get(99999) is None
     assert requests.set_redacted(99999, "что-то") is False
     assert requests.approve(99999) is False
+
+
+def test_unapproved_snapshot_ids_lists_saved_requests_without_approval(repositories):
+    snapshot, snapshots, requests = repositories
+    requests.save(snapshot.id, "Устал")  # сохранён, но не утверждён
+
+    approved = snapshots.create(snapshot.client_code, date(2026, 10, 1))
+    requests.save(approved.id, "Хочу сбросить вес")
+    requests.set_redacted(approved.id, "Хочу сбросить вес")
+    requests.approve(approved.id)
+
+    snapshots.create(snapshot.client_code, date(2026, 11, 1))  # без запроса вовсе
+
+    assert requests.unapproved_snapshot_ids(snapshot.client_code) == [snapshot.id]
+
+
+def test_unapproved_snapshot_ids_are_scoped_to_the_client(repositories):
+    """Иначе долг одного клиента подмешивался бы в счётчик другого."""
+    snapshot, snapshots, requests = repositories
+    requests.save(snapshot.id, "Устал")
+    other = ClientRepository(snapshots._connection).add(
+        "Петров Олег", "м", date(1980, 1, 1)
+    )
+    theirs = snapshots.create(other.code, date(2026, 10, 1))
+    requests.save(theirs.id, "Хочу сбросить вес")
+
+    assert requests.unapproved_snapshot_ids(snapshot.client_code) == [snapshot.id]

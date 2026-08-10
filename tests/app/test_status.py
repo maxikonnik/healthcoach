@@ -74,7 +74,8 @@ def test_unverified_measurements_are_counted(repo):
 def test_badges_come_from_the_latest_snapshot_only(repo):
     client = _client(repo)
     old = repo.snapshots.create(client.code, date(2026, 3, 1))
-    repo.snapshots.add_measurement(old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20))
+    a = repo.snapshots.add_measurement(old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20))
+    repo.snapshots.confirm_measurement(a.id, old.id)  # старый срез закрыт — долга по нему нет
     fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
     repo.drafts.save_section(fresh.id, "запрос", "Текст", ())
     repo.drafts.approve(fresh.id, datetime(2026, 9, 2))
@@ -126,6 +127,221 @@ def test_pdf_step_is_done_only_after_approval(repo):
     steps = snapshot_steps(repo, s.id)
     assert steps[3].state == "done"
     assert steps[4].state == "done"
+
+
+def test_unfinished_older_snapshots_are_reported_as_debt(repo):
+    client = _client(repo)
+    old_unverified = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old_unverified.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    old_draft = repo.snapshots.create(client.code, date(2026, 4, 1))
+    repo.drafts.save_section(old_draft.id, "запрос", "Текст", ())
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m = repo.snapshots.add_measurement(
+        fresh.id, "ферритин", "Ферритин", 20.0, "20", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, fresh.id)
+    repo.drafts.save_section(fresh.id, "запрос", "Текст", ())
+    repo.drafts.approve(fresh.id, datetime(2026, 9, 2))
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "отчёт готов",
+        "долг по прошлым срезам: 2",
+    ]
+
+
+def test_no_debt_badge_when_older_snapshots_are_finished(repo):
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    over = client_overview(repo, client)
+    assert not any("долг" in b.text for b in over.badges)
+
+
+def test_no_debt_badge_when_the_only_snapshot_is_still_open(repo):
+    """Незакрытый последний срез — это его собственное состояние, не долг.
+
+    Раньше оба теста долга сеяли уже закрытый последний срез, поэтому
+    исключение latest из подсчёта было холостым: убери его — и всё
+    оставалось зелёным. Здесь единственный срез — он же последний и
+    незакрытый, и именно его исключение обязано погасить плашку.
+    """
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+
+    over = client_overview(repo, client)
+    assert not any("долг" in b.text for b in over.badges)
+
+
+def test_debt_excludes_the_open_latest_snapshot_from_its_own_count(repo):
+    """И старый, и последний срез не закрыты — но долг это только про старый."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.snapshots.add_measurement(
+        fresh.id, "натрий", "Натрий", 140.0, "140", "ммоль/л", date(2026, 8, 20)
+    )
+
+    over = client_overview(repo, client)
+    assert any(b.text == "долг по прошлым срезам: 1" for b in over.badges)
+
+
+def test_unapproved_request_in_an_old_snapshot_is_debt_too(repo):
+    """Долг обязан замечать неутверждённый запрос, а не только показатели
+    и черновик — иначе он определяет «незакрыто» иначе, чем плашка среза."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.requests.save(old.id, "Устал")  # показатели сверены, запрос — нет
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m2 = repo.snapshots.add_measurement(
+        fresh.id, "натрий", "Натрий", 140.0, "140", "ммоль/л", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m2.id, fresh.id)
+    repo.requests.save(fresh.id, "Хочу сбросить вес")
+    repo.requests.set_redacted(fresh.id, "Хочу сбросить вес")
+    repo.requests.approve(fresh.id)
+
+    over = client_overview(repo, client)
+    assert any(b.text == "долг по прошлым срезам: 1" for b in over.badges)
+
+
+def test_dashboard_debt_agrees_with_old_snapshot_funnel_on_unapproved_request(repo):
+    """Сценарий ревью: старый срез со сверенными показателями и
+    неутверждённым запросом, последний срез пуст. Рабочий стол не должен
+    молчать про долг, пока внутри старого среза шаг «Запрос» горит part."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.requests.save(old.id, "Устал")
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    old_steps = snapshot_steps(repo, old.id)
+    over = client_overview(repo, client)
+    assert old_steps[2].state == "part"
+    assert [b.text for b in over.badges] == [
+        "ожидаем данные клиента",
+        "долг по прошлым срезам: 1",
+    ]
+
+
+def test_incomplete_card_ignores_debt_from_old_snapshots(repo):
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.clients._connection.execute(
+        "UPDATE identities SET sex='', birth_date='' WHERE code=?", (client.code,)
+    )
+    repo.clients._connection.commit()
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    over = client_overview(repo, repo.clients.get(client.code))
+    assert [b.kind for b in over.badges] == ["bad"]
+
+
+def test_unapproved_request_badge_between_unverified_and_draft(repo):
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    a = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.add_measurement(
+        s.id, "", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(a.id, s.id)
+    repo.requests.save(s.id, "Устал")
+    repo.drafts.save_section(s.id, "запрос", "Текст", ())
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "не сверено: 1",
+        "запрос не утверждён",
+        "черновик ждёт утверждения",
+    ]
+
+
+def test_unapproved_request_and_waiting_draft_show_together(repo):
+    """set_redacted сбрасывает approved — оба предупреждения истинны разом."""
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.requests.save(s.id, "Устал")
+    repo.requests.set_redacted(s.id, "Устал, слабость")
+    repo.drafts.save_section(s.id, "запрос", "Текст", ())
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == [
+        "запрос не утверждён",
+        "черновик ждёт утверждения",
+    ]
+
+
+def test_missing_request_says_so(repo):
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    a = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(a.id, s.id)
+
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == ["нужен запрос клиента"]
+
+
+def test_no_progress_says_awaits_client_data_not_in_progress(repo):
+    """«в работе» больше не существует — три исхода описаны отдельно."""
+    client = _client(repo)
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+    over = client_overview(repo, client)
+    assert [b.text for b in over.badges] == ["ожидаем данные клиента"]
+    assert not any(b.text == "в работе" for b in over.badges)
+
+
+def test_dashboard_and_funnel_agree_on_request_and_draft_state(repo):
+    """Плашка рабочего стола не должна расходиться с шагом воронки."""
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m = repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, s.id)
+    repo.requests.save(s.id, "Устал")
+
+    # Запрос сохранён, но не утверждён: шаг "part", плашка предупреждает.
+    steps = snapshot_steps(repo, s.id)
+    over = client_overview(repo, client)
+    assert steps[2].state == "part"
+    assert any(b.text == "запрос не утверждён" for b in over.badges)
+
+    # Запрос утверждён — единственное незавершённое звено теперь черновик,
+    # и плашка рабочего стола говорит именно об этом, а не про "в работе".
+    repo.requests.set_redacted(s.id, "Устал")
+    repo.requests.approve(s.id)
+    steps = snapshot_steps(repo, s.id)
+    over = client_overview(repo, client)
+    assert steps[2].state == "done"
+    assert steps[3].state == "todo"
+    assert [b.text for b in over.badges] == ["черновик не собран"]
 
 
 def test_request_states(repo):
