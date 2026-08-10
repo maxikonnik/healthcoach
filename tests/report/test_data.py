@@ -6,7 +6,9 @@ import pytest
 from healthcoach.knowledge.coach import Coach
 from healthcoach.knowledge.questionnaire import load_questionnaire
 from healthcoach.knowledge.references import load_references
+from healthcoach.llm.payload import UNRESOLVED_TITLE
 from healthcoach.report.data import ReportError, collect_report
+from healthcoach.scoring.references import STATUS_NO_RULE
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.drafts import DraftRepository
@@ -198,3 +200,41 @@ def test_unrecognised_measurement_has_no_series(repo, knowledge):
     data = _collect(repo, knowledge, snapshot.id)
 
     assert data.series == ()
+
+
+def test_document_text_does_not_reach_the_report(repo, knowledge):
+    """Название с бланка может нести что угодно, вплоть до клиники и телефона."""
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id,
+        "",
+        "SOLOVYOVA I.A. Ферритин",
+        18.0,
+        "18",
+        "нг/мл",
+        date(2026, 8, 20),
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    (finding,) = [f for f in data.findings if f.row_id == stored.id]
+    assert finding.title == UNRESOLVED_TITLE
+    assert finding.value == 18.0
+    assert finding.status == STATUS_NO_RULE
+    assert "SOLOVYOVA" not in repr(data)
+
+
+def test_incomplete_client_card_is_refused(repo, knowledge):
+    """Карточка без пола и даты рождения — брак карточек до версии схемы 2."""
+    repo.clients._connection.execute(
+        "INSERT INTO identities (code, full_name, sex, birth_date, contacts, note) "
+        "VALUES (?, ?, '', '', NULL, NULL)",
+        ("CL-0001", "Иванова Мария"),
+    )
+    snapshot = repo.snapshots.create("CL-0001", date(2026, 9, 1))
+    _approved_draft(repo, snapshot.id)
+
+    with pytest.raises(ReportError, match="CL-0001"):
+        _collect(repo, knowledge, snapshot.id)

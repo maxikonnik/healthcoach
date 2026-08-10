@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 
 from healthcoach.knowledge.coach import Coach
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
+from healthcoach.llm.payload import UNRESOLVED_TITLE
 from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import Measurement, Subject, select_target
 from healthcoach.storage.drafts import DraftSection
@@ -104,10 +105,26 @@ def collect_report(
         taken_on=snapshot.taken_on,
         coach=coach,
         sections=tuple(repo.drafts.sections(snapshot_id)),
-        findings=tuple(findings),
+        findings=tuple(_mask_document_titles(findings)),
         series=_series(repo, references, subject, client.code, confirmed),
         approved_at=approved_at,
     )
+
+
+def _mask_document_titles(findings: list[Finding]) -> list[Finding]:
+    """Заменить title находок, списанный с бланка клиента, на общую формулировку.
+
+    Та же маска, что закрывает вход модели (`llm/payload.py`): показатель,
+    которого нет в базе знаний, всё равно не истолковать, а бланк может
+    нести что угодно, вплоть до имени клиента или контактов клиники.
+    Маска ставится здесь, на границе сборки отчёта, а не в шаблоне — чтобы
+    всё, что построено на `ReportData`, было безопасно по построению, а не
+    по памяти о том, что title иногда бывает чужим текстом.
+    """
+    return [
+        replace(f, title=UNRESOLVED_TITLE) if f.title_from_document else f
+        for f in findings
+    ]
 
 
 def _series(repo, references, subject, client_code, confirmed) -> tuple[Series, ...]:
