@@ -256,10 +256,20 @@ def build_router(context: Context, templates) -> APIRouter:
     @router.get("/snapshots/{snapshot_id}/report.pdf")
     def report_file(snapshot_id: int):
         with context.session() as repo:
-            snapshot = repo.snapshots.get(snapshot_id)
-            if snapshot is None:
+            snapshot, client = _snapshot_and_client(repo, snapshot_id)
+            # Незаполненная карточка (только у строк со схемы версии 1) —
+            # некорректный запрос про клиента, а не конфликт с состоянием
+            # черновика: тот же 400, что и при сборке черновика в
+            # build_draft/_findings выше. Проверка здесь, до collect_report,
+            # оставляет 409 этого маршрута означать ровно одно — черновик не
+            # утверждён, — а не смешивать с этим случаем.
+            if not client.is_complete:
                 raise HTTPException(
-                    status_code=404, detail=f"нет среза {snapshot_id}"
+                    status_code=400,
+                    detail=(
+                        f"карточка клиента {client.code} не заполнена: без пола и "
+                        f"даты рождения целевой коридор не выбрать"
+                    ),
                 )
             try:
                 data = collect_report(
