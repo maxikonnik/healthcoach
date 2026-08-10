@@ -670,3 +670,83 @@ def test_table_and_chart_agree_when_an_older_member_holds_a_later_draw(
     (ratio,) = [f for f in data.findings if f.subject_id == "кальций_калий"]
     assert ratio.status != STATUS_NOT_COMPUTED
     assert ratio.value is not None
+
+
+def test_an_excluded_member_puts_no_point_on_the_chart(repo, knowledge):
+    """Ревью: срез, который коуч снял галочкой, всё равно попадал на график.
+
+    Январь (ферритин 18) и сентябрь отмечены, июнь (ферритин 25) снят.
+    Ряд строился по всей истории клиента: в таблице стояло 18, а последняя
+    точка графика — 25, из среза, который в отчёт не брали.
+    """
+    client, january = _client_with_snapshot(repo, date(2026, 1, 10))
+    june = repo.snapshots.create(client.code, date(2026, 6, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    chosen = repo.snapshots.add_measurement(
+        january.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 1, 10)
+    )
+    dropped = repo.snapshots.add_measurement(
+        june.id, "ферритин", "Ферритин", 25.0, "25", "нг/мл", date(2026, 6, 10)
+    )
+    repo.snapshots.confirm_measurement(chosen.id, january.id)
+    repo.snapshots.confirm_measurement(dropped.id, june.id)
+    repo.scopes.set_members(september.id, [january.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (finding,) = [f for f in data.findings if f.subject_id == "ферритин"]
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert finding.value == 18.0
+    assert [p.value for p in series.points] == [18.0]
+
+
+def test_an_included_older_member_does_put_its_point_on_the_chart(repo, knowledge):
+    """Обратная половина: отмеченный старый срез рисуется, иначе от границы
+    по набору не осталось бы динамики вовсе."""
+    client, january = _client_with_snapshot(repo, date(2026, 1, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    older = repo.snapshots.add_measurement(
+        january.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 1, 10)
+    )
+    newer = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 45.0, "45", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(older.id, january.id)
+    repo.snapshots.confirm_measurement(newer.id, september.id)
+    repo.scopes.set_members(september.id, [january.id, september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert [p.value for p in series.points] == [18.0, 45.0]
+
+
+def test_a_scope_of_one_snapshot_keeps_the_whole_history_on_the_chart(
+    repo, knowledge
+):
+    """Набор из одного среза — это сегодняшнее поведение (правило 7).
+
+    `members()` отдаёт `[snapshot_id]` и для сохранённого набора из одного
+    среза, и для среза, про который коуч ничего не говорил: домен объявил
+    эти два состояния одинаковыми. Значит и график у них обязан быть один
+    и тот же — история целиком, обрезанная датой первичного среза.
+    """
+    client, june = _client_with_snapshot(repo, date(2026, 6, 10))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    older = repo.snapshots.add_measurement(
+        june.id, "ферритин", "Ферритин", 25.0, "25", "нг/мл", date(2026, 6, 10)
+    )
+    newer = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 45.0, "45", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(older.id, june.id)
+    repo.snapshots.confirm_measurement(newer.id, september.id)
+    repo.scopes.set_members(september.id, [september.id])
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (series,) = [s for s in data.series if s.analyte_id == "ферритин"]
+    assert [p.value for p in series.points] == [25.0, 45.0]

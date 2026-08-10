@@ -126,7 +126,13 @@ def collect_report(
         # `privacy/findings.py`.
         findings=tuple(safe_finding(f, audience=FOR_CLIENT) for f in findings),
         series=_series(
-            repo, references, subject, client.code, snapshot.taken_on, scoped.measurements
+            repo,
+            references,
+            subject,
+            client.code,
+            snapshot.taken_on,
+            scoped.measurements,
+            scoped.member_ids,
         ),
         approved_at=approved_at,
         covers_several_dates=len(scoped.dates) > 1,
@@ -134,7 +140,13 @@ def collect_report(
 
 
 def _series(
-    repo, references, subject, client_code, taken_on: date, measurements
+    repo,
+    references,
+    subject,
+    client_code,
+    taken_on: date,
+    measurements,
+    member_ids: tuple[int, ...] = (),
 ) -> tuple[Series, ...]:
     """Ряды динамики по показателям свода (`report.scope.collect_inputs`).
 
@@ -144,7 +156,20 @@ def _series(
     этом не меняется: она остаётся датой первичного среза, а не самой
     свежей датой набора.
 
-    Три условия, и каждое отсекает точку, которой на графике быть не должно.
+    Когда коуч отметил несколько срезов, точки берутся только из них.
+    Выбор — это утверждение о том, из чего собран отчёт: точка из среза,
+    который сняли галочкой, ему противоречит, и клиент видел в таблице
+    одно число, а в конце графика другое, из среза, который в отчёт не
+    брали.
+
+    Набор из одного среза границей не считается: `scopes.members` отдаёт
+    `[snapshot_id]` и сохранённому набору из одного среза, и срезу, про
+    который коуч ничего не говорил (правило 7 плана объявляет эти
+    состояния одинаковыми). Различать их здесь значило бы завести
+    расхождение, которого домен не знает, — и молча лишить динамики
+    отчёт, собранный кнопкой с карточки по умолчанию.
+
+    Четыре условия, и каждое отсекает точку, которой на графике быть не должно.
 
     Сверенность: клиент не должен увидеть точку, которую коуч не проверил.
 
@@ -164,6 +189,7 @@ def _series(
     Отдельного сравнения здесь нет намеренно: две копии одного правила уже
     расходились в этом проекте.
     """
+    picked = set(member_ids) if len(member_ids) > 1 else None
     result: list[Series] = []
     for analyte_id in dict.fromkeys(m.analyte_id for m in measurements if m.analyte_id):
         analyte = references.analyte(analyte_id)
@@ -175,6 +201,7 @@ def _series(
             if m.confirmed
             and m.value is not None
             and m.taken_on <= taken_on
+            and (picked is None or m.snapshot_id in picked)
             and units_match(analyte, m.units)
         )
         if not points:
