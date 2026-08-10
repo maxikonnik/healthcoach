@@ -6,6 +6,7 @@
 
 {% if approved_at %}
 <p class="warn">Утверждён {{ approved_at }} — разделы больше не правятся.</p>
+<p><a href="/snapshots/{{ snapshot.id }}/report.pdf">Скачать отчёт для клиента (PDF)</a></p>
 {% endif %}
 
 <h2>Запрос клиента</h2>

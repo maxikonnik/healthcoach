@@ -423,3 +423,50 @@ def test_draft_button_locks_itself_on_submit(client):
     assert "draft/progress" in page
     assert "<progress" in page
     assert 'id="draft-status"' in page
+
+
+def test_report_is_refused_until_the_draft_is_approved(client):
+    """До утверждения отдавать клиенту нечего."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 409
+
+
+def test_report_is_a_pdf_attachment_after_approval(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment" in response.headers.get("content-disposition", "")
+    assert response.content[:5] == b"%PDF-"
+
+
+def test_report_of_an_unknown_snapshot_is_404(client):
+    test_client, _, _ = client
+    assert test_client.get("/snapshots/999/report.pdf").status_code == 404
+
+
+def test_download_button_appears_only_after_approval(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    before = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "report.pdf" not in before
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    after = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "report.pdf" in after
