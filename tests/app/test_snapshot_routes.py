@@ -484,6 +484,48 @@ def test_steps_bar_shows_all_five_titles_on_an_empty_snapshot(client):
         assert title in page
 
 
+# План 4, задача 4: якоря возврата — редирект ведёт назад к таблице
+# показателей, а не к верху страницы.
+
+_ANCHOR_INDICATORS = "%D0%BF%D0%BE%D0%BA%D0%B0%D0%B7%D0%B0%D1%82%D0%B5%D0%BB%D0%B8"
+"""Percent-encoded «показатели»: RedirectResponse кодирует Location через
+urllib.parse.quote — заголовок HTTP не может нести кириллицу как есть."""
+
+
+def test_confirm_redirects_back_to_the_indicators_anchor(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"#{_ANCHOR_INDICATORS}")
+
+
+def test_add_measurement_redirects_back_to_the_indicators_anchor(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"#{_ANCHOR_INDICATORS}")
+
+
 def test_findings_use_only_confirmed_measurements(client):
     """Ворота сверки: неподтверждённое измерение в находки не идёт."""
     test_client, context = client

@@ -77,6 +77,49 @@ def test_value_can_be_filled_in_by_hand(client):
     assert read_back.raw_value == "<0.60"
 
 
+# План 4, задача 4: якоря возврата.
+
+_ANCHOR_INDICATORS = "%D0%BF%D0%BE%D0%BA%D0%B0%D0%B7%D0%B0%D1%82%D0%B5%D0%BB%D0%B8"
+"""Percent-encoded «показатели»: RedirectResponse кодирует Location через
+urllib.parse.quote — заголовок HTTP не может нести кириллицу как есть."""
+
+
+def test_set_value_redirects_back_to_the_indicators_anchor(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    with context.session() as repo:
+        stored = repo.snapshots.add_measurement(
+            snapshot_id,
+            analyte_id="ферритин",
+            raw_name="Ферритин",
+            value=None,
+            raw_value="<0.60",
+            units="нг/мл",
+            taken_on=date(2026, 8, 20),
+        )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements/{stored.id}/value",
+        data={"value": "0,3"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"#{_ANCHOR_INDICATORS}")
+
+
+def test_document_upload_form_points_at_the_documents_anchor(client):
+    """Загрузка документа рендерит страницу напрямую (не редирект — иначе
+    сводка «импортировано показателей» не пережила бы переход), так что
+    якорь возврата несёт не Location, а адрес формы: браузер применяет
+    фрагмент из того же URL, на который отправлена форма."""
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert (
+        f'action="/snapshots/{snapshot_id}/documents#документы"' in page
+    )
+
+
 def test_value_of_another_snapshot_is_404(client):
     test_client, context = client
     first = _snapshot(test_client)

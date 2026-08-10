@@ -105,7 +105,7 @@
 {% endif %}
 {% else %}
 {% for section in sections %}
-<h3>{{ titles.get(section.section_id, section.section_id) }}</h3>
+<h3 id="s{{ section.id }}">{{ titles.get(section.section_id, section.section_id) }}</h3>
 {% if section.finding_ids %}
 <p class="muted">Стоит на находках:
   {% for id in section.finding_ids %}<code>{{ id }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>

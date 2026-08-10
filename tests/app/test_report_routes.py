@@ -143,6 +143,46 @@ def test_section_can_be_edited_and_the_original_is_kept(client):
     assert again.edited == "Правка коуча"
 
 
+# План 4, задача 4: якоря возврата — правка раздела ведёт назад к этому
+# разделу, а не к верху черновика.
+
+
+def test_edit_section_redirects_back_to_the_section_anchor(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    with context.session() as repo:
+        section = repo.drafts.sections(snapshot_id)[0]
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/draft/{section.id}/edit",
+        data={"text": "Правка коуча"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/snapshots/{snapshot_id}/draft#s{section.id}"
+    )
+
+
+def test_section_block_has_an_anchor_id(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    with context.session() as repo:
+        section = repo.drafts.sections(snapshot_id)[0]
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert f'id="s{section.id}"' in page
+
+
 def test_editing_after_approval_is_refused(client):
     test_client, context, _ = client
     snapshot_id = _snapshot_with_a_finding(test_client, context)

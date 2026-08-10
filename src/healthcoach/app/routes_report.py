@@ -231,7 +231,9 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404,
                     detail=f"в срезе {snapshot_id} нет раздела {section_row_id}",
                 )
-        return RedirectResponse(f"/snapshots/{snapshot_id}/draft", status_code=303)
+        return RedirectResponse(
+            f"/snapshots/{snapshot_id}/draft#s{section_row_id}", status_code=303
+        )
 
     @router.post("/snapshots/{snapshot_id}/draft/approve")
     def approve_draft(snapshot_id: int):

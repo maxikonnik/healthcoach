@@ -200,7 +200,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 units=stored_units,
                 taken_on=when,
             )
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+        return RedirectResponse(f"/snapshots/{snapshot_id}#показатели", status_code=303)
 
     @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/confirm")
     def confirm(snapshot_id: int, measurement_id: int):
@@ -211,7 +211,7 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=404,
                     detail=f"в срезе {snapshot_id} нет показателя {measurement_id}",
                 )
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+        return RedirectResponse(f"/snapshots/{snapshot_id}#показатели", status_code=303)
 
     @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
     def findings(snapshot_id: int):
