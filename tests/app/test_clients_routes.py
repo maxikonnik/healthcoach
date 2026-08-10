@@ -156,6 +156,30 @@ def test_client_without_snapshots_is_listed_last(client):
     assert "нет срезов" in text
 
 
+def test_incomplete_card_with_fresh_snapshot_sorts_above_complete_stale_one(tmp_path):
+    """Незаполненная карточка не должна прятать свежий срез внизу списка."""
+    import sqlite3
+
+    context = build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE)
+    with TestClient(create_app(context)) as test_client:
+        test_client.post("/clients", data=WOMAN)
+        test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+        test_client.post("/clients", data=KUZNETSOVA)
+        test_client.post("/clients/CL-0002/snapshots", data={"taken_on": "2026-09-01"})
+        connection = sqlite3.connect(context.database_path)
+        connection.execute(
+            "UPDATE identities SET sex = '', birth_date = '' WHERE code = 'CL-0002'"
+        )
+        connection.commit()
+        connection.close()
+
+        response = test_client.get("/")
+
+    text = response.text
+    assert text.index(KUZNETSOVA["full_name"]) < text.index(WOMAN["full_name"])
+    assert "2026-09-01" in text
+
+
 def test_add_client_form_is_collapsed_in_details(client):
     response = client.get("/")
     text = response.text

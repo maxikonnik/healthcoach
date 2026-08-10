@@ -41,6 +41,19 @@ def test_incomplete_card_is_the_only_badge(repo):
     assert [b.kind for b in over.badges] == ["bad"]
 
 
+def test_incomplete_card_still_reports_latest_snapshot(repo):
+    client = _client(repo)
+    import sqlite3
+    repo.clients._connection.execute(
+        "UPDATE identities SET sex='', birth_date='' WHERE code=?", (client.code,)
+    )
+    repo.clients._connection.commit()
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+    over = client_overview(repo, repo.clients.get(client.code))
+    assert over.latest_taken_on == date(2026, 9, 1)
+    assert [b.kind for b in over.badges] == ["bad"]
+
+
 def test_no_snapshots_says_so(repo):
     over = client_overview(repo, _client(repo))
     assert over.latest_taken_on is None

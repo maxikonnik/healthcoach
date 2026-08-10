@@ -480,8 +480,9 @@ def test_steps_bar_shows_all_five_titles_on_an_empty_snapshot(client):
     test_client, _ = client
     snapshot_id = _snapshot(test_client)
     page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert page.count('class="step ') == 5
     for title in ("Анкета", "Показатели", "Запрос", "Черновик", "PDF"):
-        assert title in page
+        assert f"<b>{title}</b>" in page
 
 
 # План 4, задача 4: якоря возврата — редирект ведёт назад к таблице

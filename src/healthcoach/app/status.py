@@ -34,9 +34,14 @@ class Step:
 
 def client_overview(repo, client: Client) -> Overview:
     """Плашки клиента — по последнему срезу."""
-    if not client.is_complete:
-        return Overview(None, (Badge("bad", "карточка не заполнена"),))
     snapshots = repo.snapshots.for_client(client.code)
+    latest_taken_on = (
+        max(snapshots, key=lambda s: (s.taken_on, s.id)).taken_on
+        if snapshots
+        else None
+    )
+    if not client.is_complete:
+        return Overview(latest_taken_on, (Badge("bad", "карточка не заполнена"),))
     if not snapshots:
         return Overview(None, (Badge("muted", "нет срезов"),))
     latest = max(snapshots, key=lambda s: (s.taken_on, s.id))
