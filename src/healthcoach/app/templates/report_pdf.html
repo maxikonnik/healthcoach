@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Отчёт {{ data.client_name }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 22mm;
+    @bottom-center { content: counter(page); font: 9pt sans-serif; color: #888; }
+  }
+  @page :first { @bottom-center { content: ""; } }
+  body { font: 11pt/1.6 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #222; }
+  h1 { font-size: 17pt; margin: 0 0 .4em; }
+  h2 { font-size: 13pt; margin: 1.6em 0 .5em; break-after: avoid; }
+  p { margin: 0 0 .7em; orphans: 2; widows: 2; }
+  .title-page { break-after: page; padding-top: 22vh; text-align: center; }
+  .title-page .client { font-size: 20pt; margin-bottom: .3em; }
+  .title-page .meta { color: #666; font-size: 11pt; }
+  .chart { margin: 1em 0; break-inside: avoid; }
+  .chart figcaption { font-size: 9pt; color: #666; margin-top: .2em; }
+  .disclaimer { margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd;
+                font-size: 9pt; color: #666; break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<div class="title-page">
+  <p class="client">{{ data.client_name }}</p>
+  <h1>Отчёт по результатам обследования</h1>
+  <p class="meta">Срез от {{ data.taken_on.strftime("%d.%m.%Y") }}</p>
+  <p class="meta">{{ data.coach.name }}{% if data.coach.title %}, {{ data.coach.title }}{% endif %}</p>
+</div>
+
+{% for section in data.sections %}
+<h2>{{ titles.get(section.section_id, section.section_id) }}</h2>
+{% for paragraph in section.text.split("\n") %}
+{% if paragraph.strip() %}<p>{{ paragraph.strip() }}</p>{% endif %}
+{% endfor %}
+
+{% if section.section_id == "динамика" %}
+{% for series in data.series %}
+{% if charts.get(series.analyte_id) %}
+<figure class="chart">
+  {{ charts[series.analyte_id] | safe }}
+  <figcaption>{{ series.title }}, {{ series.units }}</figcaption>
+</figure>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+<div class="disclaimer">
+  <p>Отчёт подготовлен специалистом по здоровью и не является медицинским
+  заключением. Он не ставит диагноз и не назначает лечение. Решения о
+  диагностике и терапии принимает врач.</p>
+  <p>Утверждён {{ data.approved_at.strftime("%d.%m.%Y") }}.</p>
+</div>
+
+</body>
+</html>

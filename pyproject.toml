@@ -10,6 +10,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "uvicorn>=0.32",
     "pdfplumber>=0.11",
+    "weasyprint>=62",
     "pyobjc-framework-Vision>=10.3; sys_platform == 'darwin'",
     "pyobjc-framework-Quartz>=10.3; sys_platform == 'darwin'",
 ]
@@ -34,4 +35,9 @@ testpaths = ["tests"]
 # установлен и авторизован, поэтому без этой строки каждый `uv run pytest`
 # молча тратил бы лимиты его подписки. Регистрация маркера в conftest сама
 # по себе ничего не отбирает — отбирает вот это.
-addopts = "-m 'not llm'"
+#
+# `--import-mode=importlib` — иначе `tests/report/test_pdf.py` и уже
+# существующий `tests/intake/test_pdf.py` конфликтуют по имени модуля:
+# в каталогах тестов нет `__init__.py`, и pytest по умолчанию регистрирует
+# оба файла под одним и тем же именем `test_pdf` в sys.modules.
+addopts = "-m 'not llm' --import-mode=importlib"
