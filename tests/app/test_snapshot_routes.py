@@ -403,6 +403,130 @@ def test_findings_refuse_an_incomplete_client_card(client):
     assert "не заполнена" in response.text
 
 
+class FakeProvider:
+    """Заглушка модели для теста, доводящего срез до утверждённого черновика —
+    без этого использовался бы настоящий ClaudeCodeProvider по умолчанию."""
+
+    def complete(self, prompt: str) -> str:
+        return "Текст раздела."
+
+
+@pytest.fixture
+def client_with_llm(tmp_path):
+    import dataclasses
+
+    context = dataclasses.replace(
+        build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE), llm=FakeProvider()
+    )
+    with TestClient(create_app(context)) as test_client:
+        yield test_client, context
+
+
+def test_steps_bar_shows_partial_indicators_step_linking_to_the_section(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Калий", "value": "4.2", "units": "ммоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (first, _second) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{first.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert "сверено 1 из 2" in page
+    assert 'href="#показатели"' in page
+    assert 'id="показатели"' in page
+
+
+def test_steps_bar_pdf_step_links_to_the_report_after_draft_approval(client_with_llm):
+    test_client, context = client_with_llm
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    with context.session() as repo:
+        snapshot_id = repo.snapshots.for_client("CL-0001")[-1].id
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert f'href="/snapshots/{snapshot_id}/report.pdf"' in page
+
+
+def test_steps_bar_shows_all_five_titles_on_an_empty_snapshot(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert page.count('class="step ') == 5
+    for title in ("Анкета", "Показатели", "Запрос", "Черновик", "PDF"):
+        assert f"<b>{title}</b>" in page
+
+
+# План 4, задача 4: якоря возврата — редирект ведёт назад к таблице
+# показателей, а не к верху страницы.
+
+_ANCHOR_INDICATORS = "%D0%BF%D0%BE%D0%BA%D0%B0%D0%B7%D0%B0%D1%82%D0%B5%D0%BB%D0%B8"
+"""Percent-encoded «показатели»: RedirectResponse кодирует Location через
+urllib.parse.quote — заголовок HTTP не может нести кириллицу как есть."""
+
+
+def test_confirm_redirects_back_to_the_indicators_anchor(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"#{_ANCHOR_INDICATORS}")
+
+
+def test_add_measurement_redirects_back_to_the_indicators_anchor(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"#{_ANCHOR_INDICATORS}")
+
+
 def test_findings_use_only_confirmed_measurements(client):
     """Ворота сверки: неподтверждённое измерение в находки не идёт."""
     test_client, context = client

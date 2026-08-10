@@ -3,30 +3,37 @@
 {% block body %}
 <h1>Клиенты</h1>
 
-<form method="post" action="/clients">
-  <label>ФИО<input name="full_name" required></label>
-  <label>Пол
-    <select name="sex" required>
-      <option value="ж">ж</option>
-      <option value="м">м</option>
-    </select>
-  </label>
-  <label>Дата рождения<input type="date" name="birth_date" required></label>
-  <label>Контакты<input name="contacts" placeholder="@nickname"></label>
-  <button type="submit">Добавить</button>
-</form>
+<details>
+  <summary>＋ Новый клиент</summary>
+  <form method="post" action="/clients">
+    <label>ФИО<input name="full_name" required></label>
+    <label>Пол
+      <select name="sex" required>
+        <option value="ж">ж</option>
+        <option value="м">м</option>
+      </select>
+    </label>
+    <label>Дата рождения<input type="date" name="birth_date" required></label>
+    <label>Контакты<input name="contacts" placeholder="@nickname"></label>
+    <button type="submit">Добавить</button>
+  </form>
+</details>
 
-{% if clients %}
+{% if rows %}
 <table>
-  <tr><th>Код</th><th>ФИО</th><th>Пол</th><th>Дата рождения</th><th>Контакты</th></tr>
-  {% for client in clients %}
+  <tr><th>Клиент</th><th>Последний срез</th><th>Состояние работы</th></tr>
+  {% for client, overview in rows %}
   <tr>
-    <td><a href="/clients/{{ client.code }}">{{ client.code }}</a></td>
-    <td>{{ client.full_name }}</td>
-    <td>{{ client.sex or "—" }}</td>
-    <td>{% if client.birth_date %}{{ client.birth_date }}
-        {% else %}<span class="bad">не заполнена</span>{% endif %}</td>
-    <td class="muted">{{ client.contacts or "—" }}</td>
+    <td>
+      <a href="/clients/{{ client.code }}">{{ client.full_name }}</a>
+      <span class="muted">{{ client.code }}</span>
+    </td>
+    <td>{{ overview.latest_taken_on if overview.latest_taken_on else "—" }}</td>
+    <td>
+      {% for badge in overview.badges %}
+      <span class="tag {{ badge.kind }}">{{ badge.text }}</span>
+      {% endfor %}
+    </td>
   </tr>
   {% endfor %}
 </table>

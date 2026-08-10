@@ -7,7 +7,13 @@
 <h1>Срез {{ snapshot.taken_on }}
   <span class="muted">{{ snapshot.client_code }}</span></h1>
 
-<h2>Анкета</h2>
+<div class="steps">
+  {% for s in steps %}
+  <a class="step {{ s.state }}" href="{{ s.anchor }}"><b>{{ s.title }}</b><br>{{ s.detail }}</a>
+  {% endfor %}
+</div>
+
+<h2 id="анкета">Анкета</h2>
 {% if answers_count %}
 <p>Загружено ответов: {{ answers_count }}.</p>
 {% else %}
@@ -35,8 +41,8 @@
   <button type="submit">Загрузить</button>
 </form>
 
-<h2>Документы</h2>
-<form method="post" action="/snapshots/{{ snapshot.id }}/documents"
+<h2 id="документы">Документы</h2>
+<form method="post" action="/snapshots/{{ snapshot.id }}/documents#документы"
       enctype="multipart/form-data">
   <label>Выгрузка лаборатории
     <input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></label>
@@ -81,7 +87,7 @@
 <p class="muted">Документы не загружены.</p>
 {% endif %}
 
-<h2>Показатели</h2>
+<h2 id="показатели">Показатели</h2>
 <form method="post" action="/snapshots/{{ snapshot.id }}/measurements">
   <label>Название из бланка<input name="raw_name" required
          placeholder="Ферритин (S-Ferritin)"></label>
@@ -181,10 +187,10 @@
 <p class="muted">Показателей пока нет.</p>
 {% endif %}
 
-<h2>Находки</h2>
+<h2 id="находки">Находки</h2>
 <p><a href="/snapshots/{{ snapshot.id }}/findings">Открыть находки</a></p>
 <p class="muted">В находки идут только подтверждённые показатели.</p>
 
-<h2>Отчёт</h2>
+<h2 id="отчёт">Отчёт</h2>
 <p><a href="/snapshots/{{ snapshot.id }}/draft">Запрос клиента, вычитка и черновик отчёта</a></p>
 {% endblock %}

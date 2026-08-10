@@ -186,7 +186,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 measurement_id, snapshot_id, number
             ):
                 raise HTTPException(status_code=409, detail="число уже вписано")
-        return RedirectResponse(f"/snapshots/{snapshot_id}", status_code=303)
+        return RedirectResponse(f"/snapshots/{snapshot_id}#показатели", status_code=303)
 
     return router
 

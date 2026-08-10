@@ -115,3 +115,118 @@ def test_updating_an_unknown_client_is_404(client):
 def test_birth_date_in_the_future_is_refused(client):
     response = client.post("/clients", data=WOMAN | {"birth_date": "2099-01-01"})
     assert response.status_code == 400
+
+
+KUZNETSOVA = {"full_name": "Кузнецова Ольга", "sex": "ж", "birth_date": "1988-02-02"}
+
+
+def test_unconfirmed_measurement_badge_shows_on_dashboard(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    client.post(
+        "/snapshots/1/measurements",
+        data={
+            "raw_name": "Ферритин",
+            "value": "18",
+            "units": "нг/мл",
+            "taken_on": "2026-08-20",
+        },
+    )
+    response = client.get("/")
+    assert "не сверено: 1" in response.text
+
+
+def test_client_with_later_snapshot_is_listed_first(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+    client.post("/clients", data=KUZNETSOVA)
+    client.post("/clients/CL-0002/snapshots", data={"taken_on": "2026-09-01"})
+    response = client.get("/")
+    text = response.text
+    assert text.index(KUZNETSOVA["full_name"]) < text.index(WOMAN["full_name"])
+
+
+def test_client_without_snapshots_is_listed_last(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+    client.post("/clients", data=KUZNETSOVA)
+    response = client.get("/")
+    text = response.text
+    assert text.index(WOMAN["full_name"]) < text.index(KUZNETSOVA["full_name"])
+    assert "нет срезов" in text
+
+
+def test_incomplete_card_with_fresh_snapshot_sorts_above_complete_stale_one(tmp_path):
+    """Незаполненная карточка не должна прятать свежий срез внизу списка."""
+    import sqlite3
+
+    context = build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE)
+    with TestClient(create_app(context)) as test_client:
+        test_client.post("/clients", data=WOMAN)
+        test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-08-01"})
+        test_client.post("/clients", data=KUZNETSOVA)
+        test_client.post("/clients/CL-0002/snapshots", data={"taken_on": "2026-09-01"})
+        connection = sqlite3.connect(context.database_path)
+        connection.execute(
+            "UPDATE identities SET sex = '', birth_date = '' WHERE code = 'CL-0002'"
+        )
+        connection.commit()
+        connection.close()
+
+        response = test_client.get("/")
+
+    text = response.text
+    assert text.index(KUZNETSOVA["full_name"]) < text.index(WOMAN["full_name"])
+    assert "2026-09-01" in text
+
+
+def test_add_client_form_is_collapsed_in_details(client):
+    response = client.get("/")
+    text = response.text
+    details_start = text.index("<details>")
+    details_end = text.index("</details>")
+    form_start = text.index('action="/clients"')
+    assert details_start < form_start < details_end
+
+
+# План 4, задача 4: карточка ставит работу (срезы) выше паспорта.
+
+
+def test_snapshots_block_comes_before_the_passport_form(client):
+    client.post("/clients", data=WOMAN)
+    client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
+    text = client.get("/clients/CL-0001").text
+    snapshots_heading = text.index("<h2>Срезы</h2>")
+    passport_form = text.index('action="/clients/CL-0001"')
+    assert snapshots_heading < passport_form
+
+
+def test_passport_form_is_open_when_the_card_is_incomplete(tmp_path):
+    """От схемы версии 1 карточки достаются пустыми — коуч обязан сразу
+    увидеть форму, а не искать её под свёрнутым <summary>."""
+    import sqlite3
+
+    context = build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE)
+    with TestClient(create_app(context)) as test_client:
+        test_client.post("/clients", data=WOMAN)
+        # Так выглядит карточка, доставшаяся от схемы версии 1.
+        connection = sqlite3.connect(context.database_path)
+        connection.execute("UPDATE identities SET sex = '', birth_date = ''")
+        connection.commit()
+        connection.close()
+
+        page = test_client.get("/clients/CL-0001").text
+
+    summary_start = page.index("<summary>Паспортные данные")
+    details_start = page.rindex("<details", 0, summary_start)
+    details_tag = page[details_start:summary_start]
+    assert "open" in details_tag
+
+
+def test_passport_form_is_collapsed_when_the_card_is_complete(client):
+    client.post("/clients", data=WOMAN | {"contacts": "@masha"})
+    page = client.get("/clients/CL-0001").text
+    summary_start = page.index("<summary>Паспортные данные")
+    details_start = page.rindex("<details", 0, summary_start)
+    details_tag = page[details_start:summary_start]
+    assert "open" not in details_tag

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from healthcoach.app.deps import Context
+from healthcoach.app.status import client_overview
 from healthcoach.knowledge.sex import SexError
 from healthcoach.intake.questionnaire_html import (
     QuestionnaireHtmlError,
@@ -35,8 +36,20 @@ def build_router(context: Context, templates) -> APIRouter:
     @router.get("/", response_class=HTMLResponse)
     def clients_page(request: Request):
         with context.session() as repo:
+            rows = [
+                (client, client_overview(repo, client))
+                for client in repo.clients.all()
+            ]
+            rows.sort(
+                key=lambda pair: (
+                    pair[1].latest_taken_on is None,
+                    -pair[1].latest_taken_on.toordinal()
+                    if pair[1].latest_taken_on
+                    else 0,
+                )
+            )
             return templates.TemplateResponse(
-                request, "clients.html", {"clients": repo.clients.all()}
+                request, "clients.html", {"rows": rows}
             )
 
     @router.post("/clients")
