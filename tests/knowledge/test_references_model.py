@@ -19,6 +19,47 @@ def test_interval_contains_with_open_bounds():
     assert Interval(80, None).contains(1000)
 
 
+def test_an_inverted_interval_cannot_be_built():
+    """`оптимум: [90, 60]` — опечатка, и она не создаётся вовсе.
+
+    Молча она доходила до самой печати: `contains()` не возвращает True ни
+    для одного значения, любое измерение получало «выше целевого», а полоса
+    коридора на графике выходила высотой −116.7 — невалидная геометрия,
+    которую движок печати выбрасывает. Клиент видел график без коридора, и
+    нигде ни одной ошибки. Проверка стоит в самом интервале: потребителей у
+    него четверо, и график — не то место, где её ставить.
+    """
+    with pytest.raises(ValueError, match="перевёрнут"):
+        Interval(90, 60)
+
+
+def test_a_one_sided_and_a_point_interval_are_still_allowed():
+    """«дефицит: [null, 30]» — правильная запись, и совпавшие границы тоже."""
+    assert Interval(None, 30).high == 30
+    assert Interval(80, None).low == 80
+    assert Interval(4.0, 4.0).contains(4.0)
+
+
+def test_inverted_interval_in_yaml_names_the_file_and_says_what_is_wrong(tmp_path):
+    """Коуч правит YAML руками: ошибка обязана назвать файл и причину."""
+    (tmp_path / "broken_interval.yaml").write_text(
+        "показатели:\n"
+        "  - id: ферритин\n"
+        "    название: Ферритин\n"
+        "    единицы: нг/мл\n"
+        "    целевые:\n"
+        "      - оптимум: [90, 60]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceError) as excinfo:
+        load_references(tmp_path)
+    message = str(excinfo.value)
+    assert "broken_interval.yaml" in message
+    assert "перевёрнут" in message
+    # Числа разобрались — жаловаться надо не на них.
+    assert "должны быть числами" not in message
+
+
 def test_condition_matches_sex_and_age():
     c = Condition(sex="ж", age_min=18, age_max=50, cycle_phase=None)
     assert c.matches(sex="ж", age=30, cycle_phase=None)

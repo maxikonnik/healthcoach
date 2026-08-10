@@ -20,6 +20,28 @@ class Interval:
     low: float | None
     high: float | None
 
+    def __post_init__(self) -> None:
+        """Перевёрнутый интервал не создаётся вовсе.
+
+        `оптимум: [90, 60]` — опечатка в YAML коуча, и до этой проверки она
+        проходила молча до самой печати: `contains()` не возвращает True ни
+        для одного значения, так что любое измерение получало статус «выше
+        целевого», а полоса коридора на графике выходила высотой −116.7 —
+        невалидная геометрия, которую движок печати просто выбрасывает.
+        Клиент видел график без коридора, и нигде ни одной ошибки.
+
+        Проверка стоит в самом интервале, а не в графике: потребителей у
+        него четверо (сверка, производные, график, таблица показателей), и
+        каждому пришлось бы помнить об этом самому. Границы, заданной с
+        одной стороны, это не касается — «дефицит: [null, 30]» правильная
+        запись.
+        """
+        if self.low is not None and self.high is not None and self.low > self.high:
+            raise ValueError(
+                f"интервал перевёрнут: нижняя граница {self.low} больше "
+                f"верхней {self.high}"
+            )
+
     def contains(self, value: float) -> bool:
         if self.low is not None and value < self.low:
             return False
@@ -121,14 +143,18 @@ def _interval(raw, where: str) -> Interval | None:
         )
     low, high = raw
     try:
-        return Interval(
-            low=None if low is None else float(low),
-            high=None if high is None else float(high),
-        )
+        low = None if low is None else float(low)
+        high = None if high is None else float(high)
     except (TypeError, ValueError) as exc:
         raise ReferenceError(
             f"{where}: границы интервала должны быть числами, получено {raw!r}"
         ) from exc
+    try:
+        return Interval(low=low, high=high)
+    except ValueError as exc:
+        # Числа разобрались, но интервал невозможен — сказать про это
+        # прямо, а не «границы должны быть числами».
+        raise ReferenceError(f"{where}: {exc}") from exc
 
 
 def _condition(raw: dict | None, where: str) -> Condition:
