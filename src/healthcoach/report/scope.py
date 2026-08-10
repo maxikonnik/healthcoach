@@ -118,6 +118,22 @@ def collect_inputs(repo, snapshot: Snapshot) -> ScopedInputs:
     )
 
 
+def answers_taken_on(repo, scoped: ScopedInputs) -> date | None:
+    """Дата среза, чья анкета вошла в свод (правило 3), или `None`.
+
+    Анкета не несёт своей даты — заполнена она где-то между визитами, и
+    единственная честная дата у неё одна: дата среза, к которому её
+    подшили. `ScopedInputs.answers_from` помнит этот срез; здесь он
+    превращается в дату, которая уходит в находки опросника и дальше
+    модели. Одно место на все три точки сборки находок — маршрут
+    черновика, текстовая выгрузка и клиентский отчёт.
+    """
+    if scoped.answers_from is None:
+        return None
+    snapshot = repo.snapshots.get(scoped.answers_from)
+    return snapshot.taken_on if snapshot is not None else None
+
+
 def to_measurements(measurements: Iterable[StoredMeasurement]) -> list[Measurement]:
     """Единая проекция `StoredMeasurement` → `scoring.Measurement`.
 

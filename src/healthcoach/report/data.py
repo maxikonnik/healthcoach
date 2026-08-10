@@ -21,7 +21,12 @@ from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.units import units_match
 from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
-from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import select_target
 from healthcoach.storage.drafts import DraftSection
@@ -111,6 +116,7 @@ def collect_report(
         to_measurements(scoped.measurements),
         subject,
         subject_at=subject_at,
+        answers_taken_on=answers_taken_on(repo, scoped),
     )
 
     return ReportData(

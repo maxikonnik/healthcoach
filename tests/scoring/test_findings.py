@@ -435,3 +435,32 @@ def test_cross_snapshot_derived_reason_is_hidden_from_the_client():
 
     masked = safe_finding(derived, audience=FOR_CLIENT)
     assert masked.note is None
+
+
+def test_questionnaire_findings_carry_the_date_of_the_snapshot_that_answered():
+    """Ревью: модели сказано «у каждой находки своя дата рядом с ней», а
+    находки опросника уходили без даты. Правило 3 берёт анкету из другого
+    среза — модель читала пятимесячную карту симптомов как сегодняшнюю."""
+    findings = collect_findings(
+        _questionnaire(),
+        load_references(REFS),
+        answers={"nadpochechniki.1": 2, "nadpochechniki.2": 1},
+        measurements=[Measurement("ферритин", 18, "нг/мл", taken_on=date(2026, 8, 9))],
+        subject=SUBJECT,
+        answers_taken_on=date(2026, 3, 10),
+    )
+    (block,) = [f for f in findings if f.subject_id.startswith("nadpochechniki")]
+    assert block.taken_on == date(2026, 3, 10)
+
+
+def test_questionnaire_findings_have_no_date_when_none_is_given():
+    """Вызов без новой даты ведёт себя ровно как раньше."""
+    findings = collect_findings(
+        _questionnaire(),
+        load_references(REFS),
+        answers={"nadpochechniki.1": 2},
+        measurements=[],
+        subject=SUBJECT,
+    )
+    (block,) = [f for f in findings if f.subject_id.startswith("nadpochechniki")]
+    assert block.taken_on is None

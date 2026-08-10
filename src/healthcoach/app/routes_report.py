@@ -14,7 +14,12 @@ from healthcoach.privacy.redact import redact
 from healthcoach.report.data import ReportError, collect_report
 from healthcoach.report.draft import DraftError, generate_draft
 from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
-from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.report.sections import SECTIONS
 from healthcoach.scoring.findings import collect_findings
 
@@ -62,6 +67,7 @@ def build_router(context: Context, templates) -> APIRouter:
             measurements,
             subject,
             subject_at=subject_at,
+            answers_taken_on=answers_taken_on(repo, scoped),
         ), subject
 
     def _page(request: Request, repo: Repositories, snapshot, client):

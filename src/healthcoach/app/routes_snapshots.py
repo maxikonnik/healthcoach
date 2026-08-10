@@ -14,7 +14,12 @@ from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answ
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
 from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
-from healthcoach.report.scope import build_subject_at, collect_inputs, to_measurements
+from healthcoach.report.scope import (
+    answers_taken_on,
+    build_subject_at,
+    collect_inputs,
+    to_measurements,
+)
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Subject
 from healthcoach.storage.snapshots import StoredMeasurement
@@ -239,6 +244,7 @@ def build_router(context: Context, templates) -> APIRouter:
             scoped = collect_inputs(repo, snapshot)
             measurements = to_measurements(scoped.measurements)
             answers = scoped.answers
+            answers_on = answers_taken_on(repo, scoped)
 
         if not client.is_complete:
             raise HTTPException(
@@ -267,6 +273,7 @@ def build_router(context: Context, templates) -> APIRouter:
             measurements,
             subject,
             subject_at=subject_at,
+            answers_taken_on=answers_on,
         )
         lines = [
             f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}",

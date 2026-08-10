@@ -625,3 +625,57 @@ def test_report_of_a_client_with_an_incomplete_card_is_400_not_409(client):
     response = test_client.get(f"/snapshots/{snapshot_id}/report.pdf")
 
     assert response.status_code == 400
+
+
+# Ревью: модели сказано, что у каждой находки своя дата рядом с ней, —
+# значит она должна быть и у находок опросника.
+
+
+def test_questionnaire_finding_reaches_the_model_with_its_snapshot_date(client):
+    """Анкета есть только в мартовском срезе, отчёт — на август.
+
+    Без даты «ОБРАЗ ЖИЗНИ: 8 баллов» приходил к модели голым числом, и
+    пятимесячная карта симптомов читалась как сегодняшняя.
+    """
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    with context.session() as repo:
+        march = next(
+            s for s in repo.snapshots.for_client("CL-0001") if s.id != snapshot_id
+        )
+        repo.snapshots.save_answers(march.id, {"obraz_zizni.1": 1, "obraz_zizni.2": 1})
+        repo.scopes.set_members(snapshot_id, [march.id, snapshot_id])
+    _approve_request(test_client, snapshot_id)
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    (line,) = [
+        line
+        for line in provider.prompts[0].splitlines()
+        if line.startswith("[опросник/obraz_zizni/весь]")
+    ]
+    assert "(от 01.03.2026)" in line
+
+
+def test_a_single_snapshot_draft_keeps_the_questionnaire_date_of_that_snapshot(
+    client,
+):
+    """Отчёт по одному срезу не меняется: у анкеты дата этого же среза, а
+    не пусто и не чужой срез."""
+    test_client, context, provider = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    with context.session() as repo:
+        repo.snapshots.save_answers(
+            snapshot_id, {"obraz_zizni.1": 1, "obraz_zizni.2": 1}
+        )
+    _approve_request(test_client, snapshot_id)
+
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    (line,) = [
+        line
+        for line in provider.prompts[0].splitlines()
+        if line.startswith("[опросник/obraz_zizni/весь]")
+    ]
+    assert "(от 01.09.2026)" in line

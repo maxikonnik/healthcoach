@@ -135,13 +135,20 @@ def collect_findings(
     measurements: list[Measurement],
     subject: Subject,
     subject_at: Callable[[date], Subject] | None = None,
+    answers_taken_on: date | None = None,
 ) -> list[Finding]:
     """Собрать находки из опросника, показателей и производных в один список.
 
     `subject_at` — необязательный источник субъекта по дате измерения
     (правило 4): коридор каждого показателя выбирается по возрасту клиента
     на дату этого измерения, а не на дату отчёта. Вызовы без него ведут
-    себя ровно как раньше — параметр по умолчанию `None`."""
+    себя ровно как раньше — параметр по умолчанию `None`.
+
+    `answers_taken_on` — дата среза, чья анкета взята (правило 3). Модели
+    сказано, что у каждой находки своя дата рядом с ней; без этого
+    находки опросника уходили к ней без даты, и пятимесячная карта
+    симптомов читалась как сегодняшняя. Вызовы без него тоже прежние:
+    находка опросника остаётся без даты."""
     findings: list[Finding] = []
 
     for scored in score_questionnaire(questionnaire, answers, subject.sex):
@@ -174,6 +181,7 @@ def collect_findings(
                 rule_missing=rule_missing,
                 answered=scored.answered,
                 total=scored.total,
+                taken_on=answers_taken_on,
             )
         )
 
