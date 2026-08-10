@@ -15,6 +15,29 @@ from dataclasses import dataclass
 from healthcoach.report.pdf import NOTHING, format_number, interval_text
 from healthcoach.report.scale import Scale, scale_for
 from healthcoach.scoring.findings import KIND_QUESTIONNAIRE, Finding, severity
+from healthcoach.scoring.references import (
+    STATUS_ABOVE,
+    STATUS_BELOW,
+    STATUS_DEFICIT,
+    STATUS_EXCESS,
+    STATUS_WITHIN,
+)
+
+_JUDGED_STATUSES = frozenset(
+    {STATUS_DEFICIT, STATUS_BELOW, STATUS_WITHIN, STATUS_ABOVE, STATUS_EXCESS}
+)
+"""Статусы, при которых значение действительно сверено с коридором коуча.
+
+Шкала — это утверждение инструмента «я оценил это значение»: маркер стоит
+на оси, подписанной числами. Поэтому право рисовать её даёт статус, а не
+наличие данных для геометрии. У неоценённых находок данные бывают, и они
+лгут: при `STATUS_UNIT_MISMATCH` `lab_range` приходит в единицах референса,
+а `value`/`units` — в единицах бланка (`scoring/references.py`), так что
+ферритин в пмоль/л против интервала 10–120 нг/мл нарисовал бы уверенный
+маркер «удобно внутри нормы» под плашкой «единицы не сопоставлены». Там,
+где целевого значения для пола и возраста не нашлось, `lab_range` тоже
+остаётся — но сверки с ним не было, и показать её положение значило бы
+выдать норму бланка за решение коуча."""
 
 _TONE_BY_SEVERITY = {
     0: "bad",
@@ -69,7 +92,11 @@ class FindingsView:
 
 
 def _row_for(finding: Finding) -> Row:
-    scale = scale_for(finding.value, finding.target, finding.lab_range)
+    scale = (
+        scale_for(finding.value, finding.target, finding.lab_range)
+        if finding.status in _JUDGED_STATUSES
+        else None
+    )
     axis_low_text, axis_high_text = (
         (format_number(scale.bound_low), format_number(scale.bound_high))
         if scale is not None

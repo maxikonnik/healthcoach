@@ -1,10 +1,22 @@
+import pytest
+
 from healthcoach.knowledge.references import Interval
 from healthcoach.report import findings_view as fv
 from healthcoach.report.findings_view import FindingsView, Group, Row, build_view
 from healthcoach.report.pdf import interval_text
 from healthcoach.report.scale import Scale
 from healthcoach.scoring.findings import KIND_ANALYTE, KIND_QUESTIONNAIRE, Finding
-from healthcoach.scoring.references import STATUS_DEFICIT, STATUS_NO_RULE, STATUS_WITHIN
+from healthcoach.scoring.references import (
+    STATUS_ABOVE,
+    STATUS_BELOW,
+    STATUS_DEFICIT,
+    STATUS_EXCESS,
+    STATUS_NOT_COMPUTED,
+    STATUS_NO_RULE,
+    STATUS_NO_VALUE,
+    STATUS_UNIT_MISMATCH,
+    STATUS_WITHIN,
+)
 
 
 def _finding(**overrides):
@@ -181,3 +193,80 @@ def test_interval_formatting_delegates_to_the_public_pdf_function(monkeypatch):
     row = build_view([_finding()]).attention.rows[0]
     assert row.target_text == "PATCHED"
     assert row.lab_text == "PATCHED"
+
+
+# Шкала — утверждение инструмента «я оценил это значение». Рисуется только
+# там, где оценка действительно состоялась.
+
+
+def test_unit_mismatch_draws_no_scale_even_though_a_lab_range_is_attached():
+    """Единицы не сошлись: `lab_range` пришёл в единицах референса, а
+    `value`/`units` — в единицах бланка. Шкала по ним нарисовала бы маркер
+    в чужой системе координат под плашкой «оценить не удалось»."""
+    finding = _finding(
+        title="Кальций",
+        status=STATUS_UNIT_MISMATCH,
+        value=2.4,
+        units="ммоль/л",
+        target=None,
+        lab_range=Interval(8.5, 10.5),
+        rule_missing=True,
+    )
+    row = build_view([finding]).unjudged.rows[0]
+    assert row.scale is None
+    assert row.axis_low_text == ""
+    assert row.axis_high_text == ""
+
+
+def test_no_target_for_this_sex_and_age_draws_no_scale():
+    """Показатель распознан, `lab_range` есть, но коридора для этого пола и
+    возраста нет — оценки не было, значит и шкалы быть не должно."""
+    finding = _finding(
+        title="Ферритин",
+        status=STATUS_NO_RULE,
+        value=30.0,
+        target=None,
+        lab_range=Interval(10, 120),
+        rule_missing=True,
+    )
+    row = build_view([finding]).unjudged.rows[0]
+    assert row.scale is None
+    assert row.axis_low_text == ""
+
+
+@pytest.mark.parametrize(
+    "status",
+    [STATUS_UNIT_MISMATCH, STATUS_NO_RULE, STATUS_NOT_COMPUTED, STATUS_NO_VALUE],
+)
+def test_unjudged_status_draws_no_scale_whatever_the_flags_say(status):
+    """Право рисовать шкалу даёт статус, а не флаг `rule_missing`.
+
+    Флаг означает «в базе знаний чего-то не хватает» и поднят на четырёх
+    разных путях (см. `AnalyteVerdict.title_from_document`) — это не то же
+    самое, что «оценки не было». Сверять по нему значило бы поставить
+    рисование шкалы в зависимость от чужого признака, который завтра
+    поднимут или не поднимут по своей причине.
+    """
+    finding = _finding(
+        status=status,
+        value=2.4,
+        target=Interval(2, 3),
+        lab_range=Interval(1, 5),
+        rule_missing=False,
+    )
+    (row,) = build_view([finding]).unjudged.rows
+    assert row.scale is None
+    assert row.axis_low_text == ""
+
+
+@pytest.mark.parametrize(
+    "status",
+    [STATUS_DEFICIT, STATUS_BELOW, STATUS_WITHIN, STATUS_ABOVE, STATUS_EXCESS],
+)
+def test_judged_status_still_gets_its_scale(status):
+    """Обратная сторона запрета: там, где оценка состоялась, шкала есть."""
+    finding = _finding(status=status, value=40.0, rule_missing=True)
+    rows = build_view([finding])
+    (row,) = rows.attention.rows or rows.normal.rows
+    assert row.scale is not None
+    assert row.axis_low_text == "10"
