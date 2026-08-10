@@ -270,3 +270,86 @@ def test_judged_status_still_gets_its_scale(status):
     (row,) = rows.attention.rows or rows.normal.rows
     assert row.scale is not None
     assert row.axis_low_text == "10"
+
+
+# Списки для базы знаний. `rule_missing` поднят на четырёх разных путях и
+# в один список их сваливать нельзя: каждый путь просит своей работы, а
+# один из них не просит никакой.
+
+
+def test_unit_mismatch_is_listed_as_units_work_not_as_a_missing_rule():
+    """Правило для кальция написано — не сошлись единицы. Отправлять коуча
+    писать правило, которое она уже написала, — ровно та ошибка, которой в
+    этом списке быть не должно."""
+    finding = _finding(
+        title="Кальций",
+        status=STATUS_UNIT_MISMATCH,
+        value=2.4,
+        units="ммоль/л",
+        target=None,
+        lab_range=Interval(8.5, 10.5),
+        rule_missing=True,
+    )
+    view = build_view([finding])
+    assert view.unit_mismatches == ("Кальций",)
+    assert view.missing_rules == ()
+
+
+def test_unknown_indicator_is_listed_as_a_missing_rule():
+    finding = _finding(
+        title="Гомоцистеин",
+        status=STATUS_NO_RULE,
+        target=None,
+        lab_range=None,
+        rule_missing=True,
+        title_from_document=True,
+    )
+    view = build_view([finding])
+    assert view.missing_rules == ("Гомоцистеин",)
+    assert view.unit_mismatches == ()
+
+
+def test_missing_target_for_this_sex_and_age_is_also_knowledge_base_work():
+    """Показатель распознан, но целевого коридора для этого пола и возраста
+    в файле нет — правило всё равно дописывать в knowledge/references/."""
+    finding = _finding(
+        title="Ферритин",
+        status=STATUS_NO_RULE,
+        value=30.0,
+        target=None,
+        lab_range=Interval(10, 120),
+        rule_missing=True,
+    )
+    assert build_view([finding]).missing_rules == ("Ферритин",)
+
+
+def test_blocked_derived_index_asks_for_no_knowledge_base_work_at_all():
+    """Производный индекс не посчитан из-за операнда, у которого своя
+    беда. Правило индекса на месте; называть его в списке пропущенных
+    правил — послать коуча чинить не то."""
+    finding = _finding(
+        title="Соотношение кальций/калий",
+        status=STATUS_NOT_COMPUTED,
+        value=None,
+        units="",
+        target=Interval(2, 3),
+        lab_range=None,
+        rule_missing=True,
+    )
+    view = build_view([finding])
+    assert view.missing_rules == ()
+    assert view.unit_mismatches == ()
+
+
+def test_unparsed_value_asks_for_no_knowledge_base_work_either():
+    finding = _finding(
+        title="Что-то с бланка",
+        status=STATUS_NO_VALUE,
+        value=None,
+        target=None,
+        lab_range=None,
+        rule_missing=True,
+    )
+    view = build_view([finding])
+    assert view.missing_rules == ()
+    assert view.unit_mismatches == ()

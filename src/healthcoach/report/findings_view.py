@@ -20,6 +20,8 @@ from healthcoach.scoring.references import (
     STATUS_BELOW,
     STATUS_DEFICIT,
     STATUS_EXCESS,
+    STATUS_NO_RULE,
+    STATUS_UNIT_MISMATCH,
     STATUS_WITHIN,
 )
 
@@ -89,6 +91,20 @@ class FindingsView:
     unjudged: Group
     questionnaire: Group
     missing_rules: tuple[str, ...]
+    """Показатели, для которых в knowledge/references/ нет правила.
+
+    Сюда идут оба пути статуса «правило не задано»: показатель не нашёлся
+    в базе знаний вовсе и показатель нашёлся, но целевого коридора для
+    этого пола и возраста у него нет. Работа в обоих случаях одна —
+    дописать правило."""
+    unit_mismatches: tuple[str, ...]
+    """Показатели, у которых правило есть, а единицы с ним не сведены.
+
+    Отдельный список, потому что это другая работа: не писать правило (оно
+    уже написано), а добавить написание единиц в синонимы. Свалить их в
+    `missing_rules` значило бы послать коуча писать правило, которое она
+    уже написала, — единственная ошибка, которой этому списку иметь
+    нельзя: он и существует, чтобы говорить, чем пополнить базу знаний."""
 
 
 def _row_for(finding: Finding) -> Row:
@@ -121,10 +137,17 @@ def build_view(findings: Iterable[Finding]) -> FindingsView:
     unjudged: list[Row] = []
     questionnaire: list[Row] = []
     missing_rules: list[str] = []
+    unit_mismatches: list[str] = []
 
     for finding in findings:
-        if finding.rule_missing:
+        # Разбор по настоящей причине, а не по `rule_missing`: тот же флаг
+        # поднимают и производный индекс, заблокированный чужой бедой, и
+        # нераспознанное значение — им от базы знаний ничего не нужно, и в
+        # списках «чем пополнить knowledge/references/» им не место.
+        if finding.status == STATUS_NO_RULE:
             missing_rules.append(finding.title)
+        elif finding.status == STATUS_UNIT_MISMATCH:
+            unit_mismatches.append(finding.title)
 
         row = _row_for(finding)
         if finding.kind == KIND_QUESTIONNAIRE:
@@ -149,4 +172,5 @@ def build_view(findings: Iterable[Finding]) -> FindingsView:
         unjudged=Group("Оценить не удалось", tuple(unjudged)),
         questionnaire=Group("Шкалы опросника", tuple(questionnaire)),
         missing_rules=tuple(missing_rules),
+        unit_mismatches=tuple(unit_mismatches),
     )

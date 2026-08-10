@@ -770,3 +770,48 @@ def test_the_arrow_classes_are_actually_drawn_as_arrows(client):
     # Треугольник строится на границах; риска шириной 2px стрелкой не станет.
     assert "border-right" in page
     assert "border-left" in page
+
+
+def _ferritin_in_wrong_units(test_client, context) -> int:
+    """Ферритин, записанный в единицах, которых нет в синонимах правила."""
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "2.4", "units": "ммоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+    return snapshot_id
+
+
+def test_unit_mismatch_is_not_named_in_the_missing_rules_block(client):
+    """Правило для ферритина написано — не сошлись единицы. Список
+    пропущенных правил обязан не звать коуча писать его заново."""
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Нет правила в базе знаний" not in page
+
+
+def test_unit_mismatch_gets_its_own_block_about_unit_synonyms(client):
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Единицы не сопоставлены" in page
+    assert "синонимы_единиц" in page
+    assert page.index("Единицы не сопоставлены") < page.rindex("Ферритин")
+
+
+def test_finding_with_no_scale_shows_no_bar_at_all(client):
+    """Оценки не было — значит и полосы под значением быть не должно."""
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Ферритин" in page
+    assert 'class="scale"' not in page
