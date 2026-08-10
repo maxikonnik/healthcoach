@@ -20,7 +20,7 @@ from healthcoach.knowledge.coach import Coach
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
 from healthcoach.knowledge.units import units_match
-from healthcoach.privacy.findings import safe_finding
+from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
 from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import Measurement, Subject, select_target
 from healthcoach.storage.drafts import DraftSection
@@ -117,7 +117,7 @@ def collect_report(
         # построению, а не по памяти о том, что title, units и note иногда
         # бывают чужим текстом. Правило одно на два пути наружу и живёт в
         # `privacy/findings.py`.
-        findings=tuple(safe_finding(f) for f in findings),
+        findings=tuple(safe_finding(f, audience=FOR_CLIENT) for f in findings),
         series=_series(
             repo, references, subject, client.code, snapshot.taken_on, confirmed
         ),

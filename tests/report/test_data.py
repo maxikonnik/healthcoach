@@ -406,12 +406,17 @@ def test_document_text_is_masked_the_same_way_for_the_model_and_for_the_report(
         assert safe in printed
 
 
-def test_the_coachs_own_note_does_not_reach_the_model_or_the_report(repo, knowledge):
-    """Заметка коуча — рабочая подсказка себе, а не текст для клиента.
+def test_the_coachs_own_note_reaches_the_model_but_not_the_client(repo, knowledge):
+    """Заметка коуча — клиническая рамка для модели и не текст для клиента.
 
-    В ней стоит «смотреть вместе с СРБ», а может стоять «направить к врачу:
-    Петров И.Л., +7 916 555-11-22». Контакты врачей вычёркиваются из
-    справочника специальностей, а заметка шла в отчёт и модели нетронутой.
+    «Растёт при воспалении — смотреть вместе с СРБ» — это то, без чего
+    трактовка беднее, и другого канала у неё нет: `трактовать_с` в базе
+    знаний есть, а модели не уходит вовсе. Поэтому модель заметку
+    получает.
+
+    Клиент — нет: писалась она не ему, и однажды в ней может оказаться
+    «направить к врачу: Петров И.Л., +7 916 555-11-22». Со стороны клиента
+    заметка снимается устройством, а не просьбой в инструкции.
     """
     questionnaire, references = knowledge
     client, snapshot = _client_with_snapshot(repo)
@@ -441,11 +446,52 @@ def test_the_coachs_own_note_does_not_reach_the_model_or_the_report(repo, knowle
     )
     data = _collect(repo, knowledge, snapshot.id)
 
-    assert note not in payload
+    assert note in payload
     assert note not in repr(data.findings)
     assert note not in _rendered(data)
-    # Само число при этом никуда не делось: убрана заметка, а не находка.
+    # Само число на месте на обоих путях: снята заметка, а не находка.
     assert "18" in payload
+    assert "18 нг/мл" in _rendered(data)
+
+
+def test_a_note_copied_from_the_clients_own_document_reaches_neither(repo, knowledge):
+    """Заметка про несопоставленные единицы цитирует бланк дословно.
+
+    Она не из базы знаний коуча, а из документа клиента, и разрешение,
+    выданное заметке коуча, её не касается: закрыта обеим сторонам.
+    """
+    questionnaire, references = knowledge
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", HOSTILE_UNITS, date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    subject = Subject(sex="ж", age=41)
+    findings = collect_findings(
+        questionnaire,
+        references,
+        {},
+        [Measurement("ферритин", 18.0, HOSTILE_UNITS, label="Ферритин", row_id=stored.id)],
+        subject,
+    )
+    (finding,) = [f for f in findings if f.subject_id == "ферритин"]
+    assert HOSTILE_UNITS in finding.note, "заметка обязана цитировать бланк — иначе тест пуст"
+
+    payload = build_payload(
+        findings,
+        subject,
+        "",
+        load_specialists(SPECIALISTS).public_view(),
+        repo.clients.get(client.code),
+    )
+    data = _collect(repo, knowledge, snapshot.id)
+
+    for text in (finding.note, HOSTILE_UNITS):
+        assert text not in payload
+        assert text not in repr(data.findings)
+        assert text not in _rendered(data)
 
 
 def test_incomplete_client_card_is_refused(repo, knowledge):

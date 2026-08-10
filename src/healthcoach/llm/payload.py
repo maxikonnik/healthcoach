@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from healthcoach.privacy.findings import safe_finding
+from healthcoach.privacy.findings import FOR_MODEL, safe_finding
 from healthcoach.privacy.leak import assert_no_leak
 from healthcoach.scoring.findings import Finding
 from healthcoach.scoring.references import Subject
@@ -44,7 +44,7 @@ def _finding_line(finding: Finding) -> str:
     # Единственная маска на оба пути наружу — вход модели и клиентский
     # отчёт. Своей копии здесь нет намеренно: она уже однажды разошлась с
     # копией в report/data.py.
-    safe = safe_finding(finding)
+    safe = safe_finding(finding, audience=FOR_MODEL)
     value = "—" if safe.value is None else safe.value
     parts = [
         f"[{finding_id(safe)}]",
