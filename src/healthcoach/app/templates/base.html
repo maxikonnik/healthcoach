@@ -57,6 +57,19 @@
     .scale-mark.outside.to-right { border-left: .45rem solid #b91c1c;
                                    transform: translateY(-50%); }
     .scale-ends { display: flex; justify-content: space-between; font-size: .75rem; opacity: .6; }
+    /* Страница объявляет color-scheme: light dark, значит холст под ней
+       бывает тёмным. Светлые цвета шкалы на нём превращают полосу в яркий
+       остров, а вылет маркера за её края — то, ради чего его и видно, —
+       красят тёмным по тёмному. Только новые классы шкалы: тёмная схема
+       .tag и .step жила без неё и до этого экрана — это отдельный вопрос,
+       и чинить его заодно значит смешать две правки в одной. */
+    @media (prefers-color-scheme: dark) {
+      .scale { background: #333; }
+      .scale-target { background: #22331f; border-color: #4c7a4c; }
+      .scale-mark { background: #ddd; }
+      .scale-mark.outside.to-left { border-right-color: #f87171; }
+      .scale-mark.outside.to-right { border-left-color: #f87171; }
+    }
   </style>
 </head>
 <body>

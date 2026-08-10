@@ -76,3 +76,38 @@ def test_normal_group_summary_is_not_painted_as_a_warning():
     page = _render([_finding()])
     assert "<summary>В норме" in page
     assert '<summary class="warn">В норме' not in page
+
+
+def _dark_block(page: str) -> str:
+    """Тело @media (prefers-color-scheme: dark) — по балансу скобок."""
+    marker = "@media (prefers-color-scheme: dark)"
+    assert marker in page, "тёмной схемы у страницы нет вовсе"
+    start = page.index("{", page.index(marker))
+    depth, index = 0, start
+    while index < len(page):
+        if page[index] == "{":
+            depth += 1
+        elif page[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return page[start + 1 : index]
+        index += 1
+    raise AssertionError("незакрытый блок тёмной схемы")
+
+
+def test_every_new_scale_class_has_a_dark_scheme_of_its_own():
+    """`color-scheme: light dark` объявлена в base.html, а цвета шкалы
+    зашиты светлыми: на тёмном холсте полоса становится ярким островом, а
+    вылет маркера за края полосы — тем, ради чего он и виден, — уходит
+    тёмным по тёмному."""
+    dark = _dark_block(_render([_finding()]))
+    for selector in (".scale ", ".scale-target ", ".scale-mark "):
+        assert selector in dark, f"{selector.strip()} остался светлым"
+
+
+def test_the_dark_block_does_not_touch_the_pre_existing_colours():
+    """`.tag` и `.step` жили здесь до шкалы, и их тёмная схема — отдельный
+    вопрос: чинить его заодно значит смешать две правки в одной."""
+    dark = _dark_block(_render([_finding()]))
+    assert ".tag" not in dark
+    assert ".step" not in dark
