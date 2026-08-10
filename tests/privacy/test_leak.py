@@ -7,10 +7,10 @@ from healthcoach.storage.clients import Client
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova",
     note=None,
 )
 
@@ -20,18 +20,18 @@ def test_clean_payload_passes():
 
 
 def test_surname_is_refused():
-    with pytest.raises(LeakError, match="Королько"):
-        assert_no_leak("Королькова жалуется на усталость", CLIENT)
+    with pytest.raises(LeakError, match="Соловьё"):
+        assert_no_leak("Соловьёва жалуется на усталость", CLIENT)
 
 
 def test_surname_in_another_case_is_refused():
     with pytest.raises(LeakError):
-        assert_no_leak("Направлена Корольковой к эндокринологу", CLIENT)
+        assert_no_leak("Направлена Соловьёвой к эндокринологу", CLIENT)
 
 
 def test_birth_date_is_refused():
-    with pytest.raises(LeakError, match="18.04.1987"):
-        assert_no_leak("Дата рождения 18.04.1987", CLIENT)
+    with pytest.raises(LeakError, match="24.03.1985"):
+        assert_no_leak("Дата рождения 24.03.1985", CLIENT)
 
 
 def test_client_code_is_refused():
@@ -40,17 +40,17 @@ def test_client_code_is_refused():
 
 
 def test_contacts_are_refused():
-    with pytest.raises(LeakError, match="korolkova"):
-        assert_no_leak("Написать на @korolkova", CLIENT)
+    with pytest.raises(LeakError, match="solovyova"):
+        assert_no_leak("Написать на @solovyova", CLIENT)
 
 
 def test_error_names_what_was_found_not_just_that_something_was():
     """Коуч должен понять, что чинить, а не только что отправка не пошла."""
     with pytest.raises(LeakError) as excinfo:
-        assert_no_leak("Королькова, 18.04.1987", CLIENT)
+        assert_no_leak("Соловьёва, 24.03.1985", CLIENT)
     message = str(excinfo.value)
-    assert "Королько" in message
-    assert "18.04.1987" in message
+    assert "Соловьё" in message
+    assert "24.03.1985" in message
 
 
 def test_guard_errs_towards_refusing_and_says_so():

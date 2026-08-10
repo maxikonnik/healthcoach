@@ -234,11 +234,11 @@ def test_the_blocked_note_does_not_echo_the_units_written_on_the_form():
         load_references(REFS),
         [
             Measurement("кальций", 10.0, "мг/дл"),
-            Measurement("калий", 4.0, "ммоль/л KOROLKOVA E.V."),
+            Measurement("калий", 4.0, "ммоль/л SOLOVYOVA I.A."),
         ],
     )
     assert verdict.status == "не удалось вычислить"
-    assert "KOROLKOVA E.V." not in verdict.note
+    assert "SOLOVYOVA I.A." not in verdict.note
     # Референсные единицы из базы знаний остаются — по ним коуч поймёт,
     # с чем не сошлось.
     assert "ммоль/л" in verdict.note

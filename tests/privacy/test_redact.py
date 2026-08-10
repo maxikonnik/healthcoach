@@ -7,46 +7,46 @@ from healthcoach.storage.clients import Client
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova, +7 916 123-45-67",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova, +7 916 123-45-67",
     note=None,
 )
 
 
 def test_full_name_is_removed_in_any_order():
-    text = "Пациент: КОРОЛЬКОВА Евгения Валерьевна. Евгения жалуется на усталость."
+    text = "Пациент: СОЛОВЬЁВА Ирина Анатольевна. Ирина жалуется на усталость."
     result = redact(text, CLIENT)
-    assert "КОРОЛЬКОВА" not in result.text
-    assert "Евгения" not in result.text
-    assert "Валерьевна" not in result.text
+    assert "СОЛОВЬЁВА" not in result.text
+    assert "Ирина" not in result.text
+    assert "Анатольевна" not in result.text
 
 
 def test_surname_is_removed_in_other_cases():
     """В бланках и в речи фамилия склоняется."""
-    result = redact("Направлена Корольковой на анализ", CLIENT)
-    assert "Королько" not in result.text
+    result = redact("Направлена Соловьёвой на анализ", CLIENT)
+    assert "Соловьё" not in result.text
 
 
 def test_birth_date_is_removed_in_several_notations():
-    text = "Дата рождения: 18.04.1987, она же 1987-04-18 и 18/04/1987"
+    text = "Дата рождения: 24.03.1985, она же 1985-03-24 и 24/03/1985"
     result = redact(text, CLIENT)
-    assert "18.04.1987" not in result.text
-    assert "1987-04-18" not in result.text
-    assert "18/04/1987" not in result.text
+    assert "24.03.1985" not in result.text
+    assert "1985-03-24" not in result.text
+    assert "24/03/1985" not in result.text
 
 
 def test_contacts_and_client_code_are_removed():
-    result = redact("Связь: @korolkova, +7 916 123-45-67, код CL-0001", CLIENT)
-    assert "@korolkova" not in result.text
+    result = redact("Связь: @solovyova, +7 916 123-45-67, код CL-0001", CLIENT)
+    assert "@solovyova" not in result.text
     assert "916" not in result.text
     assert "CL-0001" not in result.text
 
 
 def test_removed_items_are_listed_for_the_coach():
     """Коуч должен видеть, что именно убрано, а не только результат."""
-    result = redact("КОРОЛЬКОВА Евгения, 18.04.1987", CLIENT)
+    result = redact("СОЛОВЬЁВА Ирина, 24.03.1985", CLIENT)
     assert result.removed
 
 

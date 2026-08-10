@@ -15,9 +15,9 @@ SPECIALISTS = Path(__file__).parents[2] / "knowledge" / "specialists.yaml"
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
+    birth_date=date(1985, 3, 24),
     contacts=None,
     note=None,
 )
@@ -162,6 +162,6 @@ def test_request_that_names_the_client_never_reaches_the_model():
     with pytest.raises(LeakError):
         generate_draft(
             provider, [ANALYTE], Subject(sex="ж", age=39),
-            "Королькова жалуется на усталость", _specialties(), CLIENT,
+            "Соловьёва жалуется на усталость", _specialties(), CLIENT,
         )
     assert provider.prompts == []

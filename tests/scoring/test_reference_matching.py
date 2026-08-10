@@ -192,7 +192,7 @@ def test_only_the_unresolved_path_says_the_title_came_from_the_document():
 
     (no_value,) = check_measurements(
         _refs(),
-        [Measurement("ферритин", None, "нг/мл", label="KOROLKOVA E.V. Ферритин")],
+        [Measurement("ферритин", None, "нг/мл", label="SOLOVYOVA I.A. Ферритин")],
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert no_value.rule_missing is True
@@ -200,7 +200,7 @@ def test_only_the_unresolved_path_says_the_title_came_from_the_document():
 
     (mismatch,) = check_measurements(
         _refs(),
-        [Measurement("ферритин", 18.0, "мг/дл", label="KOROLKOVA E.V. Ферритин")],
+        [Measurement("ферритин", 18.0, "мг/дл", label="SOLOVYOVA I.A. Ферритин")],
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert mismatch.rule_missing is True
@@ -227,7 +227,7 @@ def test_a_target_missing_for_this_sex_and_age_keeps_the_title_from_the_knowledg
     )
     (verdict,) = check_measurements(
         load_references(tmp_path),
-        [Measurement("тестостерон", 1.2, "нмоль/л", label="KOROLKOVA E.V.")],
+        [Measurement("тестостерон", 1.2, "нмоль/л", label="SOLOVYOVA I.A.")],
         Subject(sex="ж", age=32, cycle_phase=None),
     )
     assert verdict.status == "правило не задано"

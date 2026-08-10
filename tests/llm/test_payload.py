@@ -17,10 +17,10 @@ REFS = Path(__file__).parents[2] / "knowledge" / "references"
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova",
     note=None,
 )
 
@@ -52,16 +52,16 @@ def test_payload_carries_the_findings():
 def test_payload_carries_sex_and_age_but_not_the_birth_date():
     payload = build_payload([FINDING], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
     assert "39" in payload
-    assert "18.04.1987" not in payload
+    assert "24.03.1985" not in payload
 
 
 def test_payload_refuses_a_request_that_still_names_the_client():
     """Сборка — единственный путь наружу, и она зовёт сторожа сама."""
-    with pytest.raises(LeakError, match="Королько"):
+    with pytest.raises(LeakError, match="Соловьё"):
         build_payload(
             [FINDING],
             Subject(sex="ж", age=39),
-            "Королькова жалуется на усталость",
+            "Соловьёва жалуется на усталость",
             _specialties(),
             CLIENT,
         )
@@ -107,7 +107,7 @@ def test_payload_does_not_send_the_verbatim_title_of_an_unresolved_finding():
     unresolved = Finding(
         kind="показатель",
         subject_id="",
-        title="KOROLKOVA E.V. Ферритин",
+        title="SOLOVYOVA E.V. Ферритин",
         value=18.0,
         units="нг/мл",
         status="правило не задано",
@@ -119,7 +119,7 @@ def test_payload_does_not_send_the_verbatim_title_of_an_unresolved_finding():
         title_from_document=True,
     )
     payload = build_payload([unresolved], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
-    assert "KOROLKOVA E.V. Ферритин" not in payload
+    assert "SOLOVYOVA E.V. Ферритин" not in payload
     assert "показатель из бланка, не распознан" in payload
     assert "18" in payload
     assert "правило не задано" in payload
@@ -136,7 +136,7 @@ def test_payload_does_not_send_the_verbatim_title_of_a_finding_with_no_rule_even
     resolved_but_missing = Finding(
         kind="показатель",
         subject_id="ferritin",
-        title="KOROLKOVA E.V. Ферритин",
+        title="SOLOVYOVA E.V. Ферритин",
         value=None,
         units="нг/мл",
         status="значение не распознано",
@@ -151,7 +151,7 @@ def test_payload_does_not_send_the_verbatim_title_of_a_finding_with_no_rule_even
     payload = build_payload(
         [resolved_but_missing], Subject(sex="ж", age=39), "", _specialties(), CLIENT
     )
-    assert "KOROLKOVA E.V. Ферритин" not in payload
+    assert "SOLOVYOVA E.V. Ферритин" not in payload
     assert "показатель из бланка, не распознан" in payload
     assert "значение не распознано" in payload
 
@@ -242,7 +242,7 @@ def test_payload_names_a_recognised_analyte_whose_units_did_not_match():
     него из базы знаний коуча, а не из бланка. Раздел «показатели» обязан
     такие находки назвать; под маской называть было бы нечем."""
     findings = _findings_for(
-        [Measurement("ферритин", 18.0, "мг/дл", label="KOROLKOVA E.V. Ферритин", row_id=5)]
+        [Measurement("ферритин", 18.0, "мг/дл", label="SOLOVYOVA E.V. Ферритин", row_id=5)]
     )
     payload = build_payload(
         findings, Subject(sex="ж", age=39), "", _specialties(), CLIENT
@@ -250,7 +250,7 @@ def test_payload_names_a_recognised_analyte_whose_units_did_not_match():
     assert "Ферритин" in payload
     assert "показатель из бланка, не распознан" not in payload
     assert "показатель/ферритин" in payload
-    assert "KOROLKOVA E.V." not in payload
+    assert "SOLOVYOVA E.V." not in payload
 
 
 def test_payload_does_not_carry_the_units_written_on_the_form():
@@ -258,12 +258,12 @@ def test_payload_does_not_carry_the_units_written_on_the_form():
     не закрывает ни units, ни отголосок исходного написания в note — а
     они стоят в той же строке."""
     findings = _findings_for(
-        [Measurement("ферритин", 18.0, "мкг/л KOROLKOVA E.V.", row_id=5)]
+        [Measurement("ферритин", 18.0, "мкг/л SOLOVYOVA E.V.", row_id=5)]
     )
     payload = build_payload(
         findings, Subject(sex="ж", age=39), "", _specialties(), CLIENT
     )
-    assert "KOROLKOVA E.V." not in payload
+    assert "SOLOVYOVA E.V." not in payload
     assert "единицы из бланка" in payload
     # Статус остаётся: модель знает, что показатель не истолковать.
     assert "единицы не сопоставлены" in payload

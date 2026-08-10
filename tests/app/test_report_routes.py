@@ -7,7 +7,7 @@ from healthcoach.app.deps import build_context
 from healthcoach.app.main import create_app
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
-WOMAN = {"full_name": "Королькова Евгения", "sex": "ж", "birth_date": "1987-04-18"}
+WOMAN = {"full_name": "Соловьёва Ирина", "sex": "ж", "birth_date": "1985-03-24"}
 
 
 class FakeProvider:
@@ -60,12 +60,12 @@ def test_request_is_saved_and_redaction_is_offered(client):
 
     test_client.post(
         f"/snapshots/{snapshot_id}/request",
-        data={"raw": "Королькова Евгения хочет разобраться с усталостью"},
+        data={"raw": "Соловьёва Ирина хочет разобраться с усталостью"},
     )
     page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
 
     # Исходный текст показан как есть — коуч должен видеть, с чем пришёл клиент.
-    assert "Королькова Евгения хочет разобраться с усталостью" in page
+    assert "Соловьёва Ирина хочет разобраться с усталостью" in page
 
     # Предложенная вычитка — содержимое поля «Уйдёт модели»: имя клиента из
     # неё убрано, а остальной текст запроса цел. Ниже на той же странице
@@ -76,8 +76,8 @@ def test_request_is_saved_and_redaction_is_offered(client):
     end = page.index("Сохранить вычитку", start)
     suggestion = page[start:end]
     assert "усталостью" in suggestion
-    assert "Королькова" not in suggestion
-    assert "Евгения" not in suggestion
+    assert "Соловьёва" not in suggestion
+    assert "Ирина" not in suggestion
 
 
 def test_draft_is_refused_until_the_request_is_approved(client):
@@ -224,7 +224,7 @@ def test_leak_in_the_approved_request_is_refused_not_sent(client):
     test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
     test_client.post(
         f"/snapshots/{snapshot_id}/request/redact",
-        data={"redacted": "Королькова Евгения устала"},
+        data={"redacted": "Соловьёва Ирина устала"},
     )
     test_client.post(f"/snapshots/{snapshot_id}/request/approve")
 

@@ -621,46 +621,46 @@ from healthcoach.storage.clients import Client
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova, +7 916 123-45-67",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova, +7 916 123-45-67",
     note=None,
 )
 
 
 def test_full_name_is_removed_in_any_order():
-    text = "Пациент: КОРОЛЬКОВА Евгения Валерьевна. Евгения жалуется на усталость."
+    text = "Пациент: СОЛОВЬЁВА Ирина Анатольевна. Ирина жалуется на усталость."
     result = redact(text, CLIENT)
-    assert "КОРОЛЬКОВА" not in result.text
-    assert "Евгения" not in result.text
-    assert "Валерьевна" not in result.text
+    assert "СОЛОВЬЁВА" not in result.text
+    assert "Ирина" not in result.text
+    assert "Анатольевна" not in result.text
 
 
 def test_surname_is_removed_in_other_cases():
     """В бланках и в речи фамилия склоняется."""
-    result = redact("Направлена Корольковой на анализ", CLIENT)
-    assert "Королько" not in result.text
+    result = redact("Направлена Соловьёвой на анализ", CLIENT)
+    assert "Соловьё" not in result.text
 
 
 def test_birth_date_is_removed_in_several_notations():
-    text = "Дата рождения: 18.04.1987, она же 1987-04-18 и 18/04/1987"
+    text = "Дата рождения: 24.03.1985, она же 1985-03-24 и 24/03/1985"
     result = redact(text, CLIENT)
-    assert "18.04.1987" not in result.text
-    assert "1987-04-18" not in result.text
-    assert "18/04/1987" not in result.text
+    assert "24.03.1985" not in result.text
+    assert "1985-03-24" not in result.text
+    assert "24/03/1985" not in result.text
 
 
 def test_contacts_and_client_code_are_removed():
-    result = redact("Связь: @korolkova, +7 916 123-45-67, код CL-0001", CLIENT)
-    assert "@korolkova" not in result.text
+    result = redact("Связь: @solovyova, +7 916 123-45-67, код CL-0001", CLIENT)
+    assert "@solovyova" not in result.text
     assert "916" not in result.text
     assert "CL-0001" not in result.text
 
 
 def test_removed_items_are_listed_for_the_coach():
     """Коуч должен видеть, что именно убрано, а не только результат."""
-    result = redact("КОРОЛЬКОВА Евгения, 18.04.1987", CLIENT)
+    result = redact("СОЛОВЬЁВА Ирина, 24.03.1985", CLIENT)
     assert result.removed
 
 
@@ -698,10 +698,10 @@ from healthcoach.storage.clients import Client
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova",
     note=None,
 )
 
@@ -711,18 +711,18 @@ def test_clean_payload_passes():
 
 
 def test_surname_is_refused():
-    with pytest.raises(LeakError, match="Королько"):
-        assert_no_leak("Королькова жалуется на усталость", CLIENT)
+    with pytest.raises(LeakError, match="Соловьё"):
+        assert_no_leak("Соловьёва жалуется на усталость", CLIENT)
 
 
 def test_surname_in_another_case_is_refused():
     with pytest.raises(LeakError):
-        assert_no_leak("Направлена Корольковой к эндокринологу", CLIENT)
+        assert_no_leak("Направлена Соловьёвой к эндокринологу", CLIENT)
 
 
 def test_birth_date_is_refused():
-    with pytest.raises(LeakError, match="18.04.1987"):
-        assert_no_leak("Дата рождения 18.04.1987", CLIENT)
+    with pytest.raises(LeakError, match="24.03.1985"):
+        assert_no_leak("Дата рождения 24.03.1985", CLIENT)
 
 
 def test_client_code_is_refused():
@@ -731,17 +731,17 @@ def test_client_code_is_refused():
 
 
 def test_contacts_are_refused():
-    with pytest.raises(LeakError, match="korolkova"):
-        assert_no_leak("Написать на @korolkova", CLIENT)
+    with pytest.raises(LeakError, match="solovyova"):
+        assert_no_leak("Написать на @solovyova", CLIENT)
 
 
 def test_error_names_what_was_found_not_just_that_something_was():
     """Коуч должен понять, что чинить, а не только что отправка не пошла."""
     with pytest.raises(LeakError) as excinfo:
-        assert_no_leak("Королькова, 18.04.1987", CLIENT)
+        assert_no_leak("Соловьёва, 24.03.1985", CLIENT)
     message = str(excinfo.value)
-    assert "Королько" in message
-    assert "18.04.1987" in message
+    assert "Соловьё" in message
+    assert "24.03.1985" in message
 
 
 def test_guard_errs_towards_refusing_and_says_so():
@@ -981,10 +981,10 @@ SPECIALISTS = Path(__file__).parents[2] / "knowledge" / "specialists.yaml"
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
-    contacts="@korolkova",
+    birth_date=date(1985, 3, 24),
+    contacts="@solovyova",
     note=None,
 )
 
@@ -1016,16 +1016,16 @@ def test_payload_carries_the_findings():
 def test_payload_carries_sex_and_age_but_not_the_birth_date():
     payload = build_payload([FINDING], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
     assert "39" in payload
-    assert "18.04.1987" not in payload
+    assert "24.03.1985" not in payload
 
 
 def test_payload_refuses_a_request_that_still_names_the_client():
     """Сборка — единственный путь наружу, и она зовёт сторожа сама."""
-    with pytest.raises(LeakError, match="Королько"):
+    with pytest.raises(LeakError, match="Соловьё"):
         build_payload(
             [FINDING],
             Subject(sex="ж", age=39),
-            "Королькова жалуется на усталость",
+            "Соловьёва жалуется на усталость",
             _specialties(),
             CLIENT,
         )
@@ -1522,9 +1522,9 @@ SPECIALISTS = Path(__file__).parents[2] / "knowledge" / "specialists.yaml"
 
 CLIENT = Client(
     code="CL-0001",
-    full_name="Королькова Евгения Валерьевна",
+    full_name="Соловьёва Ирина Анатольевна",
     sex="ж",
-    birth_date=date(1987, 4, 18),
+    birth_date=date(1985, 3, 24),
     contacts=None,
     note=None,
 )
@@ -1620,7 +1620,7 @@ def test_request_that_names_the_client_never_reaches_the_model():
     with pytest.raises(LeakError):
         generate_draft(
             provider, [ANALYTE], Subject(sex="ж", age=39),
-            "Королькова жалуется на усталость", _specialties(), CLIENT,
+            "Соловьёва жалуется на усталость", _specialties(), CLIENT,
         )
     assert provider.prompts == []
 ```
@@ -1895,7 +1895,7 @@ from healthcoach.app.deps import build_context
 from healthcoach.app.main import create_app
 
 KNOWLEDGE = Path(__file__).parents[2] / "knowledge"
-WOMAN = {"full_name": "Королькова Евгения", "sex": "ж", "birth_date": "1987-04-18"}
+WOMAN = {"full_name": "Соловьёва Ирина", "sex": "ж", "birth_date": "1985-03-24"}
 
 
 class FakeProvider:
@@ -1948,12 +1948,12 @@ def test_request_is_saved_and_redaction_is_offered(client):
 
     test_client.post(
         f"/snapshots/{snapshot_id}/request",
-        data={"raw": "Королькова Евгения хочет разобраться с усталостью"},
+        data={"raw": "Соловьёва Ирина хочет разобраться с усталостью"},
     )
     page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
 
     assert "усталостью" in page
-    assert "Королькова" not in page.split("ИСХОДНЫЙ")[-1] or True
+    assert "Соловьёва" not in page.split("ИСХОДНЫЙ")[-1] or True
 
 
 def test_draft_is_refused_until_the_request_is_approved(client):
