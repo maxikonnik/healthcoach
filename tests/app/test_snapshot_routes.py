@@ -815,3 +815,14 @@ def test_finding_with_no_scale_shows_no_bar_at_all(client):
     page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" in page
     assert 'class="scale"' not in page
+
+
+def test_value_above_the_corridor_is_visible_above_the_fold(client):
+    """Не только «дефицит»: «выше целевого» — тоже находка, требующая
+    внимания, и прятать её под свёрнутый блок нельзя."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "110")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "выше целевого" in page
+    assert "<details" not in page or page.index("выше целевого") < page.index("<details")

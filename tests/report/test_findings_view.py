@@ -353,3 +353,19 @@ def test_unparsed_value_asks_for_no_knowledge_base_work_either():
     view = build_view([finding])
     assert view.missing_rules == ()
     assert view.unit_mismatches == ()
+
+
+# Граница групп. Всё, что тяжелее «в норме», должно быть видно сразу, а не
+# под свёрнутым `<details>` — иначе экран прячет то, ради чего он сделан.
+
+
+@pytest.mark.parametrize("status", [STATUS_ABOVE, STATUS_BELOW, "неведомый статус"])
+def test_severity_one_stays_in_attention_and_out_of_the_collapsed_fold(status):
+    """«Выше целевого» и «ниже целевого» — тяжесть 1; незнакомый статус —
+    тоже 1 (`_SEVERITY_UNKNOWN`, чтобы не спрятался среди нормальных).
+    Сдвинь границу группировки на единицу — и всё это уедет в «оценить не
+    удалось», то есть под сгиб."""
+    view = build_view([_finding(status=status, value=95.0)])
+    assert [row.finding.status for row in view.attention.rows] == [status]
+    assert view.unjudged.rows == ()
+    assert view.normal.rows == ()
