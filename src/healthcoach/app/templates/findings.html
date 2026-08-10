@@ -18,7 +18,14 @@
   <p>{{ row.value_text }}</p>
   {% if row.scale %}
   <div class="scale">
+    {# Полосу нулевой ширины не рисуем вовсе: у неё есть рамка, и при
+       box-sizing: border-box она красит два пикселя зелёного у левого
+       края — «коридора нет» читалось бы как «коридор в самом низу оси».
+       То же состояние даёт округление, когда узкий коридор попадает на
+       широкую ось. #}
+    {% if row.scale.target_to_pct > row.scale.target_from_pct %}
     <div class="scale-target" style="left:{{ row.scale.target_from_pct }}%;width:{{ row.scale.target_to_pct - row.scale.target_from_pct }}%"></div>
+    {% endif %}
     {# Значение вне оси прижато к краю: сторона читается из value_pct, он
        у такого маркера ровно 0 или 100 (см. report/scale.py). #}
     <div class="scale-mark{% if row.scale.value_outside %} outside {{ 'to-left' if row.scale.value_pct == 0 else 'to-right' }}{% endif %}" style="left:{{ row.scale.value_pct }}%"></div>
@@ -47,7 +54,9 @@
 
 {% if view.normal.rows %}
 <details>
-  <summary class="warn">{{ view.normal.title }} — {{ view.normal.rows | length }}</summary>
+  {# Без .warn: «в норме» — не предупреждение. Янтарный тон уместен на
+     соседней группе «оценить не удалось», отсюда он и был скопирован. #}
+  <summary>{{ view.normal.title }} — {{ view.normal.rows | length }}</summary>
   {% for row in view.normal.rows %}{{ finding_block(row) }}{% endfor %}
 </details>
 {% endif %}
