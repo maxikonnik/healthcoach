@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 from healthcoach.knowledge.references import Analyte, Interval, References, Target
 from healthcoach.knowledge.sex import normalize_sex
@@ -43,6 +45,14 @@ class Measurement:
     и тот же идентификатор. Идентификатор строки не меняется, пока срез
     жив, — поэтому раздел черновика, сославшийся на находку, найдёт её и
     после перезагрузки страницы."""
+    taken_on: date | None = None
+    """Дата самого измерения (не среза и не отчёта). `None` у вызовов,
+    которые ещё не собирают свод по нескольким срезам, — тогда целевой
+    коридор подбирается по общему `Subject`, как раньше."""
+    snapshot_id: int | None = None
+    """Срез, из которого пришло измерение. Нужен `compute_derived`: индекс
+    из операндов разных срезов не означает того, что должен означать
+    (правило 5), и его нельзя посчитать молча."""
 
 
 @dataclass(frozen=True)
@@ -132,9 +142,20 @@ def _unresolved(measurement: Measurement, status: str) -> AnalyteVerdict:
 
 
 def check_measurements(
-    references: References, measurements: list[Measurement], subject: Subject
+    references: References,
+    measurements: list[Measurement],
+    subject: Subject,
+    subject_at: Callable[[date], Subject] | None = None,
 ) -> list[AnalyteVerdict]:
-    """Сверить измерения с референсами. Ничего не отбрасывать молча."""
+    """Сверить измерения с референсами. Ничего не отбрасывать молча.
+
+    `subject_at` — необязательный источник возраста на дату измерения
+    (правило 4 плана многосрезового отчёта): коридор выбирается по
+    `subject_at(measurement.taken_on)`, когда и колбэк передан, и у
+    измерения есть своя дата. Иначе — по общему `subject`, как раньше;
+    это единственный путь для всех вызовов, которые `subject_at` не
+    передают, — их поведение не меняется ни на бит.
+    """
     verdicts: list[AnalyteVerdict] = []
 
     for measurement in measurements:
@@ -146,6 +167,12 @@ def check_measurements(
         if analyte is None:
             verdicts.append(_unresolved(measurement, STATUS_NO_RULE))
             continue
+
+        subject_for_measurement = (
+            subject_at(measurement.taken_on)
+            if subject_at is not None and measurement.taken_on is not None
+            else subject
+        )
 
         if not units_match(analyte, measurement.units):
             verdicts.append(
@@ -171,7 +198,7 @@ def check_measurements(
             )
             continue
 
-        target = select_target(analyte, subject)
+        target = select_target(analyte, subject_for_measurement)
         if target is None:
             verdicts.append(
                 AnalyteVerdict(

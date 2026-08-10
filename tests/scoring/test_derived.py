@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -223,6 +224,59 @@ def test_missing_value_operand_blocks_the_derived_value_instead_of_crashing():
     assert verdict.value is None
     assert verdict.rule_missing is True
     assert "значение не распознано" in verdict.note
+
+
+def test_derived_computed_when_operands_share_a_snapshot():
+    """Правило 5: операнды одного среза — индекс считается, как раньше."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement("кальций", 10.0, "мг/дл", snapshot_id=7),
+            Measurement("калий", 4.0, "ммоль/л", snapshot_id=7),
+        ],
+    )
+    assert verdict.status == "в целевом"
+    assert verdict.value == 2.5
+
+
+def test_derived_blocked_when_operands_come_from_different_snapshots():
+    """Правило 5: мартовский кальций и августовский калий не образуют
+    осмысленное соотношение — индекс не посчитан, причина называет обе
+    даты."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement(
+                "кальций", 10.0, "мг/дл", taken_on=date(2026, 3, 10), snapshot_id=1
+            ),
+            Measurement(
+                "калий", 4.0, "ммоль/л", taken_on=date(2026, 8, 9), snapshot_id=2
+            ),
+        ],
+    )
+    assert verdict.status == "не удалось вычислить"
+    assert verdict.value is None
+    assert verdict.rule_missing is True
+    assert "разных срезов" in verdict.note
+    assert "10.03" in verdict.note
+    assert "09.08" in verdict.note
+
+
+def test_the_cross_snapshot_reason_is_coach_only():
+    """Причина непосчитанного индекса — рабочий текст коуча, а не находка
+    для клиента: `safe_finding` обязан её скрыть от клиента."""
+    (verdict,) = compute_derived(
+        load_references(REFS),
+        [
+            Measurement(
+                "кальций", 10.0, "мг/дл", taken_on=date(2026, 3, 10), snapshot_id=1
+            ),
+            Measurement(
+                "калий", 4.0, "ммоль/л", taken_on=date(2026, 8, 9), snapshot_id=2
+            ),
+        ],
+    )
+    assert verdict.note_private is True
 
 
 def test_the_blocked_note_does_not_echo_the_units_written_on_the_form():

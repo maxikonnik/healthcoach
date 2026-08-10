@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 from healthcoach.knowledge.questionnaire import (
@@ -9,7 +10,8 @@ from healthcoach.knowledge.questionnaire import (
     Threshold,
 )
 from healthcoach.knowledge.questionnaire import load_questionnaire
-from healthcoach.knowledge.references import load_references
+from healthcoach.knowledge.references import Interval, load_references
+from healthcoach.privacy.findings import FOR_CLIENT, safe_finding
 from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import (
     STATUS_NO_VALUE,
@@ -330,3 +332,82 @@ def test_degree_from_partial_answers_carries_the_count():
     assert incomplete.partial is True
     assert incomplete.answered == len(ids) - 1
     assert incomplete.total == len(ids)
+
+
+def test_subject_at_reaches_measurement_findings_through_collect_findings(tmp_path):
+    """Правило 4 сквозь весь путь: коридор находки — по дате измерения,
+    когда `subject_at` передан, а не по общему субъекту."""
+    (tmp_path / "test.yaml").write_text(
+        "показатели:\n"
+        "  - id: тестостерон\n"
+        "    название: Тестостерон\n"
+        "    единицы: нмоль/л\n"
+        "    целевые:\n"
+        "      - условие: {возраст: [null, 39]}\n"
+        "        оптимум: [10.0, 20.0]\n"
+        "      - условие: {возраст: [40, null]}\n"
+        "        оптимум: [20.0, 30.0]\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+
+    def subject_at(when: date) -> Subject:
+        return Subject(sex="м", age=40 if when >= date(2026, 8, 1) else 39)
+
+    findings = collect_findings(
+        _questionnaire(),
+        references,
+        answers={},
+        measurements=[
+            Measurement("тестостерон", 15.0, "нмоль/л", taken_on=date(2026, 3, 10)),
+            Measurement("тестостерон", 15.0, "нмоль/л", taken_on=date(2026, 8, 9)),
+        ],
+        subject=Subject(sex="м", age=0),
+        subject_at=subject_at,
+    )
+    targets = [f.target for f in findings if f.subject_id == "тестостерон"]
+    assert Interval(10.0, 20.0) in targets
+    assert Interval(20.0, 30.0) in targets
+
+
+def test_finding_carries_the_measurement_taken_on():
+    (finding,) = [
+        f
+        for f in collect_findings(
+            _questionnaire(),
+            load_references(REFS),
+            answers={},
+            measurements=[
+                Measurement(
+                    "ферритин", 18, "нг/мл", taken_on=date(2026, 3, 10)
+                )
+            ],
+            subject=SUBJECT,
+        )
+        if f.subject_id == "ферритин"
+    ]
+    assert finding.taken_on == date(2026, 3, 10)
+
+
+def test_cross_snapshot_derived_reason_is_hidden_from_the_client():
+    """Правило 5: причина непосчитанного индекса не уходит клиенту."""
+    findings = collect_findings(
+        _questionnaire(),
+        load_references(REFS),
+        answers={},
+        measurements=[
+            Measurement(
+                "кальций", 10.0, "мг/дл", taken_on=date(2026, 3, 10), snapshot_id=1
+            ),
+            Measurement(
+                "калий", 4.0, "ммоль/л", taken_on=date(2026, 8, 9), snapshot_id=2
+            ),
+        ],
+        subject=SUBJECT,
+    )
+    (derived,) = [f for f in findings if f.subject_id == "кальций_калий"]
+    assert derived.status == STATUS_NOT_COMPUTED
+    assert derived.note is not None
+
+    masked = safe_finding(derived, audience=FOR_CLIENT)
+    assert masked.note is None

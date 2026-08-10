@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 from healthcoach.knowledge.references import Interval, load_references
@@ -235,6 +236,71 @@ def test_a_target_missing_for_this_sex_and_age_keeps_the_title_from_the_knowledg
     assert verdict.title == "Тестостерон"
     assert verdict.title_from_document is False
     assert verdict.units_from_document is False
+
+
+def _age_split_references(tmp_path):
+    """Показатель с двумя коридорами, разделёнными ровно на 40-летии."""
+    (tmp_path / "test.yaml").write_text(
+        "показатели:\n"
+        "  - id: тестостерон\n"
+        "    название: Тестостерон\n"
+        "    единицы: нмоль/л\n"
+        "    целевые:\n"
+        "      - условие: {возраст: [null, 39]}\n"
+        "        оптимум: [10.0, 20.0]\n"
+        "      - условие: {возраст: [40, null]}\n"
+        "        оптимум: [20.0, 30.0]\n",
+        encoding="utf-8",
+    )
+    return load_references(tmp_path)
+
+
+def test_subject_at_picks_the_corridor_by_measurement_date(tmp_path):
+    """Клиент, чей день рождения между двумя измерениями: мартовское
+    сверяется с коридором для 39 лет, августовское — для 40 (правило 4)."""
+    references = _age_split_references(tmp_path)
+    birth_date = date(1986, 3, 15)
+
+    def subject_at(when: date) -> Subject:
+        years = when.year - birth_date.year
+        if (when.month, when.day) < (birth_date.month, birth_date.day):
+            years -= 1
+        return Subject(sex="м", age=years)
+
+    before, after = check_measurements(
+        references,
+        [
+            Measurement(
+                "тестостерон", 15.0, "нмоль/л", taken_on=date(2026, 3, 10)
+            ),
+            Measurement(
+                "тестостерон", 15.0, "нмоль/л", taken_on=date(2026, 8, 9)
+            ),
+        ],
+        # Общий subject заведомо не совпадает ни с одним из возрастов —
+        # если бы код проигнорировал subject_at, коридоры бы вовсе не
+        # нашлись (или совпали), и тест бы это поймал.
+        Subject(sex="м", age=0),
+        subject_at=subject_at,
+    )
+    assert before.target == Interval(10.0, 20.0)
+    assert after.target == Interval(20.0, 30.0)
+
+
+def test_measurement_without_taken_on_uses_the_general_subject(tmp_path):
+    """Измерение без своей даты — коридор по общему subject, как раньше."""
+    references = _age_split_references(tmp_path)
+
+    def subject_at(when: date) -> Subject:
+        raise AssertionError("subject_at не должен вызываться без taken_on")
+
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("тестостерон", 15.0, "нмоль/л")],
+        Subject(sex="м", age=40),
+        subject_at=subject_at,
+    )
+    assert verdict.target == Interval(20.0, 30.0)
 
 
 def test_the_row_of_the_snapshot_reaches_the_verdict():

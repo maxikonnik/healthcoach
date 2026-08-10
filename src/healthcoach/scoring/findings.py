@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 from healthcoach.knowledge.degrees import degree_severity
 from healthcoach.knowledge.questionnaire import Questionnaire
@@ -84,6 +86,10 @@ class Finding:
     """units — написание из бланка, а не объявленные единицы показателя."""
     note_private: bool = False
     """note — заметка коуча из базы знаний: наружу не идёт (см. AnalyteVerdict)."""
+    taken_on: date | None = None
+    """Дата измерения, из которого получилась находка. `None` у опросника и
+    там, где вход не несёт своей даты (обратная совместимость с вызовами до
+    многосрезового отчёта)."""
 
     @property
     def partial(self) -> bool:
@@ -100,7 +106,9 @@ class Finding:
         )
 
 
-def _from_verdict(verdict: AnalyteVerdict, kind: str) -> Finding:
+def _from_verdict(
+    verdict: AnalyteVerdict, kind: str, *, taken_on: date | None = None
+) -> Finding:
     return Finding(
         kind=kind,
         subject_id=verdict.analyte_id,
@@ -116,6 +124,7 @@ def _from_verdict(verdict: AnalyteVerdict, kind: str) -> Finding:
         title_from_document=verdict.title_from_document,
         units_from_document=verdict.units_from_document,
         note_private=verdict.note_private,
+        taken_on=taken_on,
     )
 
 
@@ -125,8 +134,14 @@ def collect_findings(
     answers: Answers,
     measurements: list[Measurement],
     subject: Subject,
+    subject_at: Callable[[date], Subject] | None = None,
 ) -> list[Finding]:
-    """Собрать находки из опросника, показателей и производных в один список."""
+    """Собрать находки из опросника, показателей и производных в один список.
+
+    `subject_at` — необязательный источник субъекта по дате измерения
+    (правило 4): коридор каждого показателя выбирается по возрасту клиента
+    на дату этого измерения, а не на дату отчёта. Вызовы без него ведут
+    себя ровно как раньше — параметр по умолчанию `None`."""
     findings: list[Finding] = []
 
     for scored in score_questionnaire(questionnaire, answers, subject.sex):
@@ -162,8 +177,12 @@ def collect_findings(
             )
         )
 
-    for verdict in check_measurements(references, measurements, subject):
-        findings.append(_from_verdict(verdict, KIND_ANALYTE))
+    verdicts = check_measurements(references, measurements, subject, subject_at)
+    # check_measurements выдаёт ровно один вердикт на измерение, в том же
+    # порядке — можно взять дату для находки прямо из входа, не расширяя
+    # AnalyteVerdict полем, которое ему самому не нужно.
+    for measurement, verdict in zip(measurements, verdicts):
+        findings.append(_from_verdict(verdict, KIND_ANALYTE, taken_on=measurement.taken_on))
 
     for verdict in compute_derived(references, measurements):
         findings.append(_from_verdict(verdict, KIND_DERIVED))
