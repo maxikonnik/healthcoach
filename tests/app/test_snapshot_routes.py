@@ -444,7 +444,8 @@ def test_steps_bar_shows_partial_indicators_step_linking_to_the_section(client):
 
     page = test_client.get(f"/snapshots/{snapshot_id}").text
     assert "сверено 1 из 2" in page
-    assert '#показатели' in page
+    assert 'href="#показатели"' in page
+    assert 'id="показатели"' in page
 
 
 def test_steps_bar_pdf_step_links_to_the_report_after_draft_approval(client_with_llm):
