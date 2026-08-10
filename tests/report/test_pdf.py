@@ -189,3 +189,42 @@ def test_signature_prints_nothing_extra_when_blank():
     html = render_report_html(data, templates)
 
     assert 'class="signature"' not in html
+
+
+def _rendered(text: str) -> str:
+    data = _data(sections=[_section("запрос", text)])
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    return render_report_html(data, templates)
+
+
+def test_bold_markdown_becomes_strong():
+    html = _rendered("**Ферритин: 18,0 нг/мл**")
+    assert "<strong>Ферритин: 18,0 нг/мл</strong>" in html
+    assert "**" not in html
+
+
+def test_italic_markdown_becomes_em():
+    html = _rendered("*курсив*")
+    assert "<em>курсив</em>" in html
+
+
+def test_lone_asterisk_does_not_survive():
+    html = _rendered("5 * 3 = 15")
+    assert "*" not in html
+
+
+def test_html_is_escaped_before_markdown_is_converted():
+    """Модель пишет то, что не проверено человеком, — экранирование обязано быть первым шагом.
+
+    Иначе `<script>` из текста модели станет живой разметкой в документе,
+    который берёт в руки клиент.
+    """
+    html = _rendered("<script>alert(1)</script> **жирный**")
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "<strong>жирный</strong>" in html
+
+
+def test_plain_paragraph_is_unchanged():
+    html = _rendered("Обычный текст без разметки.")
+    assert "<p>Обычный текст без разметки.</p>" in html
