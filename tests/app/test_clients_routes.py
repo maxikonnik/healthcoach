@@ -299,6 +299,29 @@ def test_report_redirects_to_the_freshest_snapshot_draft(client_and_context):
     assert response.headers["location"] == f"/snapshots/{new_id}/draft"
 
 
+def test_same_date_primary_is_the_larger_id_not_form_order(client_and_context):
+    """Ревью: две сдачи в один день — первичный срез должен решаться по
+    (taken_on, id) самого среза, а не по порядку появления в форме."""
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    smaller_id, larger_id = _snapshot_ids(test_client, context)
+    assert larger_id > smaller_id
+
+    response = test_client.post(
+        "/clients/CL-0001/reports",
+        # Меньший id указан первым в форме — если сортировка держится на
+        # (taken_on, id), это не должно повлиять на выбор первичного среза.
+        data={"snapshot_ids": [smaller_id, larger_id]},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"] == f"/snapshots/{larger_id}/draft"
+    with context.session() as repo:
+        assert repo.scopes.members(larger_id) == sorted([smaller_id, larger_id])
+
+
 def test_report_saves_the_chosen_scope(client_and_context):
     test_client, context = client_and_context
     test_client.post("/clients", data=WOMAN)
