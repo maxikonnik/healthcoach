@@ -209,3 +209,32 @@ def test_request_that_names_the_client_never_reaches_the_model():
             "Соловьёва жалуется на усталость", _specialties(), CLIENT,
         )
     assert provider.prompts == []
+
+
+def test_the_multi_date_warning_passes_through_the_leak_guard(monkeypatch):
+    """Ревью: предупреждение приписывалось к запросу уже после того, как
+    `build_payload` прогнал текст через сторожа утечки.
+
+    Сегодня текст статичен и не течёт, но естественная следующая правка —
+    подставить в него сами даты, и она пошла бы мимо проверки. Подмена
+    предупреждения строкой с фамилией клиента показывает, где именно оно
+    склеивается с запросом: сторож обязан отказать, а не пропустить.
+    """
+    from healthcoach.llm import payload as payload_module
+    from healthcoach.privacy.leak import LeakError
+
+    monkeypatch.setattr(
+        payload_module,
+        "_MULTI_DATE_WARNING",
+        f"ВНИМАНИЕ: разных дат много, клиент — {CLIENT.full_name}",
+    )
+    provider = FakeProvider()
+    early = replace(ANALYTE, taken_on=date(2026, 3, 10))
+    late = replace(ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1))
+
+    with pytest.raises(LeakError):
+        generate_draft(
+            provider, [early, late], Subject(sex="ж", age=39), "", _specialties(),
+            CLIENT,
+        )
+    assert provider.prompts == []
