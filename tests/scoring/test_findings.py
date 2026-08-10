@@ -389,6 +389,30 @@ def test_finding_carries_the_measurement_taken_on():
     assert finding.taken_on == date(2026, 3, 10)
 
 
+def test_each_finding_keeps_its_own_measurement_date_not_a_swapped_one():
+    """Ревью: пара измерение↔дата держится только на `zip(measurements,
+    verdicts)` — совпадающем порядке двух списков, ничем не закреплённом.
+    `check_measurements` отдаёт «ровно один вердикт на измерение, в том же
+    порядке» (см. его докстроку), но ничто не проверяло, что порядок и
+    правда совпал. Два разных показателя с двумя разными датами делают
+    подмену заметной: мутация `zip(list(reversed(measurements)), verdicts)`
+    отдаёт августовской находке мартовскую дату и наоборот — этот тест
+    обязан её поймать."""
+    findings = collect_findings(
+        _questionnaire(),
+        load_references(REFS),
+        answers={},
+        measurements=[
+            Measurement("ферритин", 18, "нг/мл", taken_on=date(2026, 3, 10)),
+            Measurement("кальций", 10.0, "мг/дл", taken_on=date(2026, 8, 9)),
+        ],
+        subject=SUBJECT,
+    )
+    by_id = {f.subject_id: f for f in findings}
+    assert by_id["ферритин"].taken_on == date(2026, 3, 10)
+    assert by_id["кальций"].taken_on == date(2026, 8, 9)
+
+
 def test_cross_snapshot_derived_reason_is_hidden_from_the_client():
     """Правило 5: причина непосчитанного индекса не уходит клиенту."""
     findings = collect_findings(
