@@ -165,6 +165,40 @@ def test_no_debt_badge_when_older_snapshots_are_finished(repo):
     assert not any("долг" in b.text for b in over.badges)
 
 
+def test_no_debt_badge_when_the_only_snapshot_is_still_open(repo):
+    """Незакрытый последний срез — это его собственное состояние, не долг.
+
+    Раньше оба теста долга сеяли уже закрытый последний срез, поэтому
+    исключение latest из подсчёта было холостым: убери его — и всё
+    оставалось зелёным. Здесь единственный срез — он же последний и
+    незакрытый, и именно его исключение обязано погасить плашку.
+    """
+    client = _client(repo)
+    s = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.snapshots.add_measurement(
+        s.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+
+    over = client_overview(repo, client)
+    assert not any("долг" in b.text for b in over.badges)
+
+
+def test_debt_excludes_the_open_latest_snapshot_from_its_own_count(repo):
+    """И старый, и последний срез не закрыты — но долг это только про старый."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    repo.snapshots.add_measurement(
+        fresh.id, "натрий", "Натрий", 140.0, "140", "ммоль/л", date(2026, 8, 20)
+    )
+
+    over = client_overview(repo, client)
+    assert any(b.text == "долг по прошлым срезам: 1" for b in over.badges)
+
+
 def test_incomplete_card_ignores_debt_from_old_snapshots(repo):
     client = _client(repo)
     old = repo.snapshots.create(client.code, date(2026, 3, 1))
