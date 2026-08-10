@@ -88,6 +88,15 @@ def test_axis_labels_carry_an_eight_percent_margin():
     assert scale.axis_high == 92.4
 
 
+def test_bound_low_high_are_the_honest_endpoints_without_the_margin():
+    """`bound_low`/`bound_high` — то, что попадёт на подпись оси; они не
+    должны быть раздвинуты, в отличие от `axis_low`/`axis_high`."""
+    scale = scale_for(75.0, Interval(60, 90), None)
+    assert scale is not None
+    assert scale.bound_low == 60
+    assert scale.bound_high == 90
+
+
 def test_scale_is_a_frozen_dataclass():
     scale = scale_for(75.0, Interval(60, 90), None)
     assert isinstance(scale, Scale)

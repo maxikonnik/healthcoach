@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from healthcoach.knowledge.references import Interval
 from healthcoach.report.pdf import NOTHING, format_number, interval_text
 from healthcoach.report.scale import Scale, scale_for
 from healthcoach.scoring.findings import KIND_QUESTIONNAIRE, Finding, severity
@@ -38,32 +37,6 @@ def _value_text(finding: Finding) -> str:
     """«18 нг/мл», «— нг/мл» при отсутствии значения — как в таблице PDF."""
     value = NOTHING if finding.value is None else format_number(finding.value)
     return f"{value} {finding.units}".strip()
-
-
-def _axis_bounds(
-    target: Interval | None, lab_range: Interval | None
-) -> tuple[float, float] | None:
-    """Настоящие (без отступа) концы оси — честные подписи для шаблона.
-
-    `Scale.axis_low`/`axis_high` уже раздвинуты на 8% (Task 1), чтобы
-    маркер у самого края оставался виден, так что это значения вроде
-    «3.6» вместо осмысленных «10». Подписывать ими концы оси значило бы
-    вынести на экран числовой шум. Здесь — тот же отбор конечных точек
-    `target`/`lab_range`, что и в `scale_for`, но без отступа: это не
-    вторая копия геометрии (сам отступ по-прежнему знает только
-    `scale.py`), а просто выбор двух чисел для подписи.
-    """
-    bounds: set[float] = set()
-    for interval in (target, lab_range):
-        if interval is None:
-            continue
-        if interval.low is not None:
-            bounds.add(interval.low)
-        if interval.high is not None:
-            bounds.add(interval.high)
-    if len(bounds) < 2:
-        return None
-    return min(bounds), max(bounds)
 
 
 @dataclass(frozen=True)
@@ -96,13 +69,15 @@ class FindingsView:
 
 
 def _row_for(finding: Finding) -> Row:
-    bounds = _axis_bounds(finding.target, finding.lab_range)
+    scale = scale_for(finding.value, finding.target, finding.lab_range)
     axis_low_text, axis_high_text = (
-        (format_number(bounds[0]), format_number(bounds[1])) if bounds else ("", "")
+        (format_number(scale.bound_low), format_number(scale.bound_high))
+        if scale is not None
+        else ("", "")
     )
     return Row(
         finding=finding,
-        scale=scale_for(finding.value, finding.target, finding.lab_range),
+        scale=scale,
         target_text=interval_text(finding.target),
         lab_text=interval_text(finding.lab_range),
         value_text=_value_text(finding),

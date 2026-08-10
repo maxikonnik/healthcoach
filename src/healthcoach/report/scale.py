@@ -21,12 +21,24 @@ _AXIS_MARGIN = 0.08
 
 @dataclass(frozen=True)
 class Scale:
-    """Готовая геометрия шкалы находки."""
+    """Готовая геометрия шкалы находки.
+
+    Опорные точки оси идут парой представлений. `bound_low`/`bound_high` —
+    честные концы `target`/`lab_range` без отступа; больше ни для чего не
+    годятся, кроме подписи оси текстом (`findings_view._row_for`).
+    `axis_low`/`axis_high` — те же точки, раздвинутые на `_AXIS_MARGIN`, —
+    по ним и только по ним считаются все проценты (`value_pct`,
+    `target_from_pct`, `target_to_pct`) и решается, вышло ли значение за
+    край. Подписать ось `axis_low`/`axis_high` значило бы показать коучу
+    числовой шум вроде «3.6» вместо осмысленного «10».
+    """
 
     value_pct: int
     target_from_pct: int
     target_to_pct: int
     value_outside: bool
+    bound_low: float
+    bound_high: float
     axis_low: float
     axis_high: float
 
@@ -100,6 +112,8 @@ def scale_for(
         target_from_pct=target_from_pct,
         target_to_pct=target_to_pct,
         value_outside=value_outside,
+        bound_low=raw_low,
+        bound_high=raw_high,
         axis_low=axis_low,
         axis_high=axis_high,
     )

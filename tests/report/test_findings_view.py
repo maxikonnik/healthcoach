@@ -2,6 +2,7 @@ from healthcoach.knowledge.references import Interval
 from healthcoach.report import findings_view as fv
 from healthcoach.report.findings_view import FindingsView, Group, Row, build_view
 from healthcoach.report.pdf import interval_text
+from healthcoach.report.scale import Scale
 from healthcoach.scoring.findings import KIND_ANALYTE, KIND_QUESTIONNAIRE, Finding
 from healthcoach.scoring.references import STATUS_DEFICIT, STATUS_NO_RULE, STATUS_WITHIN
 
@@ -142,6 +143,27 @@ def test_axis_labels_are_empty_when_there_is_no_scale():
     assert row.scale is None
     assert row.axis_low_text == ""
     assert row.axis_high_text == ""
+
+
+def test_axis_labels_follow_scale_for_bound_selection_not_a_second_copy(monkeypatch):
+    """Доказательство, что подписи берутся из `Scale.bound_low/bound_high`,
+    а не пересчитывают отбор границ заново: если бы `findings_view` держал
+    вторую копию правила, патч `scale_for` на эти подписи бы не повлиял.
+    """
+    patched = Scale(
+        value_pct=50,
+        target_from_pct=40,
+        target_to_pct=60,
+        value_outside=False,
+        bound_low=1.0,
+        bound_high=999.0,
+        axis_low=1.0,
+        axis_high=999.0,
+    )
+    monkeypatch.setattr(fv, "scale_for", lambda value, target, lab_range: patched)
+    row = build_view([_finding()]).attention.rows[0]
+    assert row.axis_low_text == "1"
+    assert row.axis_high_text == "999"
 
 
 def test_severity_lookup_delegates_to_the_public_scoring_function(monkeypatch):
