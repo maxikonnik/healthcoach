@@ -27,6 +27,9 @@ def _prepare_library_path() -> None:
     parts = [p for p in LIBRARY_PATHS if Path(p).is_dir()]
     if not parts:
         return
+    existing_parts = existing.split(":") if existing else []
+    if all(p in existing_parts for p in parts):
+        return  # уже подготовлено этим же процессом — не плодить дубли
     if existing:
         parts.append(existing)
     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(parts)
