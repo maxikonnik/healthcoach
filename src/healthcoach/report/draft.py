@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from healthcoach.llm.payload import build_payload, finding_id
@@ -59,8 +59,14 @@ def generate_draft(
     request: str,
     specialties: Sequence[dict[str, str]],
     client: Client,
+    on_section: Callable[[int, int], None] | None = None,
 ) -> list[GeneratedSection]:
-    """Собрать черновик по разделам. Останавливается на первом отказе."""
+    """Собрать черновик по разделам. Останавливается на первом отказе.
+
+    `on_section` вызывается после каждого готового раздела числом готовых
+    и общим числом. Сборка идёт минуты, и без этого экрану коуча нечего
+    показать: разделы попадают в базу все разом и только в самом конце.
+    """
     payload = build_payload(findings, subject, request, specialties, client)
 
     generated: list[GeneratedSection] = []
@@ -78,4 +84,6 @@ def generate_draft(
                 finding_ids=_section_findings(section, findings),
             )
         )
+        if on_section is not None:
+            on_section(len(generated), len(SECTIONS))
     return generated

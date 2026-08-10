@@ -16,6 +16,15 @@ from healthcoach.scoring.findings import collect_findings
 from healthcoach.scoring.references import Measurement, Subject
 
 
+_in_flight: dict[int, int] = {}
+"""Сколько разделов уже собрано у сборки, идущей прямо сейчас.
+
+В базу разделы попадают все разом и только в самом конце, поэтому по ней
+ход сборки не виден. Живёт в памяти одного процесса — этого хватает:
+инструмент локальный, и работает с ним один человек.
+"""
+
+
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
@@ -121,6 +130,23 @@ def build_router(context: Context, templates) -> APIRouter:
                 )
         return RedirectResponse(f"/snapshots/{snapshot_id}/draft", status_code=303)
 
+    @router.get("/snapshots/{snapshot_id}/draft/progress")
+    def draft_progress(snapshot_id: int):
+        """Сколько разделов уже собрано.
+
+        Сборка идёт несколько минут: восемь обращений к модели подряд внутри
+        одного запроса. Без этого экран коуча висит без единого признака
+        жизни, и естественная реакция — нажать кнопку ещё раз, запустив
+        вторую сборку.
+        """
+        with context.session() as repo:
+            _snapshot_and_client(repo, snapshot_id)
+            stored = len(repo.drafts.sections(snapshot_id))
+        return {
+            "собрано": _in_flight.get(snapshot_id, stored),
+            "всего": len(SECTIONS),
+        }
+
     @router.post("/snapshots/{snapshot_id}/draft")
     def build_draft(snapshot_id: int):
         with context.session() as repo:
@@ -147,6 +173,7 @@ def build_router(context: Context, templates) -> APIRouter:
                 detail="находок нет — интерпретировать нечего",
             )
 
+        _in_flight[snapshot_id] = 0
         try:
             generated = generate_draft(
                 context.llm,
@@ -155,11 +182,16 @@ def build_router(context: Context, templates) -> APIRouter:
                 request_text,
                 context.specialists.public_view(),
                 client,
+                on_section=lambda done, total: _in_flight.__setitem__(
+                    snapshot_id, done
+                ),
             )
         except LeakError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DraftError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        finally:
+            _in_flight.pop(snapshot_id, None)
 
         try:
             with context.session() as repo:

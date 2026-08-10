@@ -54,9 +54,50 @@
 {% if not sections %}
 <p class="muted">Черновик ещё не собран.</p>
 {% if client_request and client_request.approved %}
-<form method="post" action="/snapshots/{{ snapshot.id }}/draft">
-  <button type="submit">Собрать черновик</button>
+<form method="post" action="/snapshots/{{ snapshot.id }}/draft" id="draft-form">
+  <button type="submit" id="draft-button">Собрать черновик</button>
 </form>
+<div id="draft-status" hidden>
+  <p id="draft-line"><strong>Собираю черновик.</strong>
+    Это несколько минут: разделы собираются по одному. Не закрывайте страницу.</p>
+  <progress id="draft-bar" max="{{ titles | length }}" value="0"></progress>
+  <p id="draft-count" class="muted">Готово 0 из {{ titles | length }}</p>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('draft-form');
+  var button = document.getElementById('draft-button');
+  var status = document.getElementById('draft-status');
+  var bar = document.getElementById('draft-bar');
+  var count = document.getElementById('draft-count');
+  if (!form) return;
+
+  form.addEventListener('submit', function () {
+    // Сборка идёт несколько минут: разделы собираются по одному, каждый —
+    // отдельное обращение к модели. Кнопка запирается, иначе второе нажатие
+    // запустит вторую сборку и потратит лимиты подписки вдвое.
+    button.disabled = true;
+    button.textContent = 'Собираю…';
+    status.hidden = false;
+
+    var started = Date.now();
+    function tick() {
+      fetch('/snapshots/{{ snapshot.id }}/draft/progress')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var sec = Math.round((Date.now() - started) / 1000);
+          bar.max = d['всего'];
+          bar.value = d['собрано'];
+          count.textContent = 'Готово ' + d['собрано'] + ' из ' + d['всего'] +
+            ' — идёт ' + sec + ' с';
+        })
+        .catch(function () { /* сеть моргнула — вернёмся через три секунды */ });
+    }
+    tick();
+    setInterval(tick, 3000);
+  });
+})();
+</script>
 {% else %}
 <p class="muted">Сборка станет доступна, когда запрос клиента будет вычитан
   и утверждён.</p>

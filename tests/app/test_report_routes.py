@@ -36,6 +36,15 @@ def client(tmp_path):
         yield test_client, context, provider
 
 
+def _approve_request(test_client, snapshot_id: int) -> None:
+    """Провести запрос через ввод, вычитку и утверждение."""
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+
+
 def _snapshot_with_a_finding(test_client, context) -> int:
     test_client.post("/clients", data=WOMAN)
     test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-09-01"})
@@ -380,3 +389,37 @@ def test_the_rewrite_request_button_is_gone_once_the_draft_is_approved(client):
     assert "Переписать запрос" not in after
     # И правка раздела тоже — на неё маршрут отвечает тем же 409-м.
     assert "Сохранить правку" not in after
+
+
+def test_progress_reports_how_many_sections_are_ready(client):
+    """Сборка идёт минуты: без этого экран висит без признаков жизни."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    empty = test_client.get(f"/snapshots/{snapshot_id}/draft/progress").json()
+    assert empty["собрано"] == 0
+    assert empty["всего"] == 8
+
+    _approve_request(test_client, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+
+    full = test_client.get(f"/snapshots/{snapshot_id}/draft/progress").json()
+    assert full["собрано"] == full["всего"]
+
+
+def test_progress_of_an_unknown_snapshot_is_404(client):
+    test_client, _, _ = client
+    assert test_client.get("/snapshots/999/draft/progress").status_code == 404
+
+
+def test_draft_button_locks_itself_on_submit(client):
+    """Второе нажатие запустило бы вторую сборку — восемь лишних вызовов."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+    _approve_request(test_client, snapshot_id)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+    assert "button.disabled = true" in page
+    assert "draft/progress" in page
+    assert "<progress" in page
+    assert 'id="draft-status"' in page
