@@ -79,3 +79,18 @@ class RequestRepository:
             "SELECT * FROM requests WHERE snapshot_id = ?", (snapshot_id,)
         ).fetchone()
         return _request(row) if row is not None else None
+
+    def unapproved_snapshot_ids(self, client_code: str) -> list[int]:
+        """Срезы клиента с запросом, который ещё не утверждён.
+
+        Один запрос на клиента: опрос по каждому срезу в цикле умножил бы
+        число обращений к базе на количество его срезов.
+        """
+        rows = self._connection.execute(
+            "SELECT r.snapshot_id AS snapshot_id "
+            "FROM requests r "
+            "JOIN snapshots s ON s.id = r.snapshot_id "
+            "WHERE s.client_code = ? AND r.approved = 0",
+            (client_code,),
+        ).fetchall()
+        return [row["snapshot_id"] for row in rows]

@@ -199,6 +199,51 @@ def test_debt_excludes_the_open_latest_snapshot_from_its_own_count(repo):
     assert any(b.text == "долг по прошлым срезам: 1" for b in over.badges)
 
 
+def test_unapproved_request_in_an_old_snapshot_is_debt_too(repo):
+    """Долг обязан замечать неутверждённый запрос, а не только показатели
+    и черновик — иначе он определяет «незакрыто» иначе, чем плашка среза."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.requests.save(old.id, "Устал")  # показатели сверены, запрос — нет
+    fresh = repo.snapshots.create(client.code, date(2026, 9, 1))
+    m2 = repo.snapshots.add_measurement(
+        fresh.id, "натрий", "Натрий", 140.0, "140", "ммоль/л", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(m2.id, fresh.id)
+    repo.requests.save(fresh.id, "Хочу сбросить вес")
+    repo.requests.set_redacted(fresh.id, "Хочу сбросить вес")
+    repo.requests.approve(fresh.id)
+
+    over = client_overview(repo, client)
+    assert any(b.text == "долг по прошлым срезам: 1" for b in over.badges)
+
+
+def test_dashboard_debt_agrees_with_old_snapshot_funnel_on_unapproved_request(repo):
+    """Сценарий ревью: старый срез со сверенными показателями и
+    неутверждённым запросом, последний срез пуст. Рабочий стол не должен
+    молчать про долг, пока внутри старого среза шаг «Запрос» горит part."""
+    client = _client(repo)
+    old = repo.snapshots.create(client.code, date(2026, 3, 1))
+    m = repo.snapshots.add_measurement(
+        old.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    repo.snapshots.confirm_measurement(m.id, old.id)
+    repo.requests.save(old.id, "Устал")
+    repo.snapshots.create(client.code, date(2026, 9, 1))
+
+    old_steps = snapshot_steps(repo, old.id)
+    over = client_overview(repo, client)
+    assert old_steps[2].state == "part"
+    assert [b.text for b in over.badges] == [
+        "ожидаем данные клиента",
+        "долг по прошлым срезам: 1",
+    ]
+
+
 def test_incomplete_card_ignores_debt_from_old_snapshots(repo):
     client = _client(repo)
     old = repo.snapshots.create(client.code, date(2026, 3, 1))

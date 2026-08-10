@@ -53,10 +53,17 @@ def client_overview(repo, client: Client) -> Overview:
 
 
 def _snapshots_with_unfinished_work(repo, client_code: str) -> set[int]:
-    """Срезы клиента с неподтверждённым измерением или черновиком без утверждения."""
+    """Срезы клиента с несверенным показателем, неутверждённым запросом или
+    черновиком без утверждения.
+
+    Определение «незакрыто» здесь обязано совпадать с тем, что решает
+    предупреждения в _snapshot_badges — иначе рабочий стол и воронка среза
+    расскажут разные истории об одном и том же срезе.
+    """
     unverified = repo.snapshots.unverified_counts_by_snapshot(client_code)
+    unapproved_requests = repo.requests.unapproved_snapshot_ids(client_code)
     unapproved_drafts = repo.drafts.unapproved_snapshot_ids(client_code)
-    return set(unverified) | set(unapproved_drafts)
+    return set(unverified) | set(unapproved_requests) | set(unapproved_drafts)
 
 
 def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
