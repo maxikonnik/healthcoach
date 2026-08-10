@@ -132,6 +132,8 @@ def compute_derived(
                 lab_range=None,
                 note=derived.note,
                 rule_missing=False,
+                # Как и у показателя: заметка написана коучем для коуча.
+                note_private=True,
             )
         )
 

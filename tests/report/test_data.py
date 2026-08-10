@@ -2,13 +2,23 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
+from fastapi.templating import Jinja2Templates
 
 from healthcoach.knowledge.coach import Coach
 from healthcoach.knowledge.questionnaire import load_questionnaire
-from healthcoach.knowledge.references import load_references
-from healthcoach.llm.payload import UNRESOLVED_TITLE
+from healthcoach.knowledge.references import Interval, load_references
+from healthcoach.knowledge.specialists import load_specialists
+from healthcoach.llm.payload import build_payload
+from healthcoach.privacy.findings import DOCUMENT_UNITS, UNRESOLVED_TITLE
 from healthcoach.report.data import ReportError, collect_report
-from healthcoach.scoring.references import STATUS_NO_RULE
+from healthcoach.report.pdf import render_report_html
+from healthcoach.scoring.findings import collect_findings
+from healthcoach.scoring.references import (
+    STATUS_NO_RULE,
+    STATUS_UNIT_MISMATCH,
+    Measurement,
+    Subject,
+)
 from healthcoach.storage.clients import ClientRepository
 from healthcoach.storage.db import open_database
 from healthcoach.storage.drafts import DraftRepository
@@ -16,6 +26,8 @@ from healthcoach.storage.snapshots import SnapshotRepository
 
 REFS = Path(__file__).parents[2] / "knowledge" / "references"
 SPEC = Path(__file__).parents[2] / "knowledge" / "questionnaire.yaml"
+SPECIALISTS = Path(__file__).parents[2] / "knowledge" / "specialists.yaml"
+TEMPLATES_DIR = Path(__file__).parents[2] / "src" / "healthcoach" / "app" / "templates"
 COACH = Coach(name="Иконникова Екатерина", title="нутрициолог", signature="")
 
 
@@ -224,6 +236,216 @@ def test_document_text_does_not_reach_the_report(repo, knowledge):
     assert finding.value == 18.0
     assert finding.status == STATUS_NO_RULE
     assert "SOLOVYOVA" not in repr(data)
+
+
+def _approved_draft_with_dynamics(repo, snapshot_id):
+    """Черновик, в котором есть раздел «динамика»: только под ним печатается график."""
+    repo.drafts.save_section(snapshot_id, "показатели", "Текст показателей.", ())
+    repo.drafts.save_section(snapshot_id, "динамика", "Это точка отсчёта.", ())
+    repo.drafts.approve(snapshot_id, datetime(2026, 9, 2, 10, 0))
+
+
+def _rendered(data):
+    return render_report_html(data, Jinja2Templates(directory=str(TEMPLATES_DIR)))
+
+
+def test_series_carries_the_units_and_the_corridor_from_the_knowledge_base(
+    repo, knowledge
+):
+    """Подпись оси и коридор — из базы знаний коуча, а не откуда придётся.
+
+    Ни одно утверждение об этом не стояло: `target` можно было занулить, и
+    коридор молча исчез бы со всех графиков продукта, а `units` подменить
+    названием показателя, и подпись «Ферритин, Ферритин» никого бы не
+    остановила. Единицы здесь ещё и синоним референсных («мкг/л»), то
+    есть арифметики между ними нет: точка остаётся, подпись — каноническая.
+    """
+    _, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "мкг/л", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    data = _collect(repo, knowledge, snapshot.id)
+
+    (series,) = data.series
+    assert series.title == "Ферритин"
+    assert series.units == "нг/мл"
+    assert series.target == Interval(60, 90)
+    assert [p.value for p in series.points] == [18.0]
+
+
+def test_a_measurement_whose_units_did_not_match_does_not_enter_the_series(
+    repo, knowledge
+):
+    """Чего вердикт отказался судить, того график не рисует.
+
+    Калий 2.4 мг/дл — это около 0.61 ммоль/л. Сохранён он как есть: показатель
+    распознан, а пересчёта из мг/дл коуч не объявлял, поэтому `analyte_id`
+    выставлен, а единицы остались с бланка. Пока ряд отбирался по одному
+    `analyte_id`, эта точка попадала на график, откладывалась по оси,
+    подписанной «ммоль/л», и клиент видел падение с 4.2 под нижнюю границу
+    коридора. Падения не было.
+    """
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    matched = repo.snapshots.add_measurement(
+        march.id, "калий", "Калий", 4.2, "4.2", "ммоль/л", date(2026, 3, 1)
+    )
+    mismatched = repo.snapshots.add_measurement(
+        september.id, "калий", "Калий", 2.4, "2.4", "мг/дл", date(2026, 9, 1)
+    )
+    repo.snapshots.confirm_measurement(matched.id, march.id)
+    repo.snapshots.confirm_measurement(mismatched.id, september.id)
+    _approved_draft(repo, september.id)
+
+    data = _collect(repo, knowledge, september.id)
+
+    (verdict,) = [f for f in data.findings if f.subject_id == "калий"]
+    assert verdict.status == STATUS_UNIT_MISMATCH
+    assert verdict.target is None
+
+    (series,) = data.series
+    assert series.units == "ммоль/л"
+    assert [p.value for p in series.points] == [4.2]
+    assert series.has_dynamics is False
+
+
+def test_an_older_snapshot_shows_no_measurement_taken_after_it(repo, knowledge):
+    """Отчёт по мартовскому срезу не знает про сентябрьский забор.
+
+    Коуч печатает отчёт заново когда угодно, в том числе через полгода.
+    Без верхней границы по дате мартовский PDF получал график, дотянутый до
+    сентябрьского значения, — и спорил сам с собой: находки собраны по
+    одному срезу, модель написала «это точка отсчёта», а рядом линия.
+    """
+    client, march = _client_with_snapshot(repo, date(2026, 3, 1))
+    september = repo.snapshots.create(client.code, date(2026, 9, 1))
+    early = repo.snapshots.add_measurement(
+        march.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 2, 20)
+    )
+    late = repo.snapshots.add_measurement(
+        september.id, "ферритин", "Ферритин", 45.0, "45", "нг/мл", date(2026, 8, 25)
+    )
+    repo.snapshots.confirm_measurement(early.id, march.id)
+    repo.snapshots.confirm_measurement(late.id, september.id)
+    _approved_draft_with_dynamics(repo, march.id)
+    _approved_draft_with_dynamics(repo, september.id)
+
+    march_data = _collect(repo, knowledge, march.id)
+    (series,) = march_data.series
+    assert [p.value for p in series.points] == [18.0]
+    assert series.has_dynamics is False
+    assert "<svg" not in _rendered(march_data)
+
+    september_data = _collect(repo, knowledge, september.id)
+    (series,) = september_data.series
+    assert [p.value for p in series.points] == [18.0, 45.0]
+    assert series.has_dynamics is True
+    assert _rendered(september_data).count("<svg") == 1
+
+
+HOSTILE_LABEL = "MEDLAB 4471 Ферритин"
+HOSTILE_UNITS = "ед/MEDLAB +7 916 555-11-22"
+
+
+def test_document_text_is_masked_the_same_way_for_the_model_and_for_the_report(
+    repo, knowledge
+):
+    """Маска на текст бланка одна, и проверена она на обоих путях сразу.
+
+    Копий было две, и они разошлись: вход модели закрывал заголовок,
+    единицы и заметку, а сборка отчёта — только заголовок, так что
+    единицы с бланка и заметка, цитирующая их дословно, доходили до
+    `ReportData` нетронутыми. Пока их никто не печатал, это было незаметно;
+    таблица ключевых показателей их печатает. Оба пути проверяются здесь
+    вместе, чтобы разойтись им было негде.
+    """
+    questionnaire, references = knowledge
+    client, snapshot = _client_with_snapshot(repo)
+    unresolved = repo.snapshots.add_measurement(
+        snapshot.id, "", HOSTILE_LABEL, 18.0, "18", HOSTILE_UNITS, date(2026, 8, 20)
+    )
+    mismatched = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", HOSTILE_UNITS, date(2026, 8, 20)
+    )
+    for stored in (unresolved, mismatched):
+        repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    subject = Subject(sex="ж", age=41)
+    findings = collect_findings(
+        questionnaire,
+        references,
+        {},
+        [
+            Measurement(m.analyte_id, m.value, m.units, label=m.raw_name, row_id=m.id)
+            for m in repo.snapshots.measurements(snapshot.id)
+        ],
+        subject,
+    )
+    payload = build_payload(
+        findings,
+        subject,
+        "",
+        load_specialists(SPECIALISTS).public_view(),
+        repo.clients.get(client.code),
+    )
+    data = _collect(repo, knowledge, snapshot.id)
+    report = repr(data.findings)
+    printed = _rendered(data)
+
+    for secret in (HOSTILE_LABEL, HOSTILE_UNITS, "MEDLAB", "555-11-22"):
+        assert secret not in payload
+        assert secret not in report
+        assert secret not in printed
+    for safe in (UNRESOLVED_TITLE, DOCUMENT_UNITS):
+        assert safe in payload
+        assert safe in report
+        assert safe in printed
+
+
+def test_the_coachs_own_note_does_not_reach_the_model_or_the_report(repo, knowledge):
+    """Заметка коуча — рабочая подсказка себе, а не текст для клиента.
+
+    В ней стоит «смотреть вместе с СРБ», а может стоять «направить к врачу:
+    Петров И.Л., +7 916 555-11-22». Контакты врачей вычёркиваются из
+    справочника специальностей, а заметка шла в отчёт и модели нетронутой.
+    """
+    questionnaire, references = knowledge
+    client, snapshot = _client_with_snapshot(repo)
+    stored = repo.snapshots.add_measurement(
+        snapshot.id, "ферритин", "Ферритин", 18.0, "18", "нг/мл", date(2026, 8, 20)
+    )
+    repo.snapshots.confirm_measurement(stored.id, snapshot.id)
+    _approved_draft(repo, snapshot.id)
+
+    note = references.analyte("ферритин").note
+    assert note, "у ферритина в базе знаний есть заметка — иначе тест ничего не держит"
+
+    subject = Subject(sex="ж", age=41)
+    findings = collect_findings(
+        questionnaire,
+        references,
+        {},
+        [Measurement("ферритин", 18.0, "нг/мл", label="Ферритин", row_id=stored.id)],
+        subject,
+    )
+    payload = build_payload(
+        findings,
+        subject,
+        "",
+        load_specialists(SPECIALISTS).public_view(),
+        repo.clients.get(client.code),
+    )
+    data = _collect(repo, knowledge, snapshot.id)
+
+    assert note not in payload
+    assert note not in repr(data.findings)
+    assert note not in _rendered(data)
+    # Само число при этом никуда не делось: убрана заметка, а не находка.
+    assert "18" in payload
 
 
 def test_incomplete_client_card_is_refused(repo, knowledge):

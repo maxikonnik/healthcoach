@@ -3,17 +3,24 @@
 Шаблон не ходит в базу: он получает готовое и только раскладывает. Так
 вёрстку можно править, не боясь сломать выборку, а выборку проверить
 тестом без единой строки HTML.
+
+`ReportData` безопасен по построению: всё, что в нём лежит, можно
+напечатать клиенту. Держится это одним местом — `privacy.safe_finding`,
+через которую здесь проходит каждая находка, и тем же предикатом единиц,
+которым сверка решает, можно ли об измерении судить. Печатать что-то из
+`ReportData` можно, не перечитывая, откуда взялся текст.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from healthcoach.knowledge.coach import Coach
 from healthcoach.knowledge.references import Interval, References
 from healthcoach.knowledge.questionnaire import Questionnaire
-from healthcoach.llm.payload import UNRESOLVED_TITLE
+from healthcoach.knowledge.units import units_match
+from healthcoach.privacy.findings import safe_finding
 from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import Measurement, Subject, select_target
 from healthcoach.storage.drafts import DraftSection
@@ -39,9 +46,9 @@ class Series:
 
     @property
     def has_dynamics(self) -> bool:
-        """Динамика начинается со второго измерения.
+        """Динамика появляется начиная со второго среза.
 
-        Одна точка — это первое измерение, а не динамика. Рисовать по ней
+        Одна точка — это точка отсчёта, а не динамика. Рисовать по ней
         график значит показать клиенту линию, которой нет.
         """
         return len(self.points) > 1
@@ -105,33 +112,43 @@ def collect_report(
         taken_on=snapshot.taken_on,
         coach=coach,
         sections=tuple(repo.drafts.sections(snapshot_id)),
-        findings=tuple(_mask_document_titles(findings)),
-        series=_series(repo, references, subject, client.code, confirmed),
+        # Маска ставится здесь, на границе сборки отчёта, а не в шаблоне —
+        # чтобы всё, что построено на `ReportData`, было безопасно по
+        # построению, а не по памяти о том, что title, units и note иногда
+        # бывают чужим текстом. Правило одно на два пути наружу и живёт в
+        # `privacy/findings.py`.
+        findings=tuple(safe_finding(f) for f in findings),
+        series=_series(
+            repo, references, subject, client.code, snapshot.taken_on, confirmed
+        ),
         approved_at=approved_at,
     )
 
 
-def _mask_document_titles(findings: list[Finding]) -> list[Finding]:
-    """Заменить title находок, списанный с бланка клиента, на общую формулировку.
-
-    Та же маска, что закрывает вход модели (`llm/payload.py`): показатель,
-    которого нет в базе знаний, всё равно не истолковать, а бланк может
-    нести что угодно, вплоть до имени клиента или контактов клиники.
-    Маска ставится здесь, на границе сборки отчёта, а не в шаблоне — чтобы
-    всё, что построено на `ReportData`, было безопасно по построению, а не
-    по памяти о том, что title иногда бывает чужим текстом.
-    """
-    return [
-        replace(f, title=UNRESOLVED_TITLE) if f.title_from_document else f
-        for f in findings
-    ]
-
-
-def _series(repo, references, subject, client_code, confirmed) -> tuple[Series, ...]:
+def _series(
+    repo, references, subject, client_code, taken_on: date, confirmed
+) -> tuple[Series, ...]:
     """Ряды динамики по показателям этого среза.
 
-    В ряд идут только сверенные измерения: клиент не должен увидеть точку,
-    которую коуч не проверил.
+    Три условия, и каждое отсекает точку, которой на графике быть не должно.
+
+    Сверенность: клиент не должен увидеть точку, которую коуч не проверил.
+
+    Дата забора не позже даты среза: отчёт печатается по срезу, и коуч
+    может напечатать его заново через полгода. Без верхней границы график
+    в мартовском отчёте дотягивался бы до сентябрьского забора — и спорил
+    бы с собственным текстом: находки собираются по одному срезу, модели
+    сказали «это точка отсчёта», а рядом нарисована линия.
+
+    Единицы: `units_match` — тот же предикат, которым сверка решает,
+    можно ли вообще судить об измерении. Если единицы с референсом не
+    сопоставлены, вердикт отказывается судить («единицы не сопоставлены»,
+    без целевого коридора) — а точка на графике судила бы: её отложили бы
+    по оси, подписанной единицами из базы знаний, и сравнили с коридором.
+    2.4 мг/дл калия (это около 0.61 ммоль/л) нарисовались бы падением с
+    4.2 ммоль/л под нижнюю границу коридора — падением, которого не было.
+    Отдельного сравнения здесь нет намеренно: две копии одного правила уже
+    расходились в этом проекте.
     """
     result: list[Series] = []
     for analyte_id in dict.fromkeys(m.analyte_id for m in confirmed if m.analyte_id):
@@ -141,7 +158,10 @@ def _series(repo, references, subject, client_code, confirmed) -> tuple[Series, 
         points = tuple(
             Point(taken_on=m.taken_on, value=m.value)
             for m in repo.snapshots.history(client_code, analyte_id)
-            if m.confirmed and m.value is not None
+            if m.confirmed
+            and m.value is not None
+            and m.taken_on <= taken_on
+            and units_match(analyte, m.units)
         )
         if not points:
             continue

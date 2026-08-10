@@ -82,6 +82,8 @@ class Finding:
     """title списан с бланка клиента, а не взят из базы знаний коуча."""
     units_from_document: bool = False
     """units — написание из бланка, а не объявленные единицы показателя."""
+    note_private: bool = False
+    """note — заметка коуча из базы знаний: наружу не идёт (см. AnalyteVerdict)."""
 
     @property
     def partial(self) -> bool:
@@ -113,6 +115,7 @@ def _from_verdict(verdict: AnalyteVerdict, kind: str) -> Finding:
         row_id=verdict.row_id,
         title_from_document=verdict.title_from_document,
         units_from_document=verdict.units_from_document,
+        note_private=verdict.note_private,
     )
 
 
