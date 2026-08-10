@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from healthcoach.app.deps import Context, Repositories
+from healthcoach.app.status import snapshot_steps
 from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answers
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
@@ -91,6 +92,7 @@ def render_snapshot_page(
         "snapshot.html",
         {
             "snapshot": snapshot,
+            "steps": snapshot_steps(repo, snapshot.id),
             "rows": _rows(context, repo, snapshot.id),
             "answers_count": len(repo.snapshots.answers(snapshot.id)),
             "imported": imported,
