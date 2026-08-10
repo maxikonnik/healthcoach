@@ -243,8 +243,6 @@ def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
     badges: list[Badge] = []
     measurements = repo.snapshots.measurements(snapshot_id)
     answers = repo.snapshots.answers(snapshot_id)
-    if not measurements and not answers:
-        badges.append(Badge("muted", "ожидаем данные клиента"))
     unverified = sum(1 for m in measurements if not m.confirmed)
     if unverified:
         badges.append(Badge("warn", f"не сверено: {unverified}"))
@@ -252,7 +250,12 @@ def _snapshot_badges(repo, snapshot_id: int) -> tuple[Badge, ...]:
         badges.append(Badge("ok", "отчёт готов"))
     elif repo.drafts.sections(snapshot_id):
         badges.append(Badge("warn", "черновик ждёт утверждения"))
-    return tuple(badges) or (Badge("muted", "в работе"),)
+    if badges:
+        return tuple(badges)
+    # Ничего не сработало: пустой срез ждёт данных, непустой просто в работе.
+    if not measurements and not answers:
+        return (Badge("muted", "ожидаем данные клиента"),)
+    return (Badge("muted", "в работе"),)
 
 
 def snapshot_steps(repo, snapshot_id: int) -> tuple[Step, ...]:
@@ -302,7 +305,7 @@ def snapshot_steps(repo, snapshot_id: int) -> tuple[Step, ...]:
     return (questionnaire, indicators, req, draft, pdf)
 ```
 
-- [ ] **Step 4: Прогнать, закоммитить** (`uv run pytest -q` → 563; `git commit -m "feat: модуль состояния работы — плашки клиента и шаги среза"`, стажить только свои пути)
+- [ ] **Step 4: Прогнать, закоммитить** (`uv run pytest -q` → 562; `git commit -m "feat: модуль состояния работы — плашки клиента и шаги среза"`, стажить только свои пути)
 
 ---
 
