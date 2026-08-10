@@ -19,7 +19,9 @@
   {% if row.scale %}
   <div class="scale">
     <div class="scale-target" style="left:{{ row.scale.target_from_pct }}%;width:{{ row.scale.target_to_pct - row.scale.target_from_pct }}%"></div>
-    <div class="scale-mark{% if row.scale.value_outside %} outside{% endif %}" style="left:{{ row.scale.value_pct }}%"></div>
+    {# Значение вне оси прижато к краю: сторона читается из value_pct, он
+       у такого маркера ровно 0 или 100 (см. report/scale.py). #}
+    <div class="scale-mark{% if row.scale.value_outside %} outside {{ 'to-left' if row.scale.value_pct == 0 else 'to-right' }}{% endif %}" style="left:{{ row.scale.value_pct }}%"></div>
   </div>
   <div class="scale-ends"><span>{{ row.axis_low_text }}</span><span>{{ row.axis_high_text }}</span></div>
   {% endif %}

@@ -43,7 +43,19 @@
     .scale-target { position: absolute; top: 0; bottom: 0; background: #e8f2e8; border: 1px solid #9c9; }
     .scale-mark { position: absolute; top: -.2rem; bottom: -.2rem; width: 2px;
                   background: #333; transform: translateX(-50%); }
-    .scale-mark.outside { background: #b91c1c; transform: none; }
+    /* Значение вне оси — треугольная стрелка за краем полосы, а не риска
+       другого цвета: цветом на этом экране закодирована тяжесть статуса,
+       и красная риска читалась бы как «значение плохое», тогда как речь о
+       другом — «шкала его не показывает, оно дальше края». Форма отличает
+       её от риски внутри полосы с любого расстояния. */
+    .scale-mark.outside { width: 0; height: 0; background: none;
+                          top: 50%; bottom: auto;
+                          border-top: .35rem solid transparent;
+                          border-bottom: .35rem solid transparent; }
+    .scale-mark.outside.to-left { border-right: .45rem solid #b91c1c;
+                                  transform: translate(-100%, -50%); }
+    .scale-mark.outside.to-right { border-left: .45rem solid #b91c1c;
+                                   transform: translateY(-50%); }
     .scale-ends { display: flex; justify-content: space-between; font-size: .75rem; opacity: .6; }
   </style>
 </head>

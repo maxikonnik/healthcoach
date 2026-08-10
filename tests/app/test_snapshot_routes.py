@@ -722,3 +722,51 @@ def test_missing_rule_indicator_is_named_in_the_missing_rules_block(client):
     assert "Нет правила в базе знаний" in page
     assert "Гомоцистеин" in page
     assert page.index("Нет правила в базе знаний") < page.rindex("Гомоцистеин")
+
+
+# Значение за пределами оси — это не «плохое значение», а «шкала его не
+# показывает». Отличаться от риски внутри полосы оно должно формой, а не
+# только цветом: цвет уже занят тяжестью статуса.
+
+
+def test_value_off_the_right_edge_gets_an_arrow_pointing_right(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "400")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark outside to-right" style="left:100%"' in page
+    assert "outside to-left" not in page
+
+
+def test_value_off_the_left_edge_gets_an_arrow_pointing_left(client):
+    """Левый край — вторая половина дефекта: без своего класса стрелка
+    оказывалась внутри полосы и читалась как риска на самом её начале."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "0.5")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark outside to-left" style="left:0%"' in page
+    assert "outside to-right" not in page
+
+
+def test_value_inside_the_axis_stays_a_plain_tick(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "70")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark" style="left:' in page
+    assert "scale-mark outside" not in page
+
+
+def test_the_arrow_classes_are_actually_drawn_as_arrows(client):
+    """Классы без правил в стилях — это обещание, которое не выполняется:
+    и `scale.py`, и план говорят о стрелке, а не о риске другого цвета."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "400")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert ".scale-mark.outside.to-left" in page
+    assert ".scale-mark.outside.to-right" in page
+    # Треугольник строится на границах; риска шириной 2px стрелкой не станет.
+    assert "border-right" in page
+    assert "border-left" in page
