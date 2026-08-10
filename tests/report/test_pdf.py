@@ -445,9 +445,9 @@ def test_single_date_report_has_no_date_column_and_the_old_header():
     """
     html = _rendered_with([_finding(taken_on=date(2026, 8, 20))], covers_several_dates=False)
 
-    assert "<th>Дата</th>" not in html
+    assert "Дата сдачи" not in html
     assert "Срез от 01.09.2026" in html
-    assert "Данные с" not in html
+    assert "Анализы сданы" not in html
 
 
 def test_multi_date_report_shows_a_date_per_row_and_the_span_in_the_header():
@@ -468,10 +468,13 @@ def test_multi_date_report_shows_a_date_per_row_and_the_span_in_the_header():
         covers_several_dates=True,
     )
 
-    assert "<th>Дата</th>" in html
+    # Клиент не коуч: «Дата» и «Данные с» ни о чём ему не говорили — из
+    # шапки нельзя было понять, дата это забора крови или изготовления
+    # отчёта.
+    assert "<th>Дата сдачи анализа</th>" in html
     assert "<td>01.03.2026</td>" in html
     assert "<td>25.08.2026</td>" in html
-    assert "Данные с 01.03.2026 по 25.08.2026" in html
+    assert "Анализы сданы с 01.03.2026 по 25.08.2026" in html
     assert "Срез от" not in html
 
 
@@ -521,5 +524,40 @@ def test_pdf_builds_for_a_multi_date_report_with_the_date_column():
 
     with pdfplumber.open(io.BytesIO(pdf)) as doc:
         text = "\n".join(page.extract_text() or "" for page in doc.pages)
-    assert "Данные с 01.03.2026 по 25.08.2026" in text
-    assert "Дата" in text
+    assert "Анализы сданы с 01.03.2026 по 25.08.2026" in text
+    assert "Дата сдачи анализа" in text
+
+
+def test_header_span_names_the_lab_dates_only_not_the_questionnaire_date():
+    """Шапка обещает клиенту даты сдачи анализов — значит дата анкеты её
+    не расширяет. Анкета несёт дату своего среза (правило 3), и попади
+    она в диапазон, «анализы сданы с 01.03» было бы неправдой."""
+    from healthcoach.scoring.findings import KIND_QUESTIONNAIRE
+
+    html = _rendered_with(
+        [
+            _finding(taken_on=date(2026, 8, 20)),
+            _finding(
+                subject_id="витамин_д",
+                title="Витамин Д",
+                value=22.0,
+                units="нг/мл",
+                taken_on=date(2026, 8, 25),
+            ),
+            _finding(
+                kind=KIND_QUESTIONNAIRE,
+                subject_id="obraz_zizni/весь",
+                title="ОБРАЗ ЖИЗНИ",
+                value=8.0,
+                units="баллов",
+                status="в пределах нормы",
+                target=None,
+                lab_range=None,
+                taken_on=date(2026, 3, 1),
+            ),
+        ],
+        covers_several_dates=True,
+    )
+
+    assert "Анализы сданы с 20.08.2026 по 25.08.2026" in html
+    assert "01.03.2026" not in html
