@@ -158,7 +158,13 @@ def build_router(context: Context, templates) -> APIRouter:
                     status_code=409,
                     detail="черновик утверждён и не пересобирается",
                 )
-            repo.scopes.set_members(primary.id, snapshot_ids)
+            try:
+                repo.scopes.set_members(primary.id, snapshot_ids)
+            except ValueError as exc:
+                # Между проверкой approved_at выше и этой записью черновик
+                # мог утвердить другой запрос — та же гонка, что у разделов
+                # черновика (`drafts.save_section`), и тот же 409.
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(f"/snapshots/{primary.id}/draft", status_code=303)
 
     @router.get("/clients/{code}/questionnaire")

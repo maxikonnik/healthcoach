@@ -435,3 +435,35 @@ def test_freshest_snapshot_checkbox_is_checked_by_default(client_and_context):
     new_checkbox = page[new_row - 20 : new_row + 60]
     assert "checked" not in old_checkbox
     assert "checked" in new_checkbox
+
+
+def test_approval_racing_the_scope_write_is_409_not_500(
+    client_and_context, monkeypatch
+):
+    """Утверждение прошло между проверкой маршрута и записью набора.
+
+    Ровно та же гонка, что у разделов черновика: хранилище отказывает,
+    маршрут переводит отказ в 409, а не роняет 500. Подмена `set_members`
+    воспроизводит именно этот зазор — иначе его в тесте не поймать.
+    """
+    from healthcoach.storage.scopes import ReportScopeRepository
+
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    def refuse(self, snapshot_id, member_ids):
+        raise ValueError(
+            f"черновик среза {snapshot_id} утверждён — набор срезов не меняется"
+        )
+
+    monkeypatch.setattr(ReportScopeRepository, "set_members", refuse)
+
+    response = test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [old_id, new_id]}
+    )
+
+    assert response.status_code == 409
+    assert "утверждён" in response.json()["detail"]

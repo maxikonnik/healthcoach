@@ -93,3 +93,29 @@ def test_deleting_member_snapshot_drops_its_scope_row(repositories):
     connection.commit()
 
     assert scopes.members(primary.id) == [primary.id]
+
+
+def test_set_members_refuses_an_approved_snapshot(repositories):
+    """Ревью: гонка на заморозке набора.
+
+    Маршрут проверяет `approved_at` и только потом зовёт `set_members` —
+    между этими двумя обращениями утверждение может пройти во второй
+    вкладке, и утверждённый отчёт поменяет состав задним числом (правило
+    6). Проверка живёт там же, где запись, — как в `drafts.save_section`.
+    """
+    from datetime import datetime
+
+    from healthcoach.storage.drafts import DraftRepository
+
+    code, snapshots, scopes, connection = repositories
+    primary = snapshots.create(code, date(2026, 9, 1))
+    earlier = snapshots.create(code, date(2026, 1, 15))
+    scopes.set_members(primary.id, [primary.id, earlier.id])
+    drafts = DraftRepository(connection)
+    drafts.save_section(primary.id, "запрос", "Текст.", ())
+    drafts.approve(primary.id, datetime(2026, 9, 2, 10, 0))
+
+    with pytest.raises(ValueError, match="утверждён"):
+        scopes.set_members(primary.id, [primary.id])
+
+    assert scopes.members(primary.id) == sorted([primary.id, earlier.id])
