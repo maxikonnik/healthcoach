@@ -25,6 +25,27 @@ class DraftError(Exception):
     """Черновик собрать не удалось."""
 
 
+_MULTI_DATE_WARNING = (
+    "ВНИМАНИЕ: набор охватывает несколько разных дат измерения — у "
+    "каждой находки своя дата рядом с ней. Не пишите так, будто все "
+    "значения получены сегодня."
+)
+
+
+def _dates_warning(findings: Sequence[Finding]) -> str | None:
+    """Предупреждение о разных датах — один раз на весь запрос, а не за
+    находку и не за раздел (правило задачи 6).
+
+    Срез без сохранённого набора несёт находки одной даты (или вовсе без
+    даты — обратная совместимость), так что для отчёта по одному срезу
+    предупреждения не будет: это и есть хард-требование «выглядит как
+    сегодня»."""
+    dates = {f.taken_on for f in findings if f.taken_on is not None}
+    if len(dates) > 1:
+        return _MULTI_DATE_WARNING
+    return None
+
+
 @dataclass(frozen=True)
 class GeneratedSection:
     section_id: str
@@ -68,6 +89,9 @@ def generate_draft(
     показать: разделы попадают в базу все разом и только в самом конце.
     """
     payload = build_payload(findings, subject, request, specialties, client)
+    warning = _dates_warning(findings)
+    if warning is not None:
+        payload = f"{payload}\n\n{warning}"
 
     generated: list[GeneratedSection] = []
     for section in SECTIONS:

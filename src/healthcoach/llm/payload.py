@@ -52,6 +52,10 @@ def _finding_line(finding: Finding) -> str:
         f"{value} {safe.units}".strip(),
         f"— {safe.status}",
     ]
+    if safe.taken_on is not None:
+        # Дата измерения — без неё модель примет мартовский анализ за
+        # сегодняшний и напишет «сейчас у вас ферритин 18».
+        parts.append(f"(от {safe.taken_on.strftime('%d.%m.%Y')})")
     if safe.target is not None:
         parts.append(f"(целевой коридор {safe.target.low}–{safe.target.high})")
     if safe.note:

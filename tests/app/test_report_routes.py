@@ -573,6 +573,37 @@ def test_report_pdf_is_built_for_a_scope_of_two_snapshots(client):
     assert response.content[:5] == b"%PDF-"
 
 
+# План, задача 6: набор срезов виден коучу на экране черновика.
+
+
+def test_draft_page_lists_the_dates_of_every_snapshot_in_scope(client):
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-03-01"})
+    with context.session() as repo:
+        older = next(
+            s for s in repo.snapshots.for_client("CL-0001") if s.id != snapshot_id
+        )
+        repo.scopes.set_members(snapshot_id, [older.id, snapshot_id])
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+
+    assert f"/snapshots/{older.id}" in page
+    assert "2026-03-01" in page
+
+
+def test_draft_page_has_no_scope_block_for_a_single_snapshot(client):
+    """Хард-требование: срез без сохранённого набора выглядит ровно как
+    сегодня — блока с перечислением дат нет вовсе."""
+    test_client, context, _ = client
+    snapshot_id = _snapshot_with_a_finding(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/draft").text
+
+    assert "Отчёт собран по срезам" not in page
+
+
 def test_report_of_a_client_with_an_incomplete_card_is_400_not_409(client):
     """Незаполненная карточка (только у строк со схемы версии 1) — это
     некорректный запрос про клиента, а не конфликт с состоянием черновика.

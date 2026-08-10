@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -153,6 +154,49 @@ def test_key_indicators_section_carries_only_the_analyte_finding():
     )
     by_id = {s.section_id: s for s in sections}
     assert by_id["показатели"].finding_ids == ("показатель/ферритин",)
+
+
+# План, задача 6: если отчёт охватывает несколько дат, модель предупреждена
+# об этом один раз в общем контексте, а не за находку и не за раздел.
+
+
+def test_prompt_warns_once_when_findings_span_several_dates():
+    provider = FakeProvider()
+    early = replace(ANALYTE, taken_on=date(2026, 3, 10))
+    late = replace(
+        ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1)
+    )
+    generate_draft(
+        provider, [early, late], Subject(sex="ж", age=39), "", _specialties(), CLIENT,
+    )
+    assert provider.prompts
+    for prompt in provider.prompts:
+        assert "разных дат" in prompt
+
+
+def test_prompt_has_no_warning_when_every_dated_finding_shares_one_date():
+    provider = FakeProvider()
+    same_a = replace(ANALYTE, taken_on=date(2026, 8, 1))
+    same_b = replace(
+        ANALYTE, subject_id="ттг", title="ТТГ", taken_on=date(2026, 8, 1)
+    )
+    generate_draft(
+        provider, [same_a, same_b], Subject(sex="ж", age=39), "", _specialties(), CLIENT,
+    )
+    for prompt in provider.prompts:
+        assert "разных дат" not in prompt
+
+
+def test_prompt_has_no_warning_when_findings_carry_no_date():
+    """Находки без даты (обратная совместимость до задачи 6) не должны
+    внезапно обзавестись предупреждением, которого не было ни разу."""
+    provider = FakeProvider()
+    generate_draft(
+        provider, [ANALYTE, QUESTIONNAIRE], Subject(sex="ж", age=39), "",
+        _specialties(), CLIENT,
+    )
+    for prompt in provider.prompts:
+        assert "разных дат" not in prompt
 
 
 def test_request_that_names_the_client_never_reaches_the_model():

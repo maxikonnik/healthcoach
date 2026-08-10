@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -279,3 +280,29 @@ def test_payload_carries_cycle_phase_when_set():
 def test_payload_omits_cycle_phase_when_not_set():
     payload = build_payload([FINDING], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
     assert "фаза цикла" not in payload
+
+
+# План, задача 6: дата у каждой находки — иначе модель примет мартовский
+# анализ за сегодняшний.
+
+
+def test_payload_carries_the_finding_date_when_it_has_one():
+    dated = replace(FINDING, taken_on=date(2026, 3, 10))
+    payload = build_payload([dated], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
+    assert "10.03.2026" in payload
+
+
+def test_payload_has_no_date_when_the_finding_carries_none():
+    """FINDING по умолчанию без даты (обратная совместимость) — строка не
+    обзаводится датой из ниоткуда."""
+    payload = build_payload([FINDING], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
+    assert "(от " not in payload
+
+
+def test_payload_refuses_when_a_finding_date_equals_the_birth_date():
+    """Дата измерения — не персональные данные сама по себе, но если в это
+    поле по ошибке попадёт дата рождения клиента, сторож обязан отказать —
+    ровно как отказал бы на любом другом месте, где всплыла дата рождения."""
+    leaking = replace(FINDING, taken_on=CLIENT.birth_date)
+    with pytest.raises(LeakError):
+        build_payload([leaking], Subject(sex="ж", age=39), "", _specialties(), CLIENT)
