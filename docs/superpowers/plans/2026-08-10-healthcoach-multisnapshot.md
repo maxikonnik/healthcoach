@@ -36,7 +36,7 @@
 - Изменить: `src/healthcoach/storage/schema.py` — `SCHEMA_VERSION = 6`, таблица `report_snapshots`, запись в `MIGRATIONS[5]`
 - Создать: `src/healthcoach/storage/scopes.py`
 - Изменить: `src/healthcoach/app/deps.py` — новый репозиторий в `Repositories`
-- Тест: `tests/storage/test_scopes.py`, дополнить `tests/storage/test_schema.py`
+- Тест: `tests/storage/test_scopes.py`, дополнить `tests/storage/test_migration.py`
 
 **Таблица:**
 
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS report_snapshots (
 
 Проверку «черновик утверждён» репозиторий не делает: она живёт в маршруте, как `_refuse_if_draft_is_frozen`.
 
-**Миграция:** `MIGRATIONS[5]` создаёт таблицу, данные не трогает. Взять за образец `MIGRATIONS[4]`; проверить, что откат прерванной миграции работает (тест в `test_schema.py` на это уже есть — повторить его для версии 6).
+**Миграция:** `MIGRATIONS[5]` создаёт таблицу, данные не трогает. Взять за образец `MIGRATIONS[4]`; проверить, что откат прерванной миграции работает (тест в `test_migration.py` на это уже есть — повторить его для версии 6).
 
 **Тесты:** набор сохраняется и читается; повторный `set_members` заменяет, а не добавляет; пустой набор — `ValueError`; срез без записей отдаёт `[snapshot_id]`; удаление среза уносит его строки (обе стороны каскада); наборы разных срезов не пересекаются.
 
