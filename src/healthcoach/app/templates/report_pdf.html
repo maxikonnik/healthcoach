@@ -17,6 +17,11 @@
   .title-page { break-after: page; padding-top: 22vh; text-align: center; }
   .title-page .client { font-size: 20pt; margin-bottom: .3em; }
   .title-page .meta { color: #666; font-size: 11pt; }
+  .indicators { width: 100%; border-collapse: collapse; margin: 1em 0;
+                font-size: 9.5pt; break-inside: avoid; }
+  .indicators th, .indicators td { border-bottom: 1px solid #ddd;
+                padding: .35em .4em; text-align: left; vertical-align: top; }
+  .indicators th { color: #666; font-weight: normal; font-size: 8.5pt; }
   .chart { margin: 1em 0; break-inside: avoid; }
   .chart figcaption { font-size: 9pt; color: #666; margin-top: .2em; }
   .disclaimer { margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd;
@@ -37,6 +42,31 @@
 {% for paragraph in paragraphs[section.section_id] %}
 <p>{{ paragraph | safe }}</p>
 {% endfor %}
+
+{% if section.section_id == "показатели" and indicators %}
+<table class="indicators">
+  <thead>
+    <tr>
+      <th>Показатель</th>
+      <th>Значение</th>
+      <th>Целевой коридор</th>
+      <th>Лабораторный интервал</th>
+      <th>Статус</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in indicators %}
+    <tr>
+      <td>{{ row.title }}</td>
+      <td>{{ row.value }}</td>
+      <td>{{ row.target }}</td>
+      <td>{{ row.lab_range }}</td>
+      <td>{{ row.status }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
 {% if section.section_id == "динамика" %}
 {% for series in data.series %}

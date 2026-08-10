@@ -9,6 +9,12 @@ from healthcoach.knowledge.references import Interval
 from healthcoach.report.data import Point, ReportData, Series
 from healthcoach.report.pdf import PdfBuildError, render_report_html, report_pdf
 from healthcoach.report.sections import SECTIONS
+from healthcoach.scoring.findings import (
+    KIND_ANALYTE,
+    KIND_DERIVED,
+    KIND_QUESTIONNAIRE,
+    Finding,
+)
 from healthcoach.storage.drafts import DraftSection
 
 TEMPLATES_DIR = Path(__file__).parents[2] / "src" / "healthcoach" / "app" / "templates"
@@ -21,17 +27,34 @@ def _section(section_id: str, text: str) -> DraftSection:
     )
 
 
-def _data(sections=None, series=()) -> ReportData:
+def _data(sections=None, series=(), findings=()) -> ReportData:
     return ReportData(
         client_name="Соловьёва Ирина Анатольевна",
         client_code="CL-0001",
         taken_on=date(2026, 9, 1),
         coach=Coach(name="Иконникова Екатерина", title="нутрициолог", signature=""),
         sections=tuple(sections or [_section("запрос", "Текст запроса.")]),
-        findings=(),
+        findings=tuple(findings),
         series=series,
         approved_at=datetime(2026, 9, 2, 10, 0),
     )
+
+
+def _finding(**overrides) -> Finding:
+    base = dict(
+        kind=KIND_ANALYTE,
+        subject_id="ферритин",
+        title="Ферритин",
+        value=18.0,
+        units="нг/мл",
+        status="дефицит",
+        target=Interval(60, 90),
+        lab_range=Interval(10, 120),
+        note=None,
+        rule_missing=False,
+    )
+    base.update(overrides)
+    return Finding(**base)
 
 
 def test_pdf_is_produced():
@@ -157,6 +180,184 @@ def test_dynamics_chart_only_appears_in_the_dynamics_section():
     assert "<svg" in html[dyn_start:dyn_end]
     assert "<svg" not in html[:dyn_start]
     assert "<svg" not in html[dyn_end:]
+
+
+def _all_sections():
+    return [_section(s.id, f"Текст раздела «{s.id}».") for s in SECTIONS]
+
+
+def _rendered_with(findings):
+    data = _data(sections=_all_sections(), findings=findings)
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    return render_report_html(data, templates)
+
+
+def test_key_indicators_table_prints_the_numbers_the_code_computed():
+    """Спецификация, раздел 10, пункт 4: значение, лабораторный интервал,
+    целевой коридор коуча.
+
+    До этой таблицы отчёт не печатал ни одного числа из `data.findings`:
+    значение доходило до клиента, только если модель перепечатала его в
+    своём тексте, а `lab_range` не доходил вовсе — его не видела даже
+    модель. Опечатка модели («180 нг/мл» вместо «18») печаталась бы без
+    единого возражения.
+    """
+    html = _rendered_with([_finding()])
+
+    assert "Ферритин" in html
+    assert "18 нг/мл" in html
+    assert "60–90" in html
+    assert "10–120" in html
+    assert "дефицит" in html
+
+
+def test_key_indicators_table_stands_in_the_indicators_section_under_the_text():
+    html = _rendered_with([_finding()])
+
+    indicators_index = SECTIONS.index(next(s for s in SECTIONS if s.id == "показатели"))
+    start = html.index(SECTIONS[indicators_index].title)
+    end = html.index(SECTIONS[indicators_index + 1].title, start)
+    section = html[start:end]
+
+    assert '<table class="indicators">' in section
+    assert html.count('<table class="indicators">') == 1
+    assert section.index("Текст раздела «показатели».") < section.index("<table")
+
+
+def test_key_indicators_table_covers_derived_findings_too():
+    """Раздел «показатели» стоит и на производных — они такие же числа."""
+    html = _rendered_with(
+        [
+            _finding(),
+            _finding(
+                kind=KIND_DERIVED,
+                subject_id="кальций_калий",
+                title="Соотношение кальций/калий",
+                value=5.25,
+                units="",
+                status="выше целевого",
+                target=Interval(2.0, 4.0),
+                lab_range=None,
+            ),
+        ]
+    )
+    assert "Соотношение кальций/калий" in html
+    assert "5.25" in html
+    assert "2–4" in html
+
+
+def test_questionnaire_findings_are_not_rows_of_the_indicators_table():
+    """У опросника не измерение, а степень и сумма баллов: о них говорит
+    «карта систем», и в таблице показателей им места нет."""
+    html = _rendered_with(
+        [
+            _finding(
+                kind=KIND_QUESTIONNAIRE,
+                subject_id="obraz_zizni/весь",
+                title="ОБРАЗ ЖИЗНИ",
+                value=8,
+                units="баллов",
+                status="высокая",
+                target=None,
+                lab_range=None,
+                answered=10,
+                total=10,
+            )
+        ]
+    )
+    assert '<table class="indicators">' not in html
+    assert "8 баллов" not in html
+
+
+def test_missing_pieces_of_a_finding_print_a_dash_not_an_invented_number():
+    """Чего код не посчитал, того таблица не выдумывает."""
+    html = _rendered_with(
+        [
+            _finding(
+                value=None,
+                status="значение не распознано",
+                target=None,
+                lab_range=None,
+                rule_missing=True,
+            )
+        ]
+    )
+    assert "<td>— нг/мл</td>" in html
+    assert html.count("<td>—</td>") == 2
+    assert "значение не распознано" in html
+
+
+def test_a_half_open_corridor_prints_a_bound_not_the_word_none():
+    """«дефицит: [null, 30]» — правильная запись в базе знаний, и печатать
+    её как «None–30» клиенту нельзя."""
+    html = _rendered_with([_finding(target=Interval(60, None), lab_range=Interval(None, 30))])
+    assert "None" not in html
+    assert "от 60" in html
+    assert "до 30" in html
+
+
+def test_hostile_finding_text_cannot_break_the_markup_of_the_table():
+    """Маска на текст бланка стоит в сборке отчёта; шаблон — второй слой."""
+    html = _rendered_with([_finding(title='<script>alert("взлом")</script>')])
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_multi_paragraph_section_prints_a_paragraph_per_paragraph():
+    """Раздел на несколько абзацев не должен печататься одной простынёй.
+
+    Ничто этого не держало: склеивание разбиения в один блок проходило
+    весь набор.
+    """
+    html = _rendered("Первый абзац.\nВторой абзац.\nТретий абзац.")
+    assert "<p>Первый абзац.</p>" in html
+    assert "<p>Второй абзац.</p>" in html
+    assert "<p>Третий абзац.</p>" in html
+
+
+def test_render_drops_a_series_without_dynamics_even_when_the_engine_would_draw(
+    monkeypatch,
+):
+    """Первый из трёх сторожей графика — отбор в `render_report_html`.
+
+    Их три: отбор здесь, отказ `chart_svg` по одной точке и условие в
+    шаблоне. Пока каждый проверялся только через общий результат, любой
+    из трёх можно было снять поодиночке — двое оставшихся держали набор
+    зелёным. Здесь движок печати заведомо согласен рисовать, так что
+    отвечает ровно отбор.
+    """
+    import healthcoach.report.charts as charts
+
+    monkeypatch.setattr(charts, "chart_svg", lambda series, **kw: "<svg>подделка</svg>")
+    data = _data(sections=_all_sections(), series=(_series_without_dynamics(),))
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    html = render_report_html(data, templates)
+
+    assert "<svg" not in html
+    assert "Витамин Д, нг/мл" not in html
+
+
+def test_a_series_the_engine_refused_prints_neither_figure_nor_caption(monkeypatch):
+    """Третий сторож — условие в шаблоне.
+
+    Ряд динамику имеет, а график по нему не построился. Без условия
+    шаблон напечатал бы пустую фигуру с подписью «Ферритин, нг/мл» —
+    подпись к графику, которого нет.
+    """
+    import healthcoach.report.charts as charts
+
+    def refuse(series, **kw):
+        raise charts.ChartError("построить нельзя")
+
+    monkeypatch.setattr(charts, "chart_svg", refuse)
+    data = _data(sections=_all_sections(), series=(_series_with_dynamics(),))
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    html = render_report_html(data, templates)
+
+    assert "<svg" not in html
+    assert "Ферритин, нг/мл" not in html
 
 
 def test_signature_is_printed_after_the_last_section_when_set():
