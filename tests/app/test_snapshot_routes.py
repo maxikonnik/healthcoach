@@ -617,3 +617,212 @@ def test_findings_use_only_confirmed_measurements(client):
     after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
     assert "Ферритин" in after
     assert "дефицит" in after
+
+
+# Task 3: экран находок (HTML) вместо текстовой простыни.
+
+
+def test_findings_page_is_html_and_shows_indicator_and_status(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/findings")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Ферритин" in response.text
+    assert "дефицит" in response.text
+
+
+def test_findings_txt_route_is_plain_text_with_the_same_content(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    response = test_client.get(f"/snapshots/{snapshot_id}/findings.txt")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "пол м" in response.text
+    assert "возраст 41" in response.text
+    assert "дефицит" in response.text
+
+
+def test_findings_page_links_to_the_txt_dump(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, MAN, "CL-0001", "35")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert f'href="/snapshots/{snapshot_id}/findings.txt"' in page
+    assert "текстом" in page
+
+
+def test_snapshot_page_links_to_both_findings_routes(client):
+    test_client, _ = client
+    snapshot_id = _snapshot(test_client)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}").text
+    assert f'href="/snapshots/{snapshot_id}/findings"' in page
+    assert f'href="/snapshots/{snapshot_id}/findings.txt"' in page
+
+
+def test_attention_finding_is_visible_and_normal_finding_is_folded(client):
+    """Плашка «Требуют внимания» — сразу видна; «В норме» — под сгибом."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    for value, taken_on in (("20", "2026-08-01"), ("70", "2026-08-20")):
+        test_client.post(
+            f"/snapshots/{snapshot_id}/measurements",
+            data={
+                "raw_name": "Ферритин", "value": value, "units": "нг/мл",
+                "taken_on": taken_on,
+            },
+        )
+    for measurement in _measurements(context, snapshot_id):
+        test_client.post(f"/snapshots/{snapshot_id}/measurements/{measurement.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "дефицит" in page
+    assert "в целевом" in page
+    assert "<details" in page
+    assert page.index("дефицит") < page.index("<details")
+    assert page.index("<details") < page.index("в целевом")
+
+
+def test_finding_without_a_rule_has_no_scale_markup(client):
+    """Без коридора и лабораторного интервала строить шкалу нечестно."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин", "value": "12", "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Гомоцистеин" in page
+    assert 'class="scale"' not in page
+
+
+def test_missing_rule_indicator_is_named_in_the_missing_rules_block(client):
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин", "value": "12", "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Нет правила в базе знаний" in page
+    assert "Гомоцистеин" in page
+    assert page.index("Нет правила в базе знаний") < page.rindex("Гомоцистеин")
+
+
+# Значение за пределами оси — это не «плохое значение», а «шкала его не
+# показывает». Отличаться от риски внутри полосы оно должно формой, а не
+# только цветом: цвет уже занят тяжестью статуса.
+
+
+def test_value_off_the_right_edge_gets_an_arrow_pointing_right(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "400")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark outside to-right" style="left:100%"' in page
+    assert "outside to-left" not in page
+
+
+def test_value_off_the_left_edge_gets_an_arrow_pointing_left(client):
+    """Левый край — вторая половина дефекта: без своего класса стрелка
+    оказывалась внутри полосы и читалась как риска на самом её начале."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "0.5")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark outside to-left" style="left:0%"' in page
+    assert "outside to-right" not in page
+
+
+def test_value_inside_the_axis_stays_a_plain_tick(client):
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "70")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert 'class="scale-mark" style="left:' in page
+    assert "scale-mark outside" not in page
+
+
+def test_the_arrow_classes_are_actually_drawn_as_arrows(client):
+    """Классы без правил в стилях — это обещание, которое не выполняется:
+    и `scale.py`, и план говорят о стрелке, а не о риске другого цвета."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "400")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert ".scale-mark.outside.to-left" in page
+    assert ".scale-mark.outside.to-right" in page
+    # Треугольник строится на границах; риска шириной 2px стрелкой не станет.
+    assert "border-right" in page
+    assert "border-left" in page
+
+
+def _ferritin_in_wrong_units(test_client, context) -> int:
+    """Ферритин, записанный в единицах, которых нет в синонимах правила."""
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "2.4", "units": "ммоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+    return snapshot_id
+
+
+def test_unit_mismatch_is_not_named_in_the_missing_rules_block(client):
+    """Правило для ферритина написано — не сошлись единицы. Список
+    пропущенных правил обязан не звать коуча писать его заново."""
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Нет правила в базе знаний" not in page
+
+
+def test_unit_mismatch_gets_its_own_block_about_unit_synonyms(client):
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Единицы не сопоставлены" in page
+    assert "синонимы_единиц" in page
+    assert page.index("Единицы не сопоставлены") < page.rindex("Ферритин")
+
+
+def test_finding_with_no_scale_shows_no_bar_at_all(client):
+    """Оценки не было — значит и полосы под значением быть не должно."""
+    test_client, context = client
+    snapshot_id = _ferritin_in_wrong_units(test_client, context)
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "Ферритин" in page
+    assert 'class="scale"' not in page
+
+
+def test_value_above_the_corridor_is_visible_above_the_fold(client):
+    """Не только «дефицит»: «выше целевого» — тоже находка, требующая
+    внимания, и прятать её под свёрнутый блок нельзя."""
+    test_client, context = client
+    snapshot_id = _client_with_ferritin(test_client, context, WOMAN, "CL-0001", "110")
+
+    page = test_client.get(f"/snapshots/{snapshot_id}/findings").text
+    assert "выше целевого" in page
+    assert "<details" not in page or page.index("выше целевого") < page.index("<details")

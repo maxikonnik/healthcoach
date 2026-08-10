@@ -52,8 +52,13 @@ _SEVERITY_UNKNOWN = 1
 """Незнакомый статус не прячется среди нормальных находок."""
 
 
-def _severity(status: str) -> int:
-    """Тяжесть статуса: у степеней она берётся из общего словаря."""
+def severity(status: str) -> int:
+    """Тяжесть статуса: у степеней она берётся из общего словаря.
+
+    Публичная — раскладка находок для экрана (`report/findings_view.py`)
+    группирует по этой же тяжести и не должна заводить вторую копию
+    словаря статусов: два независимых списка уже расходились однажды
+    (см. `knowledge/degrees.py`)."""
     known = _SEVERITY.get(status)
     if known is not None:
         return known
@@ -195,5 +200,5 @@ def collect_findings(
     for verdict in compute_derived(references, measurements):
         findings.append(_from_verdict(verdict, KIND_DERIVED))
 
-    findings.sort(key=lambda f: (_severity(f.status), f.kind, f.title))
+    findings.sort(key=lambda f: (severity(f.status), f.kind, f.title))
     return findings

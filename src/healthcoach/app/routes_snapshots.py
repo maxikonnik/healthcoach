@@ -14,13 +14,14 @@ from healthcoach.intake.answers import AnswersError, ImportedAnswers, parse_answ
 from healthcoach.intake.resolve import resolve_analyte
 from healthcoach.knowledge.sex import SexError
 from healthcoach.knowledge.units import UnitError, convert_to_reference, units_match
+from healthcoach.report.findings_view import build_view
 from healthcoach.report.scope import (
     answers_taken_on,
     build_subject_at,
     collect_inputs,
     to_measurements,
 )
-from healthcoach.scoring.findings import collect_findings
+from healthcoach.scoring.findings import Finding, collect_findings
 from healthcoach.scoring.references import Subject
 from healthcoach.storage.snapshots import StoredMeasurement
 
@@ -54,6 +55,17 @@ class DocumentImport:
     документа. Не отказ: распознавание коверкает буквы, ложный отказ на
     своём же клиенте хуже предупреждения, которое коуч может прочитать
     и отклонить."""
+
+
+@dataclass(frozen=True)
+class FindingsBundle:
+    """Общая сборка для обоих маршрутов находок (HTML и `.txt`) — чтобы
+    страница и текстовая выгрузка не могли увидеть разные списки."""
+
+    snapshot: object
+    subject: Subject
+    age: int
+    findings: list[Finding]
 
 
 def _rows(context: Context, repo: Repositories, snapshot_id: int) -> list[Row]:
@@ -219,20 +231,20 @@ def build_router(context: Context, templates) -> APIRouter:
                 )
         return RedirectResponse(f"/snapshots/{snapshot_id}#показатели", status_code=303)
 
-    @router.get("/snapshots/{snapshot_id}/findings", response_class=PlainTextResponse)
-    def findings(snapshot_id: int):
-        """Находки текстом — тем же путём, что и отчёт (`report/scope.py`).
+    def _gather_findings(snapshot_id: int) -> FindingsBundle:
+        """Собрать находки — общая точка входа для страницы и `.txt`-выгрузки.
 
-        Пол и возраст берутся из карточки клиента и нигде не подставляются
-        по умолчанию: почти каждый целевой коридор задан для пола и
-        возрастного диапазона, и подстановка молча считала бы находки для
-        другого человека. Возраст — на дату среза, а не на сегодня; для
-        измерений из более старых срезов набора — на дату самого измерения
-        (правило 4 плана многосрезового отчёта).
+        Тем же путём, что и отчёт (`report/scope.py`). Пол и возраст берутся
+        из карточки клиента и нигде не подставляются по умолчанию: почти
+        каждый целевой коридор задан для пола и возрастного диапазона, и
+        подстановка молча считала бы находки для другого человека. Возраст —
+        на дату среза, а не на сегодня; для измерений из более старых срезов
+        набора — на дату самого измерения (правило 4 плана многосрезового
+        отчёта).
 
         Показатели и анкета собираются по набору срезов (`repo.scopes`), а
-        не только по этому срезу, — иначе выгрузка на экране среза
-        разошлась бы с тем, что видит клиент в отчёте.
+        не только по этому срезу, — иначе оба маршрута разошлись бы с тем,
+        что видит клиент в отчёте.
         """
         with context.session() as repo:
             snapshot = _snapshot_or_404(repo, snapshot_id)
@@ -274,6 +286,32 @@ def build_router(context: Context, templates) -> APIRouter:
             subject,
             subject_at=subject_at,
             answers_taken_on=answers_on,
+        )
+        return FindingsBundle(
+            snapshot=snapshot, subject=subject, age=age, findings=found
+        )
+
+    @router.get("/snapshots/{snapshot_id}/findings", response_class=HTMLResponse)
+    def findings_page(request: Request, snapshot_id: int):
+        bundle = _gather_findings(snapshot_id)
+        return templates.TemplateResponse(
+            request,
+            "findings.html",
+            {
+                "snapshot": bundle.snapshot,
+                "subject": bundle.subject,
+                "age": bundle.age,
+                "view": build_view(bundle.findings),
+            },
+        )
+
+    @router.get("/snapshots/{snapshot_id}/findings.txt", response_class=PlainTextResponse)
+    def findings_txt(snapshot_id: int):
+        """Прежняя текстовая выгрузка, дословно та же, что раньше — её
+        удобно скопировать целиком."""
+        bundle = _gather_findings(snapshot_id)
+        snapshot, subject, age, found = (
+            bundle.snapshot, bundle.subject, bundle.age, bundle.findings
         )
         lines = [
             f"Срез {snapshot.taken_on}, клиент {snapshot.client_code}",
