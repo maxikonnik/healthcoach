@@ -230,3 +230,185 @@ def test_passport_form_is_collapsed_when_the_card_is_complete(client):
     details_start = page.rindex("<details", 0, summary_start)
     details_tag = page[details_start:summary_start]
     assert "open" not in details_tag
+
+
+# План 4/2026-08-10, задача 5: кнопка и выбор срезов на карточке клиента.
+
+
+class FakeProvider:
+    def __init__(self):
+        self.prompts = []
+
+    def complete(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return "Текст раздела."
+
+
+@pytest.fixture
+def client_and_context(tmp_path):
+    import dataclasses
+
+    context = dataclasses.replace(
+        build_context(data_dir=tmp_path, knowledge_dir=KNOWLEDGE), llm=FakeProvider()
+    )
+    with TestClient(create_app(context)) as test_client:
+        yield test_client, context
+
+
+def _approve_draft(test_client, context, snapshot_id: int) -> None:
+    """Провести срез через измерение, находку, запрос и утверждение
+    черновика — тот же путь, что и в tests/app/test_report_routes.py."""
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Ферритин", "value": "18", "units": "нг/мл",
+            "taken_on": "2026-06-20",
+        },
+    )
+    with context.session() as repo:
+        (stored,) = repo.snapshots.measurements(snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+    test_client.post(f"/snapshots/{snapshot_id}/request", data={"raw": "Устал"})
+    test_client.post(
+        f"/snapshots/{snapshot_id}/request/redact", data={"redacted": "Устал"}
+    )
+    test_client.post(f"/snapshots/{snapshot_id}/request/approve")
+    test_client.post(f"/snapshots/{snapshot_id}/draft")
+    test_client.post(f"/snapshots/{snapshot_id}/draft/approve")
+
+
+def _snapshot_ids(test_client, context, code="CL-0001") -> list[int]:
+    with context.session() as repo:
+        return [s.id for s in repo.snapshots.for_client(code)]
+
+
+def test_report_redirects_to_the_freshest_snapshot_draft(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    response = test_client.post(
+        "/clients/CL-0001/reports",
+        data={"snapshot_ids": [old_id, new_id]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/snapshots/{new_id}/draft"
+
+
+def test_report_saves_the_chosen_scope(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [old_id, new_id]}
+    )
+
+    with context.session() as repo:
+        assert repo.scopes.members(new_id) == sorted([old_id, new_id])
+
+
+def test_empty_selection_is_refused(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+
+    response = test_client.post("/clients/CL-0001/reports", data={})
+
+    assert response.status_code == 400
+
+
+def test_unknown_client_reports_is_404(client_and_context):
+    test_client, _ = client_and_context
+    response = test_client.post("/clients/CL-9999/reports", data={"snapshot_ids": [1]})
+    assert response.status_code == 404
+
+
+def test_foreign_snapshot_is_refused_and_scope_is_untouched(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    a_old, a_new = _snapshot_ids(test_client, context)
+
+    test_client.post(
+        "/clients", data={"full_name": "Петров Пётр", "sex": "м", "birth_date": "1988-01-01"}
+    )
+    test_client.post("/clients/CL-0002/snapshots", data={"taken_on": "2026-07-01"})
+    with context.session() as repo:
+        (b_snap,) = repo.snapshots.for_client("CL-0002")
+
+    # Легитимный набор сначала — чтобы было что не менять.
+    test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [a_old, a_new]}
+    )
+
+    response = test_client.post(
+        "/clients/CL-0001/reports",
+        data={"snapshot_ids": [a_old, b_snap.id]},
+    )
+
+    assert response.status_code == 400
+    with context.session() as repo:
+        assert repo.scopes.members(a_new) == sorted([a_old, a_new])
+
+
+def test_approved_draft_refuses_rebuild_and_scope_is_untouched(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [old_id, new_id]}
+    )
+    _approve_draft(test_client, context, new_id)
+
+    response = test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [new_id]}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "черновик утверждён и не пересобирается"
+    with context.session() as repo:
+        assert repo.scopes.members(new_id) == sorted([old_id, new_id])
+
+
+def test_resubmitting_a_scope_replaces_the_previous_one(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    test_client.post(
+        "/clients/CL-0001/reports", data={"snapshot_ids": [old_id, new_id]}
+    )
+    test_client.post("/clients/CL-0001/reports", data={"snapshot_ids": [new_id]})
+
+    with context.session() as repo:
+        assert repo.scopes.members(new_id) == [new_id]
+
+
+def test_freshest_snapshot_checkbox_is_checked_by_default(client_and_context):
+    test_client, context = client_and_context
+    test_client.post("/clients", data=WOMAN)
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-01-10"})
+    test_client.post("/clients/CL-0001/snapshots", data={"taken_on": "2026-06-20"})
+    old_id, new_id = _snapshot_ids(test_client, context)
+
+    page = test_client.get("/clients/CL-0001").text
+
+    old_row = page.index(f'value="{old_id}"')
+    new_row = page.index(f'value="{new_id}"')
+    old_checkbox = page[old_row - 20 : old_row + 60]
+    new_checkbox = page[new_row - 20 : new_row + 60]
+    assert "checked" not in old_checkbox
+    assert "checked" in new_checkbox

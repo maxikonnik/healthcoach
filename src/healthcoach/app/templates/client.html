@@ -20,16 +20,21 @@
 </details>
 
 {% if snapshots %}
+<form method="post" action="/clients/{{ client.code }}/reports">
 <table>
-  <tr><th>Дата</th><th>Заметка</th><th></th></tr>
+  <tr><th></th><th>Дата</th><th>Заметка</th><th></th></tr>
   {% for snapshot in snapshots %}
   <tr>
+    <td><input type="checkbox" name="snapshot_ids" value="{{ snapshot.id }}"
+        {% if loop.last %}checked{% endif %}></td>
     <td>{{ snapshot.taken_on }}</td>
     <td class="muted">{{ snapshot.note or "—" }}</td>
     <td><a href="/snapshots/{{ snapshot.id }}">открыть</a></td>
   </tr>
   {% endfor %}
 </table>
+<button type="submit">Собрать отчёт по выбранным</button>
+</form>
 {% else %}
 <p class="muted">Срезов пока нет.</p>
 {% endif %}
