@@ -132,12 +132,19 @@ def chart_svg(series: Series, width: int = 520, height: int = 180) -> str:
         f'<text x="{width - PADDING_RIGHT}" y="{height - 8}" font-size="9" '
         f'text-anchor="end" fill="#666">{last.taken_on.strftime("%m.%Y")}</text>'
     )
+    # Подпись печатается на той высоте, где её значение и нарисовано, а не
+    # у края поля. У края она врала: между краями поля лежит размах с
+    # запасом (_scale), а подписаны им границы данных (_data_bounds), и
+    # клиент, читающий график линейкой между подписями, получал не то
+    # число, которое стоит у точки. На настоящих данных ферритина —
+    # точки 18 и 45, коридор 60–90 — точка с подписью «18» читалась по
+    # оси как 24.
     parts.append(
-        f'<text x="4" y="{PADDING_TOP + 4}" font-size="9" fill="#666">'
+        f'<text x="4" y="{y(data_high):.1f}" font-size="9" fill="#666">'
         f'{_format_label(data_high, decimals)}</text>'
     )
     parts.append(
-        f'<text x="4" y="{height - PADDING_BOTTOM}" font-size="9" fill="#666">'
+        f'<text x="4" y="{y(data_low):.1f}" font-size="9" fill="#666">'
         f'{_format_label(data_low, decimals)}</text>'
     )
     parts.append(

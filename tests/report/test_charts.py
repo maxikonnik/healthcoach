@@ -155,28 +155,36 @@ def test_kalium_axis_labels_bracket_real_values():
     assert bottom_label <= 4.1 and 4.3 <= top_label
 
 
-def test_kalium_point_position_matches_printed_axis():
+def test_point_position_matches_printed_axis_on_ferritin_scale():
     """Позиция точки должна совпадать с тем, что напечатано на оси.
 
-    Читаем ось линейно между напечатанными подписями и сравниваем с
-    настоящим значением — допуск 0.05 ммоль/л, что заметно меньше шага
-    подписи и меньше десятой доли ширины коридора (0.5 ммоль/л).
+    Ось читается между самими подписями, а не между краями поля: между
+    краями лежит размах с запасом (`_scale`), а подписаны им границы
+    данных (`_data_bounds`), и клиент, приложивший линейку к подписям,
+    получал не то число, что стоит у точки. Прежняя версия этого теста
+    мерила между краями поля и проходила только потому, что коридор калия
+    шириной ровно 0.5 гасил расхождение. На настоящих данных ферритина —
+    точки 18 и 45, коридор 60–90 — та же проверка читала для точки с
+    подписью «18» значение 24, то есть промах в 120 допусков.
+
+    Допуск 0.05 нг/мл — доля процента от размаха.
     """
-    values = [4.1, 4.3]
-    series = _series(values, target=Interval(4.0, 4.5))
-    height = 180
-    svg = chart_svg(series, height=height)
+    values = [18.0, 45.0]
+    series = _series(values, target=Interval(60, 90))
+    svg = chart_svg(series)
 
     labels = [
-        float(m) for m in re.findall(r'<text x="4" y="[\d.]+"[^>]*>([-\d.]+)</text>', svg)
+        (float(y), float(text))
+        for y, text in re.findall(
+            r'<text x="4" y="([\d.]+)"[^>]*>([-\d.]+)</text>', svg
+        )
     ]
-    top_label, bottom_label = labels
+    assert len(labels) == 2
+    (top_y, top_label), (bottom_y, bottom_label) = labels
     circles = re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)"', svg)
 
-    plot_top = PADDING_TOP
-    plot_bottom = height - PADDING_BOTTOM
     for (_, cy), value in zip(circles, values):
-        frac = (float(cy) - plot_top) / (plot_bottom - plot_top)
+        frac = (float(cy) - top_y) / (bottom_y - top_y)
         read_value = top_label - frac * (top_label - bottom_label)
         assert read_value == pytest.approx(value, abs=0.05)
 
@@ -191,11 +199,47 @@ def test_small_values_axis_labels_are_distinct():
     assert "0" not in labels and "0.0" not in labels
 
 
-def test_zero_bound_is_never_printed_as_negative_zero():
-    """Нижняя граница коридора 0.0 не должна печататься как «-0»."""
-    series = _series([0.4, 0.7], target=Interval(0.0, 1.0))
+def test_a_bound_just_below_zero_is_printed_as_zero_not_negative_zero():
+    """Подпись «-0.0» — минус там, где минуса нет.
+
+    Прежняя версия брала коридор [0.0, 1.0]: при таком размахе подпись
+    печатается с одним знаком, «-0» не возникает вовсе, и снятие минуса
+    можно было выключить целиком — тест оставался зелёным. Минус
+    появляется только когда граница отрицательна, но округляется в ноль:
+    −0.04 при размахе 5 печатается как «-0.0».
+    """
+    series = _series([-0.04, 5.0], target=None)
     svg = chart_svg(series)
-    assert "-0" not in svg
+    labels = re.findall(r'<text x="4" y="[\d.]+"[^>]*>([-\d.]+)</text>', svg)
+    assert labels == ["5.0", "0.0"]
+
+
+def test_hostile_units_cannot_break_the_markup():
+    """Единицы приходят из базы знаний коуча — и экранируются как чужое.
+
+    Та же причина, что у названия: YAML коуч правит руками, а SVG уходит
+    в документ, который берёт в руки клиент.
+    """
+    series = Series(
+        analyte_id="x", title="Показатель",
+        units='</text><script>alert("взлом")</script>',
+        points=(Point(date(2026, 3, 1), 1.0), Point(date(2026, 4, 1), 2.0)),
+        target=None,
+    )
+    svg = chart_svg(series)
+    assert "<script>" not in svg
+    ET.fromstring(svg)
+
+
+def test_an_inverted_corridor_is_refused_before_it_reaches_the_chart():
+    """`оптимум: [90, 60]` — опечатка коуча, и она не должна дойти до печати.
+
+    Полоса коридора получала высоту −116.7; движок печати выбрасывает
+    невалидную геометрию, и клиент видел график без коридора, а нигде
+    ни одной ошибки. Интервал не создаётся вовсе.
+    """
+    with pytest.raises(ValueError, match="перевёрнут"):
+        Interval(90, 60)
 
 
 def test_half_open_corridor_still_draws_a_band():
