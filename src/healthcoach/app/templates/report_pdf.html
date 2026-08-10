@@ -50,6 +50,10 @@
 {% endif %}
 {% endfor %}
 
+{% if data.coach.signature %}
+<p class="signature">{{ data.coach.signature }}</p>
+{% endif %}
+
 <div class="disclaimer">
   <p>Отчёт подготовлен специалистом по здоровью и не является медицинским
   заключением. Он не ставит диагноз и не назначает лечение. Решения о

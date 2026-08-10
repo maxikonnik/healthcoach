@@ -157,3 +157,35 @@ def test_dynamics_chart_only_appears_in_the_dynamics_section():
     assert "<svg" in html[dyn_start:dyn_end]
     assert "<svg" not in html[:dyn_start]
     assert "<svg" not in html[dyn_end:]
+
+
+def test_signature_is_printed_after_the_last_section_when_set():
+    sections = [_section(s.id, f"Текст раздела «{s.id}».") for s in SECTIONS]
+    data = ReportData(
+        client_name="Соловьёва Ирина Анатольевна",
+        client_code="CL-0001",
+        taken_on=date(2026, 9, 1),
+        coach=Coach(name="Иконникова Екатерина", title="нутрициолог", signature="С уважением, Екатерина"),
+        sections=tuple(sections),
+        findings=(),
+        series=(),
+        approved_at=datetime(2026, 9, 2, 10, 0),
+    )
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    html = render_report_html(data, templates)
+
+    last_section_title = SECTIONS[-1].title
+    assert "С уважением, Екатерина" in html
+    assert html.index(last_section_title) < html.index("С уважением, Екатерина")
+    assert html.index("С уважением, Екатерина") < html.index("не является медицинским")
+
+
+def test_signature_prints_nothing_extra_when_blank():
+    """coach.yaml поставляется с пустой подписью — лишнего заголовка или пустой строки быть не должно."""
+    data = _data()
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    html = render_report_html(data, templates)
+
+    assert 'class="signature"' not in html
