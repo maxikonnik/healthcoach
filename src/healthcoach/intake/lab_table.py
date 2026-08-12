@@ -50,6 +50,28 @@ _HEADER_WORDS = {
     "динамика": ROLE_OTHER,
 }
 
+_FUZZY_SHORT_WORD = 5
+_FUZZY_DISTANCE_SHORT = 1
+_FUZZY_DISTANCE_LONG = 2
+"""Насколько слово шапки может отличаться от известного, чтобы всё же
+считаться им. Мера — расстояние редактирования (Левенштейна), порог зависит
+от длины известного слова: 1 для слов до пяти букв включительно, 2 для более
+длинных.
+
+Почему по длине. Опечатка распознавания — это одна-две перепутанные буквы
+в слове, которое в остальном цело: «Ел.» вместо «Ед.», «Референскыю» вместо
+«Референсные». Доля искажения, а не число букв, решает, то же это слово или
+другое: две буквы из одиннадцати — та же «Референсные», а две буквы из двух
+(«En.» вместо «Ед.») — слово, не разделившее с известным ни одной буквы.
+Разрешить расстояние 2 коротким словам значит начать выдумывать роли на
+пустом месте; запретить его длинным — потерять именно те шапки, ради
+которых правило и написано, потому что на длинном слове распознавание
+ошибается чаще одного раза.
+
+Само по себе неточное совпадение колонки не раскладывает: документ,
+которому оно понадобилось, помечается `LabTable.needs_confirmation` и не
+создаёт измерений, пока коуч не подтвердит догадку (решение 2 плана)."""
+
 _WORD_AMBIGUOUS_VALUES = "значения"
 """«Значения» — слово с двумя ролями: в «Референсные значения» это
 референс, а само по себе («Показатель Значения Ед. изм.») — колонка
@@ -143,6 +165,20 @@ class LabTable:
     unparsed: tuple[str, ...]
     """Строки, которые не читаются однозначно. Показываются коучу как есть."""
 
+    header_line: str = ""
+    """Строка-шапка так, как её прочитало распознавание, — без правок.
+    Коуч подтверждает догадку, глядя на то же, что видел разбор."""
+
+    columns: tuple[tuple[str, str], ...] = ()
+    """Как разбор понял колонки: слово шапки → роль, по порядку."""
+
+    needs_confirmation: bool = False
+    """True — хотя бы одна колонка опознана неточно (по расстоянию
+    редактирования, см. `_FUZZY_DISTANCE_SHORT`). Такая таблица разобрана,
+    но разобрана по догадке: измерения из неё не создаются, пока коуч не
+    посмотрит на догадку и не согласится (решение 2 плана). Точно опознанная
+    шапка оставляет здесь False, и её путь не меняется вовсе."""
+
 
 def parse_number(text: str) -> float | None:
     """Число из ячейки бланка. None, если числа там нет.
@@ -170,7 +206,77 @@ def _header_words(line: str) -> list[str]:
     return [word for word in words if word]
 
 
-def _header_columns(line: str) -> list[tuple[str, str]]:
+def _edit_distance(first: str, second: str) -> int:
+    """Расстояние Левенштейна: сколько правок отделяет одно слово от другого.
+
+    Своя реализация в пять строк, а не зависимость: слова шапки короткие,
+    а словарь — полтора десятка записей, так что цена вычисления здесь
+    ничего не значит, зато новых зависимостей у проекта не появляется.
+    """
+    previous = list(range(len(second) + 1))
+    for i, left in enumerate(first, start=1):
+        current = [i]
+        for j, right in enumerate(second, start=1):
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (left != right),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def _fuzzy_role(word: str) -> str | None:
+    """Роль слова, которого нет в словаре точно, — или None.
+
+    Ближайшее известное слово в пределах порога (`_FUZZY_DISTANCE_SHORT` /
+    `_FUZZY_DISTANCE_LONG`) отдаёт свою роль. Если ближайшими оказались
+    слова двух разных ролей на одном и том же расстоянии — совпадения нет:
+    «Значени» одинаково близко к «значение» (результат) и «значения»
+    (референс), и выбрать между ними можно только жребием. Инструмент не
+    бросает жребий: неоднозначность — отказ, как и везде.
+    """
+    closest: dict[str, int] = {}
+    for known, role in _HEADER_WORDS.items():
+        limit = (
+            _FUZZY_DISTANCE_SHORT
+            if len(known) <= _FUZZY_SHORT_WORD
+            else _FUZZY_DISTANCE_LONG
+        )
+        distance = _edit_distance(word, known)
+        if distance > limit:
+            continue
+        if distance < closest.get(role, limit + 1):
+            closest[role] = distance
+    if not closest:
+        return None
+    best = min(closest.values())
+    roles = [role for role, distance in closest.items() if distance == best]
+    if len(roles) != 1:
+        return None
+    return roles[0]
+
+
+def _header_role(word: str) -> tuple[str | None, bool]:
+    """Роль слова шапки и точность совпадения (точное / по расстоянию)."""
+    role = _HEADER_WORDS.get(word)
+    if role is not None:
+        return role, True
+    return _fuzzy_role(word), False
+
+
+@dataclass(frozen=True)
+class _HeaderColumn:
+    word: str
+    role: str
+    exact: bool
+    """False — слово опознано неточно, по расстоянию редактирования. Такая
+    колонка — догадка, и вся таблица уходит на подтверждение коучу."""
+
+
+def _header_columns(line: str) -> list[_HeaderColumn]:
     """Колонки строки-шапки: слово и его роль, по порядку появления.
 
     Роль, встреченная второй раз, новой колонки не даёт: «Референсные
@@ -181,10 +287,10 @@ def _header_columns(line: str) -> list[tuple[str, str]]:
     без обязательной колонки значения и убить документ отказом «шапка не
     найдена», который причины не называет.
     """
-    columns: list[tuple[str, str]] = []
+    columns: list[_HeaderColumn] = []
     seen: set[str] = set()
     for word in _header_words(line):
-        role = _HEADER_WORDS.get(word)
+        role, exact = _header_role(word)
         if role is None:
             continue
         if word == _WORD_AMBIGUOUS_VALUES and not seen & {ROLE_VALUE, ROLE_REFERENCE}:
@@ -192,26 +298,23 @@ def _header_columns(line: str) -> list[tuple[str, str]]:
         if role in seen:
             continue
         seen.add(role)
-        columns.append((word, role))
+        columns.append(_HeaderColumn(word=word, role=role, exact=exact))
     return columns
 
 
-def _header_word_roles(line: str) -> list[str]:
-    """Роли, узнанные среди слов строки, по порядку появления."""
-    return [role for _, role in _header_columns(line)]
-
-
 def _unrecognised_header_words(line: str) -> list[str]:
-    """Слова строки-шапки, не сопоставленные ни одной роли."""
+    """Слова строки-шапки, не сопоставленные ни одной роли — ни точно, ни
+    по расстоянию редактирования."""
     words: list[str] = []
     for word in _header_words(line):
-        if word not in _HEADER_WORDS and word not in words:
+        role, _ = _header_role(word)
+        if role is None and word not in words:
             words.append(word)
     return words
 
 
-def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
-    """Найти строку-шапку и вернуть её номер в списке и порядок её ролей.
+def _find_header(lines: Sequence[str]) -> tuple[int, list[_HeaderColumn]]:
+    """Найти строку-шапку и вернуть её номер в списке и её колонки по порядку.
 
     Кандидат в шапку — строка без цифр, в которой встречаются слова ролей
     «название» и «значение». Цифры исключают кандидата: строка результата
@@ -248,8 +351,8 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
         if _HAS_DIGIT.search(line):
             continue
         columns = _header_columns(line)
-        roles = [role for _, role in columns]
-        if any(role not in roles for role in _ROLES_MANDATORY):
+        exact_roles = [column.role for column in columns if column.exact]
+        if any(role not in exact_roles for role in _ROLES_MANDATORY):
             continue
         unrecognised = _unrecognised_header_words(line)
         if unrecognised:
@@ -258,14 +361,14 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
                 f"нераспознанные слова: {', '.join(unrecognised)} — "
                 "разбирать дальше нельзя, колонка встанет не на своё место"
             )
-        for position, (word, role) in enumerate(columns):
-            if role == ROLE_OTHER and position != len(columns) - 1:
+        for position, column in enumerate(columns):
+            if column.role == ROLE_OTHER and position != len(columns) - 1:
                 raise LabTableError(
-                    f"строка-шапка {line.strip()!r}: колонка {word!r} — "
+                    f"строка-шапка {line.strip()!r}: колонка {column.word!r} — "
                     "свободный текст, а стоит не последней — разбирать "
                     "дальше нельзя, её слова сдвинут остальные колонки"
                 )
-        return index, roles
+        return index, columns
     if any(line.strip() for line in lines):
         raise LabTableError(_MESSAGE_NOT_A_TABLE)
     raise LabTableError(_MESSAGE_EMPTY_DOCUMENT)
@@ -382,7 +485,8 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
 
 def parse_lab_lines(lines: Sequence[str]) -> LabTable:
     """Разобрать строки выгрузки в записи бланка."""
-    header_index, roles = _find_header(lines)
+    header_index, columns = _find_header(lines)
+    roles = [column.role for column in columns]
 
     rows: list[LabRow] = []
     unparsed: list[str] = []
@@ -436,4 +540,10 @@ def parse_lab_lines(lines: Sequence[str]) -> LabTable:
             pending_name = cleaned
             pending_line = line
 
-    return LabTable(rows=tuple(rows), unparsed=tuple(unparsed))
+    return LabTable(
+        rows=tuple(rows),
+        unparsed=tuple(unparsed),
+        header_line=lines[header_index].strip(),
+        columns=tuple((column.word, column.role) for column in columns),
+        needs_confirmation=any(not column.exact for column in columns),
+    )

@@ -55,6 +55,13 @@ class FileOutcome:
     rows: int
     unparsed: int
     resolved: int
+    confirmable: bool = False
+    """Шапка опознана неточно (по расстоянию редактирования): документ
+    разобран, но измерений сам по себе не создаёт — сперва коуч смотрит на
+    догадку и соглашается с ней (Task 6 плана). `accepted` у такого файла
+    False: приписать его к принятым значило бы записать инструменту
+    уверенность, которой у него нет; отказом он тоже не назван — разбор его
+    понял, и `refusal` остаётся None."""
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,8 @@ class CorpusReport:
 
     outcomes: tuple[FileOutcome, ...]
     accepted: int
+    """Документы, которые инструмент разбирает и сохраняет сам, ничего не
+    спрашивая. Файлы под подтверждение сюда не входят — см. `confirmable`."""
     refused_by: Mapping[str, int]
     rows: int
     resolved: int
@@ -70,6 +79,10 @@ class CorpusReport:
     """Название показателя с бланка → сколько раз встретилось. Названия
     показателей персональными данными не являются (в отличие от значений
     или необработанных строк), поэтому в отчёт идут как есть."""
+    confirmable: int = 0
+    """Документы, разобранные только благодаря неточному совпадению слов
+    шапки. Их строки и сопоставления посчитаны в `rows` и `resolved` — разбор
+    их правда прочитал, — но в базу они попадают лишь с согласия коуча."""
 
 
 def _classify_refusal(message: str) -> str:
@@ -159,14 +172,16 @@ def scan_corpus(
 
         total_rows += len(document.table.rows)
         total_resolved += resolved
+        confirmable = document.table.needs_confirmation
         outcomes.append(
             FileOutcome(
                 label=label,
-                accepted=True,
+                accepted=not confirmable,
                 refusal=None,
                 rows=len(document.table.rows),
                 unparsed=len(document.table.unparsed),
                 resolved=resolved,
+                confirmable=confirmable,
             )
         )
 
@@ -177,6 +192,7 @@ def scan_corpus(
         rows=total_rows,
         resolved=total_resolved,
         unresolved_names=dict(unresolved_names),
+        confirmable=sum(1 for o in outcomes if o.confirmable),
     )
 
 
@@ -190,7 +206,12 @@ def format_report(report: CorpusReport) -> str:
     lines: list[str] = []
     lines.append("=== по файлам: № | итог | строк | нераспознано | сопоставлено ===")
     for outcome in report.outcomes:
-        status = "ok" if outcome.accepted else f"отказ ({outcome.refusal})"
+        if outcome.accepted:
+            status = "ok"
+        elif outcome.confirmable:
+            status = "под подтверждение"
+        else:
+            status = f"отказ ({outcome.refusal})"
         lines.append(
             f"  {outcome.label} | {status} | {outcome.rows} | "
             f"{outcome.unparsed} | {outcome.resolved}"
@@ -200,7 +221,12 @@ def format_report(report: CorpusReport) -> str:
     lines.append("")
     lines.append("=== итог ===")
     lines.append(f"  принято: {report.accepted} из {total}")
-    refused_total = total - report.accepted
+    if report.confirmable:
+        lines.append(
+            f"  под подтверждение: {report.confirmable} "
+            "(шапка опознана неточно — импорт только с согласия коуча)"
+        )
+    refused_total = total - report.accepted - report.confirmable
     lines.append(f"  отказ: {refused_total}")
 
     if report.refused_by:

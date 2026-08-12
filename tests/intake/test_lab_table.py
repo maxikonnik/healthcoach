@@ -587,11 +587,21 @@ _CORPUS_HEADERS_PARSE = [
     "Исследование Результат Единицы Референсные значения",
 ]
 
-_CORPUS_HEADERS_REFUSE_OCR_TYPOS = [
+_CORPUS_HEADERS_CONFIRM = [
     "Показатель Результат Ел. изм. Референсные пределы",
     "Параметр Результат Референскыю значения Ед. изм.",
+]
+"""Опечатки распознавания в самой шапке: «Ел.» вместо «Ед.» (одна буква
+на слове из двух) и «Референскыю» вместо «Референсные» (две буквы на
+слове из одиннадцати). Разбираются — но только под подтверждение коуча."""
+
+_CORPUS_HEADERS_REFUSE_OCR_TYPOS = [
     "Параметр Результат Референсные значения En. изм.",
 ]
+"""«En.» — латинские буквы вместо «Ед.»: обе буквы слова из двух не те.
+Неточное совпадение сюда не дотягивается и не должно: подставить роль
+слову, не разделившему с известным ни одной буквы, — это не догадка, а
+выдумка."""
 
 
 @pytest.mark.parametrize("header", _CORPUS_HEADERS_PARSE)
@@ -601,11 +611,123 @@ def test_real_corpus_header_with_only_known_words_is_parsed(header):
 
 @pytest.mark.parametrize("header", _CORPUS_HEADERS_REFUSE_OCR_TYPOS)
 def test_real_corpus_header_with_an_ocr_typo_is_still_refused(header):
-    """«Ел.», «Референскыю», «En.» — опечатки распознавания, не слова
-    словаря. Неточное совпадение — задача 6; здесь они по-прежнему
-    отвергаются, а не подставляются под известную роль."""
     with pytest.raises(LabTableError):
         parse_lab_lines([header])
+
+
+@pytest.mark.parametrize("header", _CORPUS_HEADERS_CONFIRM)
+def test_real_corpus_header_with_an_ocr_typo_parses_under_confirmation(header):
+    """Настоящие шапки корпуса, а не выдуманные: ровно эти две строки
+    стояли за двумя из трёх оставшихся отказов «шапка-колонки»."""
+    assert parse_lab_lines([header]).needs_confirmation is True
+
+
+# Task 6: шапка с опечатками распознавания — под подтверждение коуча.
+
+
+def test_header_word_with_one_wrong_letter_is_matched_inexactly():
+    """«Ел. изм.» вместо «Ед. изм.» — опечатка распознавания в шапке.
+
+    Словарь тут бессилен: слова «ел» не существует. Колонка опознаётся по
+    расстоянию редактирования, но документ обязан сказать о себе, что
+    опознан неточно, — молча разложить колонки по догадке нельзя.
+    """
+    lines = [
+        "Показатель Результат Ел. изм. Референсные пределы",
+        "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.units == "мг/л"
+    assert row.reference_text == "0 - 5"
+    assert table.needs_confirmation is True
+
+
+def test_long_header_word_is_matched_at_distance_two():
+    """«Референскыю» вместо «Референсные» — две неверные буквы из
+    одиннадцати. На длинном слове это по-прежнему одно и то же слово."""
+    lines = [
+        "Параметр Результат Референскыю значения Ед. изм.",
+        "Ферритин 45 10 - 120 нг/мл",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.value_text == "45"
+    assert row.reference_text == "10 - 120"
+    assert row.units == "нг/мл"
+    assert table.needs_confirmation is True
+
+
+def test_short_header_word_is_not_matched_at_distance_two():
+    """«En.» — не «Ед.»: на слове из двух букв расстояние 2 означает, что
+    общих букв нет вовсе. Порог по длине слова стоит ровно ради этого."""
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(["Параметр Результат Референсные значения En. изм."])
+    assert "en" in str(exc_info.value)
+
+
+def test_a_word_equally_close_to_two_roles_is_not_a_match():
+    """«Значени» — на расстоянии 1 и от «значение» (результат), и от
+    «значения» (референс). Одинаково близко к двум ролям — значит роль
+    не выбрана; неоднозначность здесь, как и везде в инструменте, отказ,
+    а не жребий."""
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(["Параметр Результат Значени Ед. изм."])
+    assert "значени" in str(exc_info.value)
+
+
+def test_a_word_far_from_every_known_word_is_still_refused():
+    """«Гематокрит» в шапке — не опечатка ни одного известного слова."""
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(["Показатель Результат Ед. изм. Гематокрит"])
+    assert "гематокрит" in str(exc_info.value)
+
+
+def test_a_line_of_prose_is_not_made_a_header_by_inexact_matching():
+    """Неточное совпадение объясняет колонки уже найденной шапки, но не ищет
+    саму шапку.
+
+    «Исследования» и «результаты» — обычные слова протокола, и оба на
+    расстоянии 1 от «исследование» и «результат». Позволь догадке назначать
+    обязательные роли — и первая же фраза заключения УЗИ становится шапкой
+    таблицы: по корпусу образцов так «нашлись» шапки в семи документах, а
+    в пяти уже принятых сдвинулись колонки, и узнанные показатели пропали.
+    Поэтому «название» и «значение» обязаны быть опознаны точно; догадка
+    остаётся только для остальных колонок.
+    """
+    lines = [
+        "Исследования результаты обсуждены с пациентом",
+        "Печень не увеличена, контуры ровные",
+    ]
+    with pytest.raises(LabTableError, match="не похоже на таблицу"):
+        parse_lab_lines(lines)
+
+
+def test_exactly_recognised_header_needs_no_confirmation():
+    """Обычный случай не имеет права стать медленнее на один экран."""
+    lines = [
+        "Показатель Результат Ед. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    table = parse_lab_lines(lines)
+    assert table.needs_confirmation is False
+
+
+def test_inexact_header_reports_the_line_and_the_columns_it_understood():
+    """Коуч подтверждает не «неточную шапку» вообще, а конкретную догадку:
+    вот строка, как её прочитало распознавание, вот роли колонок."""
+    lines = [
+        "Показатель Результат Ел. изм. Референсные пределы",
+        "Ферритин 45 нг/мл 10 - 120",
+    ]
+    table = parse_lab_lines(lines)
+    assert table.header_line == "Показатель Результат Ел. изм. Референсные пределы"
+    assert table.columns == (
+        ("показатель", "название"),
+        ("результат", "значение"),
+        ("ел", "единицы"),
+        ("референсные", "референс"),
+    )
 
 
 def test_units_last_header_with_a_spaced_reference_range_is_parsed_as_a_range():

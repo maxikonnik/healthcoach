@@ -53,6 +53,44 @@
 <p class="warn">{{ document_refusal }}</p>
 {% endif %}
 
+{% if document_notice %}
+<p class="muted">{{ document_notice }}</p>
+{% endif %}
+
+{% if document_confirmation %}
+<p class="warn">«{{ document_confirmation.filename }}»: шапка таблицы прочитана
+  неточно — часть колонок распознана с опечатками, и роль им подобрана по
+  близости написания. Показатели ещё не сохранены: посмотрите, верно ли
+  поняты колонки.</p>
+<p>Строка шапки, как её прочитало распознавание:
+  <b>«{{ document_confirmation.header_line }}»</b></p>
+<table>
+  <tr><th>Слово шапки</th><th>Понято как</th></tr>
+  {% for word, role in document_confirmation.columns %}
+  <tr><td>{{ word }}</td><td>{{ role }}</td></tr>
+  {% endfor %}
+</table>
+<p>Первые разобранные строки (всего {{ document_confirmation.total_rows }}):</p>
+<table>
+  <tr><th>Название</th><th>Значение</th><th>Единицы</th><th>Референс</th></tr>
+  {% for row in document_confirmation.rows %}
+  <tr>
+    <td>{{ row.name }}</td><td>{{ row.value_text }}</td>
+    <td>{{ row.units }}</td><td>{{ row.reference_text }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<form method="post" action="/snapshots/{{ snapshot.id }}/documents/confirm#документы">
+  <input type="hidden" name="staging" value="{{ document_confirmation.staging }}">
+  <input type="hidden" name="filename" value="{{ document_confirmation.filename }}">
+  <button type="submit">Да, колонки верные — импортировать</button>
+</form>
+<form method="post" action="/snapshots/{{ snapshot.id }}/documents/cancel#документы">
+  <input type="hidden" name="staging" value="{{ document_confirmation.staging }}">
+  <button type="submit">Нет — отменить загрузку</button>
+</form>
+{% endif %}
+
 {% if document_import %}
 <p>«{{ document_import.filename }}» ({{ document_import.source }}):
   импортировано показателей: {{ document_import.count }}.</p>

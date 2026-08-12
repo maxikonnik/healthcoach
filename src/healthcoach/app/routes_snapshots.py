@@ -58,6 +58,28 @@ class DocumentImport:
 
 
 @dataclass(frozen=True)
+class DocumentConfirmation:
+    """Догадка разбора, показанная коучу вместо импорта.
+
+    Шапка документа опознана неточно (см. `LabTable.needs_confirmation`):
+    колонка могла встать не на своё место, и тогда референс попал бы в
+    единицы, а это доходит до отчёта клиента. Измерений ещё нет ни одного —
+    файл ждёт во временном имени, пока коуч не посмотрит на догадку.
+    """
+
+    filename: str
+    staging: str
+    """Имя временного файла, который ждёт решения. Возвращается формой
+    подтверждения обратно на сервер — другого состояния между двумя
+    запросами не заводится."""
+    header_line: str
+    columns: tuple[tuple[str, str], ...]
+    rows: tuple[object, ...]
+    """Первые разобранные строки — по ним видно, что колонки поняты верно."""
+    total_rows: int
+
+
+@dataclass(frozen=True)
 class FindingsBundle:
     """Общая сборка для обоих маршрутов находок (HTML и `.txt`) — чтобы
     страница и текстовая выгрузка не могли увидеть разные списки."""
@@ -102,6 +124,8 @@ def render_snapshot_page(
     imported: ImportedAnswers | None = None,
     document_import: DocumentImport | None = None,
     document_refusal: str | None = None,
+    document_confirmation: DocumentConfirmation | None = None,
+    document_notice: str | None = None,
     status_code: int = 200,
 ):
     """Отрисовать экран среза. Общая точка входа: и обычный показ страницы,
@@ -112,7 +136,12 @@ def render_snapshot_page(
     routes_documents.py), показанное на том же экране, откуда коуч
     отправляла форму, а не на голой JSON-странице: она должна увидеть, что
     случилось, не покидая срез. `status_code` по умолчанию 200 — обычный
-    показ страницы; отказ рендерит её же с 400, чтобы код ответа не врал."""
+    показ страницы; отказ рендерит её же с 400, чтобы код ответа не врал.
+
+    `document_confirmation` — догадка разбора при неточно опознанной шапке:
+    страница показывает её вместо сводки импорта, потому что импорта ещё не
+    было. `document_notice` — короткое сообщение о том, что случилось с
+    загрузкой (отмена коучем), не отказ и не ошибка."""
     return templates.TemplateResponse(
         request,
         "snapshot.html",
@@ -124,6 +153,8 @@ def render_snapshot_page(
             "imported": imported,
             "document_import": document_import,
             "document_refusal": document_refusal,
+            "document_confirmation": document_confirmation,
+            "document_notice": document_notice,
             # Какие документы уже приложены к срезу, и что в каждом из
             # них разбор не понял — показывается на каждом открытии
             # страницы, а не только сразу после загрузки: перезагрузка

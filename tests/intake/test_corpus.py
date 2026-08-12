@@ -248,6 +248,45 @@ def test_not_a_table_and_empty_document_refusals_are_classified_by_their_real_me
     assert by_label == {"01": REFUSAL_NOT_A_TABLE, "02": REFUSAL_EMPTY_DOCUMENT}
 
 
+def test_inexactly_recognised_header_is_counted_apart_from_accepted(
+    corpus_dir, references
+):
+    """Документ, чья шапка опознана по расстоянию редактирования, разобран —
+    но не принят: измерений он не создаёт, пока коуч не подтвердит догадку
+    (Task 6 плана). Считать его принятым значило бы приписать инструменту
+    уверенность, которой у него нет; считать отказом — скрыть, что разбор
+    его понял. Отдельный счёт «под подтверждение».
+    """
+    (corpus_dir / "20.jpg").write_bytes(b"\xff\xd8\xff")
+    (corpus_dir / "21.jpg").write_bytes(b"\xff\xd8\xff")
+
+    engine = _ScriptedEngine(
+        {
+            # «Ел.» вместо «Ед.» — опечатка распознавания в самой шапке.
+            "20.jpg": [
+                TextLine("Показатель", x=0.10, y=0.90),
+                TextLine("Результат", x=0.40, y=0.90),
+                TextLine("Ел.", x=0.65, y=0.90),
+                TextLine("Референсные", x=0.85, y=0.90),
+                *_row("Глюкоза", "5.5", "ммоль/л", "3.3-5.5", 0.80),
+            ],
+            "21.jpg": [*_HEADER, *_row("Глюкоза", "5.5", "ммоль/л", "3.3-5.5", 0.80)],
+        }
+    )
+
+    report = scan_corpus(corpus_dir, references, engine)
+
+    assert report.accepted == 1
+    assert report.confirmable == 1
+    assert report.refused_by == {}
+    by_label = {o.label: (o.accepted, o.confirmable) for o in report.outcomes}
+    assert by_label == {"01": (False, True), "02": (True, False)}
+    # Строки разобраны и сопоставлены — разбор их понял, просто не сохранил.
+    assert report.rows == 2
+    assert report.resolved == 2
+    assert "под подтверждение" in format_report(report)
+
+
 def test_format_report_prints_numbers_counts_and_indicator_names_only():
     """Отчёт для человека — только номера файлов, числа и названия показателей."""
     report = CorpusReport(
@@ -380,7 +419,19 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # для реальных случаев (пустой скан, нечитаемое фото), которых среди
     # 77 файлов не оказалось. accepted и resolved не изменились: это правка
     # сообщения и его класса, а не разбора.
+    #
+    # Task 6 завела неточное совпадение слов шапки под подтверждение коуча.
+    # Два из трёх оставшихся отказов «шапка-колонки» — «Ел. изм.» вместо
+    # «Ед. изм.» и «Референскыю» вместо «Референсные» — теперь разбираются,
+    # но не как принятые: они считаются отдельно (confirmable), потому что
+    # измерений без согласия коуча не создают. accepted остаётся 40, отказ
+    # «шапка-колонки» падает с 3 до 1 (третий — «En. изм.», латинские буквы
+    # вместо «Ед.»: на слове из двух букв неверны обе, и неточное совпадение
+    # туда справедливо не дотягивается). resolved не изменилось: обе новые
+    # шапки — фотографии, чьи строки база знаний не узнаёт (10 строк, 0
+    # сопоставлений), и их вклад в табло виден только в rows.
     min_accepted = 40
+    min_confirmable = 2
     min_resolved = 537
 
     knowledge_dir = Path(__file__).parents[2] / "knowledge"
@@ -391,6 +442,10 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     assert report.accepted >= min_accepted, (
         f"принято {report.accepted} документов из {len(report.outcomes)}, "
         f"нужно не меньше {min_accepted}"
+    )
+    assert report.confirmable >= min_confirmable, (
+        f"под подтверждение разобрано {report.confirmable} документов, "
+        f"нужно не меньше {min_confirmable}"
     )
     assert report.resolved >= min_resolved, (
         f"сопоставлено {report.resolved} строк из {report.rows}, "
