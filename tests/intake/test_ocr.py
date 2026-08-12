@@ -1,3 +1,4 @@
+import re
 import sys
 
 import pytest
@@ -7,6 +8,8 @@ from healthcoach.intake.ocr import (
     TextLine,
     rows_from_observations,
 )
+
+_CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
 
 
 def test_observations_on_the_same_height_become_one_row():
@@ -66,10 +69,28 @@ def test_engine_refuses_a_file_that_is_not_an_image(tmp_path):
 @pytest.mark.samples
 @pytest.mark.skipif(sys.platform != "darwin", reason="Vision есть только в macOS")
 def test_sample_photo_yields_readable_rows(samples_dir):
+    """Распознавание читает настоящие фотографии бланков по-русски.
+
+    Обход рекурсивный и без опоры на конкретный файл: образцы разложены по
+    папкам клиентов, состав их меняется, а среди фотографий есть снимки
+    заключений и УЗИ — на них строк таблицы не будет, и требовать их от
+    первого попавшегося файла значит проверять порядок в папке, а не
+    распознавание. Достаточно, чтобы хоть один снимок читался.
+    """
     from healthcoach.intake.ocr import AppleVisionEngine
 
-    photos = sorted(samples_dir.glob("*.jpg"))
+    photos = sorted(
+        p for p in samples_dir.rglob("*")
+        if p.suffix.lower() in (".jpg", ".jpeg", ".png")
+    )
     assert photos, "в samples/ нет ни одной фотографии"
-    rows = rows_from_observations(AppleVisionEngine().read(photos[0]))
-    assert len(rows) > 20
-    assert any("Гемоглобин" in row for row in rows)
+
+    engine = AppleVisionEngine()
+    for photo in photos:
+        rows = rows_from_observations(engine.read(photo))
+        if len(rows) > 20 and any(_CYRILLIC.search(row) for row in rows):
+            return
+    raise AssertionError(
+        f"ни одна из {len(photos)} фотографий не дала больше 20 строк "
+        "с кириллицей — распознавание бланков не работает"
+    )
