@@ -109,24 +109,47 @@ def test_scan_corpus_counts_accepted_refused_rows_and_resolution(corpus_dir, ref
     assert report.resolved == 1
     assert report.unresolved_names == {"Выдуманный показатель": 1}
 
-    names = {outcome.name for outcome in report.outcomes}
-    assert names == {"01.jpg", "02.jpg", "03.jpg", "заметки.txt"}
-    assert "~$черновик.xlsx" not in names
-    assert ".DS_Store" not in names
+    # Файлы нумеруются в порядке обхода: 01.jpg, 03.jpg, заметки.txt,
+    # клиент/02.jpg. Замок Office и .DS_Store номера не получают вовсе.
+    assert [outcome.label for outcome in report.outcomes] == ["01", "02", "03", "04"]
 
-    resolved_outcome = next(o for o in report.outcomes if o.name == "01.jpg")
-    assert resolved_outcome == FileOutcome(
-        name="01.jpg", accepted=True, refusal=None, rows=1, unparsed=0, resolved=1
+    assert report.outcomes[0] == FileOutcome(
+        label="01", accepted=True, refusal=None, rows=1, unparsed=0, resolved=1
+    )
+    assert report.outcomes[3] == FileOutcome(
+        label="04", accepted=True, refusal=None, rows=1, unparsed=0, resolved=0
     )
 
-    unresolved_outcome = next(o for o in report.outcomes if o.name == "02.jpg")
-    assert unresolved_outcome == FileOutcome(
-        name="02.jpg", accepted=True, refusal=None, rows=1, unparsed=0, resolved=0
-    )
-
-    refused_outcome = next(o for o in report.outcomes if o.name == "заметки.txt")
+    refused_outcome = report.outcomes[2]
     assert refused_outcome.accepted is False
     assert refused_outcome.refusal == REFUSAL_FORMAT
+
+
+def test_report_identifies_files_by_number_not_by_name(corpus_dir, references):
+    """В именах файлов корпуса стоят фамилии пациентов и номер карты.
+
+    Отчёт табло описан в README как безопасный к показу; имя файла делало
+    это неправдой. Номер в порядке обхода стоит столько же, а фамилии не
+    несёт — найти сам файл коуч может по номеру
+    (`python -m healthcoach.intake.corpus 1`).
+    """
+    (corpus_dir / "Тестова М. А. 1975 карта 12345 ОАК.jpg").write_bytes(b"\xff\xd8\xff")
+    engine = _ScriptedEngine(
+        {
+            "Тестова М. А. 1975 карта 12345 ОАК.jpg": [
+                *_HEADER,
+                *_row("Глюкоза", "5.5", "ммоль/л", "3.3-5.5", 0.80),
+            ]
+        }
+    )
+
+    report = scan_corpus(corpus_dir, references, engine)
+
+    assert [outcome.label for outcome in report.outcomes] == ["01"]
+    text = format_report(report)
+    assert "Тестова" not in text
+    assert "12345" not in text
+    assert "01" in text
 
 
 def test_scan_corpus_skips_office_locks_and_hidden_cache_directories(corpus_dir, references):
@@ -188,15 +211,15 @@ def test_header_refusals_are_classified_by_their_real_messages(corpus_dir, refer
     assert all(o.refusal == REFUSAL_HEADER_COLUMNS for o in report.outcomes)
 
 
-def test_format_report_prints_names_counts_and_indicator_names_only():
-    """Отчёт для человека — только имена файлов, числа и названия показателей."""
+def test_format_report_prints_numbers_counts_and_indicator_names_only():
+    """Отчёт для человека — только номера файлов, числа и названия показателей."""
     report = CorpusReport(
         outcomes=(
             FileOutcome(
-                name="01.jpg", accepted=True, refusal=None, rows=2, unparsed=1, resolved=1
+                label="01", accepted=True, refusal=None, rows=2, unparsed=1, resolved=1
             ),
             FileOutcome(
-                name="02.pdf",
+                label="02",
                 accepted=False,
                 refusal=REFUSAL_FORMAT,
                 rows=0,
@@ -213,8 +236,8 @@ def test_format_report_prints_names_counts_and_indicator_names_only():
 
     text = format_report(report)
 
-    assert "01.jpg" in text
-    assert "02.pdf" in text
+    assert "01" in text
+    assert "02" in text
     assert REFUSAL_FORMAT in text
     assert "принято" in text
     assert "1 из 2" in text

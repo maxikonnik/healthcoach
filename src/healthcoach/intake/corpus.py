@@ -6,8 +6,9 @@
 следующая задача плана поднимает пороги в тесте по факту нового прогона,
 а не выдумывает их заново.
 
-Отчёт для человека печатает только имена файлов, числа и названия
-показателей — ни значений измерений, ни исходного текста строк. Строки,
+Отчёт для человека печатает только номера файлов, числа и названия
+показателей — ни значений измерений, ни исходного текста строк, ни имён
+файлов: в именах файлов корпуса стоят фамилии пациентов. Строки,
 которые разбор не распознал (`LabTable.unparsed`), в отчёт не попадают
 вовсе: там может быть что угодно с бланка, включая персональные данные,
 пока служебные строки не отсеяны (см. Task 3 плана).
@@ -41,8 +42,13 @@ _SKIP_PREFIXES = ("~$", ".")
 class FileOutcome:
     """Итог разбора одного файла корпуса."""
 
-    name: str
-    """Имя файла — только для локального отчёта, не сохраняется никуда."""
+    label: str
+    """Номер файла в порядке обхода корпуса, а не его имя.
+
+    В именах файлов корпуса стоят фамилии пациентов и номер карты, а отчёт
+    описан в README как безопасный к показу. Номер для чтения табло стоит
+    столько же, а фамилии не несёт; найти сам файл коуч может по номеру:
+    `python -m healthcoach.intake.corpus 7`."""
     accepted: bool
     refusal: str | None
     rows: int
@@ -114,7 +120,8 @@ def scan_corpus(
     total_rows = 0
     total_resolved = 0
 
-    for path in _iter_documents(folder):
+    for number, path in enumerate(_iter_documents(folder), start=1):
+        label = f"{number:02d}"
         try:
             document = read_document(path, engine)
         except DocumentError as exc:
@@ -122,7 +129,7 @@ def scan_corpus(
             refused_by[refusal] += 1
             outcomes.append(
                 FileOutcome(
-                    name=path.name,
+                    label=label,
                     accepted=False,
                     refusal=refusal,
                     rows=0,
@@ -142,7 +149,7 @@ def scan_corpus(
         total_resolved += resolved
         outcomes.append(
             FileOutcome(
-                name=path.name,
+                label=label,
                 accepted=True,
                 refusal=None,
                 rows=len(document.table.rows),
@@ -164,15 +171,16 @@ def scan_corpus(
 def format_report(report: CorpusReport) -> str:
     """Собрать отчёт для человека: таблица по файлам плюс сводка.
 
-    Только имена файлов, числа и названия показателей — как договорено в
-    Task 1 плана. Ни значений, ни исходного текста строк здесь нет.
+    Только номера файлов, числа и названия показателей — как договорено в
+    Task 1 плана. Ни значений, ни исходного текста строк, ни имён файлов
+    (в них стоят фамилии пациентов) здесь нет.
     """
     lines: list[str] = []
-    lines.append("=== по файлам: имя | итог | строк | нераспознано | сопоставлено ===")
+    lines.append("=== по файлам: № | итог | строк | нераспознано | сопоставлено ===")
     for outcome in report.outcomes:
         status = "ok" if outcome.accepted else f"отказ ({outcome.refusal})"
         lines.append(
-            f"  {outcome.name} | {status} | {outcome.rows} | "
+            f"  {outcome.label} | {status} | {outcome.rows} | "
             f"{outcome.unparsed} | {outcome.resolved}"
         )
 
@@ -209,13 +217,29 @@ def format_report(report: CorpusReport) -> str:
 
 
 def main() -> None:
-    """Печать табло по настоящему корпусу — `python -m healthcoach.intake.corpus`."""
+    """Печать табло по настоящему корпусу — `python -m healthcoach.intake.corpus`.
+
+    С номером файла (`python -m healthcoach.intake.corpus 7`) вместо табло
+    печатает путь одного файла — того, что стоит в отчёте под этим номером.
+    Имена файлов из табло убраны (в них фамилии пациентов), но найти файл,
+    к которому относится строка отчёта, коучу всё равно нужно; поиск по
+    одному номеру она делает сама и осознанно.
+    """
     from healthcoach.intake.ocr import AppleVisionEngine
 
     repo_root = Path(__file__).resolve().parents[3]
     samples_dir = repo_root / "samples"
     if not samples_dir.is_dir():
         print(f"папки {samples_dir} нет — смотреть табло не по чему")
+        raise SystemExit(1)
+
+    if len(sys.argv) > 1:
+        wanted = sys.argv[1].lstrip("0")
+        for number, path in enumerate(_iter_documents(samples_dir), start=1):
+            if str(number) == wanted:
+                print(path)
+                return
+        print(f"файла под номером {sys.argv[1]} в корпусе нет")
         raise SystemExit(1)
 
     references = load_references(repo_root / "knowledge" / "references")
