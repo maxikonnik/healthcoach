@@ -290,7 +290,18 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
     tail_roles = [role for role in roles if role != ROLE_NAME]
     for index, role in enumerate(tail_roles):
         if not rest:
-            return None
+            # Токены кончились раньше колонок. Пустая ячейка «прочего» —
+            # обычное дело: комментарий пишут не к каждой строке, а
+            # «Предыдущий» у первого в жизни анализа пуст всегда; терять
+            # из-за этого сегодняшний результат нельзя, тем более что
+            # содержимое «прочего» в запись бланка не идёт вовсе. Пустота
+            # на колонке, которая в запись идёт, — другое дело: это
+            # признак того, что граница колонок разобрана не там
+            # («Пациентка беременна 12 недель»), и строка идёт в unparsed.
+            if role != ROLE_OTHER:
+                return None
+            fields[role] = ""
+            continue
         if index == len(tail_roles) - 1:
             if role == ROLE_UNITS and len(rest) > 1:
                 return None
