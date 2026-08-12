@@ -364,6 +364,39 @@ def test_header_word_edinitsy_is_recognised_as_units():
     assert row.reference_text == "0 - 5"
 
 
+def test_header_word_znacheniya_alone_is_the_value_column():
+    """«Значения» без «Референсных» перед ним — колонка результата.
+
+    Словарь знал «значение» как результат, а «значения» — как референс,
+    и шапка «Показатель Значения Ед. изм.» оставалась без колонки
+    значения вовсе: кандидат в шапку отбрасывался, а документ умирал с
+    «не найдена шапка» — отказом, который не называет причины.
+    """
+    lines = [
+        "Показатель Значения Ед. изм.",
+        "Ферритин 45 нг/мл",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.name == "Ферритин"
+    assert row.value_text == "45"
+    assert row.units == "нг/мл"
+
+
+def test_znacheniya_after_a_reference_word_is_still_the_reference_column():
+    """«Референсные значения» — по-прежнему одна колонка референса, а не
+    результат: слово меняет роль только там, где колонки результата ещё
+    не было."""
+    lines = [
+        "Параметр Результат Референсные значения",
+        "Ферритин 45 10 - 120",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.value_text == "45"
+    assert row.reference_text == "10 - 120"
+
+
 def test_header_with_an_unknown_reference_word_is_refused():
     """«Норма» вместо «Нормальные»/«Референсные» — слово не в словаре.
 

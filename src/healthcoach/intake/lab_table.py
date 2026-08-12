@@ -50,6 +50,13 @@ _HEADER_WORDS = {
     "динамика": ROLE_OTHER,
 }
 
+_WORD_AMBIGUOUS_VALUES = "значения"
+"""«Значения» — слово с двумя ролями: в «Референсные значения» это
+референс, а само по себе («Показатель Значения Ед. изм.») — колонка
+результата, отличающаяся от «Значение» одной буквой. Роль выбирается по
+тому, что уже встречено левее в той же шапке (см. `_header_columns`);
+в словаре слово стоит референсом — ролью, которая у него чаще."""
+
 _NUMBER = re.compile(r"^[<>]?\d+(?:[.,]\d+)?$")
 _STARTS_WITH_NUMBER = re.compile(r"^\s*[<>]?\d")
 _HAS_DIGIT = re.compile(r"\d")
@@ -148,12 +155,21 @@ def _header_columns(line: str) -> list[tuple[str, str]]:
 
     Роль, встреченная второй раз, новой колонки не даёт: «Референсные
     значения» — два слова одной колонки, а не две колонки.
+
+    «Значения» само по себе — колонка результата: пока ни результата, ни
+    референса в шапке не встречено, читать его референсом значит остаться
+    без обязательной колонки значения и убить документ отказом «шапка не
+    найдена», который причины не называет.
     """
     columns: list[tuple[str, str]] = []
     seen: set[str] = set()
     for word in _header_words(line):
         role = _HEADER_WORDS.get(word)
-        if role is None or role in seen:
+        if role is None:
+            continue
+        if word == _WORD_AMBIGUOUS_VALUES and not seen & {ROLE_VALUE, ROLE_REFERENCE}:
+            role = ROLE_VALUE
+        if role in seen:
             continue
         seen.add(role)
         columns.append((word, role))
