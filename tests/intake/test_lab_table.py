@@ -324,6 +324,51 @@ def test_other_column_does_not_leak_into_value_or_units():
     assert row.reference_text == "10 - 120"
 
 
+def test_free_text_column_that_is_not_last_is_refused():
+    """«Комментарий» — свободный текст: в ячейке стоит сколько угодно слов.
+
+    Непоследняя колонка забирает ровно один токен, поэтому из строки
+    «Ферритин 45 в норме нг/мл 10 - 120» в единицы встало бы «норме», и
+    запись осела бы в бланке с выдуманными единицами — без отказа и без
+    следа в unparsed. Свободный текст читается однозначно только
+    последней колонкой; в любом другом месте шапки — отказ.
+    """
+    lines = [
+        "Показатель Результат Комментарий Ед. изм. Референсные значения",
+        "Ферритин 45 в норме нг/мл 10 - 120",
+    ]
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(lines)
+    assert "комментарий" in str(exc_info.value).casefold()
+
+
+def test_free_text_column_right_after_the_name_is_refused():
+    """Та же опасность сразу за названием: «Комментарий» съел бы токен,
+    который на деле принадлежит результату."""
+    lines = [
+        "Показатель Комментарий Результат Ед. изм.",
+        "Ферритин в норме 45 нг/мл",
+    ]
+    with pytest.raises(LabTableError) as exc_info:
+        parse_lab_lines(lines)
+    assert "комментарий" in str(exc_info.value).casefold()
+
+
+def test_two_free_text_columns_at_the_end_are_parsed():
+    """Две колонки свободного текста подряд в конце опасности не несут:
+    последняя роль забирает весь хвост, а содержимое «прочего» в запись
+    бланка не попадает вовсе."""
+    lines = [
+        "Исследование Результат Единицы Референсные Комментарий Предыдущий",
+        "Ферритин 45 нг/мл 10 - 120 в норме 38",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.value_text == "45"
+    assert row.units == "нг/мл"
+    assert row.reference_text == "10 - 120"
+
+
 _CORPUS_HEADERS_PARSE = [
     "Показатель Результат Референсные значения Ед.изм.",
     "Исследование Результат Единицы Референсные Комментарий",

@@ -127,14 +127,26 @@ def _header_words(line: str) -> list[str]:
     return [word for word in words if word]
 
 
-def _header_word_roles(line: str) -> list[str]:
-    """Роли, узнанные среди слов строки, по порядку появления."""
-    roles: list[str] = []
+def _header_columns(line: str) -> list[tuple[str, str]]:
+    """Колонки строки-шапки: слово и его роль, по порядку появления.
+
+    Роль, встреченная второй раз, новой колонки не даёт: «Референсные
+    значения» — два слова одной колонки, а не две колонки.
+    """
+    columns: list[tuple[str, str]] = []
+    seen: set[str] = set()
     for word in _header_words(line):
         role = _HEADER_WORDS.get(word)
-        if role is not None and role not in roles:
-            roles.append(role)
-    return roles
+        if role is None or role in seen:
+            continue
+        seen.add(role)
+        columns.append((word, role))
+    return columns
+
+
+def _header_word_roles(line: str) -> list[str]:
+    """Роли, узнанные среди слов строки, по порядку появления."""
+    return [role for _, role in _header_columns(line)]
 
 
 def _unrecognised_header_words(line: str) -> list[str]:
@@ -163,11 +175,19 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
     и «значение»; каждое остальное слово шапки обязано быть опознано хоть
     какой-то ролью, включая «прочее» — известную, но не нужную колонку
     вроде «Комментарий» или «Предыдущий».
+
+    Опознанности мало: колонка обязана быть ещё и безопасной по месту.
+    В ячейке «прочего» стоит свободный текст («в норме», «выше нормы
+    в 2 раза»), а непоследняя колонка забирает ровно один токен — значит
+    остальные слова комментария сдвинут все следующие колонки, и единицы
+    придут из середины фразы. Разобрать свободный текст однозначно можно
+    только последней колонкой; в любом другом месте шапки — отказ.
     """
     for index, line in enumerate(lines):
         if _HAS_DIGIT.search(line):
             continue
-        roles = _header_word_roles(line)
+        columns = _header_columns(line)
+        roles = [role for _, role in columns]
         if any(role not in roles for role in _ROLES_MANDATORY):
             continue
         unrecognised = _unrecognised_header_words(line)
@@ -177,6 +197,13 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
                 f"нераспознанные слова: {', '.join(unrecognised)} — "
                 "разбирать дальше нельзя, колонка встанет не на своё место"
             )
+        for position, (word, role) in enumerate(columns):
+            if role == ROLE_OTHER and position != len(columns) - 1:
+                raise LabTableError(
+                    f"строка-шапка {line.strip()!r}: колонка {word!r} — "
+                    "свободный текст, а стоит не последней — разбирать "
+                    "дальше нельзя, её слова сдвинут остальные колонки"
+                )
         return index, roles
     raise LabTableError(
         "в выгрузке не найдена шапка таблицы: неизвестно, где значение, "
