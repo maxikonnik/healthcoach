@@ -15,6 +15,7 @@ import pytest
 
 from healthcoach.intake.corpus import (
     REFUSAL_FORMAT,
+    REFUSAL_HEADER_COLUMNS,
     REFUSAL_HEADER_MISSING,
     CorpusReport,
     FileOutcome,
@@ -148,6 +149,43 @@ def test_scan_corpus_on_empty_folder_is_an_empty_report(corpus_dir, references):
     assert report == CorpusReport(
         outcomes=(), accepted=0, refused_by={}, rows=0, resolved=0, unresolved_names={}
     )
+
+
+def _header_only(*words: str) -> list[TextLine]:
+    """Документ из одной строки-шапки: колонки по возрастанию x."""
+    return [
+        TextLine(word, x=0.10 + 0.15 * i, y=0.90) for i, word in enumerate(words)
+    ]
+
+
+def test_header_refusals_are_classified_by_their_real_messages(corpus_dir, references):
+    """Класс «шапка-колонки» ставится по настоящему тексту отказа.
+
+    Раньше эту подстроку не проверял ни один тест: переименуй формулировку
+    в lab_table.py — и все отказы по шапке молча съезжали в «иное», а табло
+    показывало бы, что колонки распознаются прекрасно. Здесь отказ рождается
+    там же, где в жизни, — из разбора настоящей плохой шапки, и до классов
+    доходит своим ходом, через DocumentError.
+    """
+    (corpus_dir / "10.jpg").write_bytes(b"\xff\xd8\xff")
+    (corpus_dir / "11.jpg").write_bytes(b"\xff\xd8\xff")
+
+    engine = _ScriptedEngine(
+        {
+            # Слово «Норма» словарю неизвестно — колонку опознать нечем.
+            "10.jpg": _header_only("Показатель", "Результат", "Ед.", "Норма"),
+            # «Комментарий» опознан, но стоит не последним — свободный
+            # текст сдвинул бы все колонки за собой.
+            "11.jpg": _header_only(
+                "Показатель", "Результат", "Комментарий", "Ед.", "Референсные"
+            ),
+        }
+    )
+
+    report = scan_corpus(corpus_dir, references, engine)
+
+    assert report.refused_by == {REFUSAL_HEADER_COLUMNS: 2}
+    assert all(o.refusal == REFUSAL_HEADER_COLUMNS for o in report.outcomes)
 
 
 def test_format_report_prints_names_counts_and_indicator_names_only():
