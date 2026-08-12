@@ -25,11 +25,11 @@ def test_known_analyte_is_recognised_and_converted():
 def test_unknown_analyte_is_kept_not_dropped():
     """21 показатель в выгрузке против трёх в базе — терять их нельзя."""
     references = load_references(REFS)
-    table = _table(LabRow("Гомоцистеин", "12", "мкмоль/л", "5 - 15", "строка"))
+    table = _table(LabRow("Выдуманный показатель", "12", "мкмоль/л", "5 - 15", "строка"))
 
     (prepared,) = prepare_measurements(references, table)
     assert prepared.analyte_id == ""
-    assert prepared.raw_name == "Гомоцистеин"
+    assert prepared.raw_name == "Выдуманный показатель"
     assert prepared.value == 12.0
     assert prepared.problem == "показатель не распознан"
 

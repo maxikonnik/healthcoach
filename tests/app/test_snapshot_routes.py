@@ -102,7 +102,7 @@ def test_unknown_analyte_is_stored_and_flagged(client):
     test_client.post(
         f"/snapshots/{snapshot_id}/measurements",
         data={
-            "raw_name": "Гомоцистеин",
+            "raw_name": "Выдуманный показатель",
             "value": "12",
             "units": "мкмоль/л",
             "taken_on": "2026-08-20",
@@ -110,7 +110,7 @@ def test_unknown_analyte_is_stored_and_flagged(client):
     )
     (stored,) = _measurements(context, snapshot_id)
     assert stored.analyte_id == ""
-    assert stored.raw_name == "Гомоцистеин"
+    assert stored.raw_name == "Выдуманный показатель"
 
     page = test_client.get(f"/snapshots/{snapshot_id}").text
     assert "не распознан" in page
@@ -286,7 +286,7 @@ def test_confirmed_unrecognised_measurement_reaches_the_findings(client):
     test_client.post(
         f"/snapshots/{snapshot_id}/measurements",
         data={
-            "raw_name": "Гомоцистеин",
+            "raw_name": "Выдуманный показатель",
             "value": "12",
             "units": "мкмоль/л",
             "taken_on": "2026-08-20",
@@ -296,11 +296,11 @@ def test_confirmed_unrecognised_measurement_reaches_the_findings(client):
     assert stored.analyte_id == ""
 
     before = test_client.get(f"/snapshots/{snapshot_id}/findings").text
-    assert "Гомоцистеин" not in before
+    assert "Выдуманный показатель" not in before
 
     test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
     after = test_client.get(f"/snapshots/{snapshot_id}/findings").text
-    assert "Гомоцистеин" in after
+    assert "Выдуманный показатель" in after
     assert "правило не задано" in after
 
 

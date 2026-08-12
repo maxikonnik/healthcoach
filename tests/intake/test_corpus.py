@@ -319,8 +319,13 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # билирубин непрямой — три разные величины). Сопоставлено 528 строк
     # вместо 518. accepted не изменилось — эти правки только про базу
     # знаний, не про разбор шапки/строк.
+    #
+    # Уборка (пункт 3): гомоцистеин освобождён от роли заглушки в тестах
+    # и заведён показателем (id гомоцистеин, синоним Homocysteine,
+    # мкмоль/л, интервал [4.44, 13.56]). Печатается в корпусе четырежды —
+    # сопоставлено 532 строки вместо 528.
     min_accepted = 40
-    min_resolved = 528
+    min_resolved = 532
 
     knowledge_dir = Path(__file__).parents[2] / "knowledge"
     references = load_references(knowledge_dir / "references")

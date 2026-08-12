@@ -52,7 +52,7 @@ def test_lab_code_with_a_qualifying_parenthesis_is_not_stripped(references):
 
 
 def test_unknown_name_is_reported_not_guessed(references):
-    resolution = resolve_analyte(references, "Гомоцистеин")
+    resolution = resolve_analyte(references, "Выдуманный показатель")
     assert resolution.is_unknown
     assert resolution.analyte is None
     assert resolution.candidates == ()
