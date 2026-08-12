@@ -239,8 +239,13 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # засоряла unparsed), а нераспознанных строк стало 638 вместо 755,
     # различных названий — 293 вместо 309. Пороги здесь ниже не подняты,
     # потому что план меряет accepted/resolved, а не размер unparsed.
+    #
+    # Task 5 завела справочники показателей по корпусу (69 показателей в
+    # шести файлах, без целевых коридоров): сопоставлено 505 строк из 656
+    # вместо 18. accepted не изменилось — база знаний решает, узнан ли
+    # показатель, а не примут ли документ.
     min_accepted = 40
-    min_resolved = 18
+    min_resolved = 505
 
     knowledge_dir = Path(__file__).parents[2] / "knowledge"
     references = load_references(knowledge_dir / "references")

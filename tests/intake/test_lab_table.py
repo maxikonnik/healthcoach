@@ -161,6 +161,40 @@ def test_service_phrase_at_the_start_of_the_line_does_not_become_a_measurement(l
     assert table.unparsed == ()
 
 
+_SERVICE_LINES_IN_OTHER_CASE = [
+    "СТРАНИЦА 1 ИЗ 3",
+    "страница 1 из 3",
+    "ДАТА ИССЛЕДОВАНИЯ: 01.01.2026",
+    "штрихкод: 1234567890",
+]
+
+
+@pytest.mark.parametrize("line", _SERVICE_LINES_IN_OTHER_CASE)
+def test_service_lines_are_filtered_regardless_of_letter_case(line):
+    """Регресс: отсев различал регистр, и дефект, ради которого он писался,
+    выживал в капсе. «СТРАНИЦА 1 ИЗ 3» — обыкновенный колонтитул — снова
+    становилась измерением с именем «СТРАНИЦА» и значением 1.
+    """
+    table = parse_lab_lines([_CORPUS_SERVICE_HEADER, line])
+    assert table.rows == ()
+    assert table.unparsed == ()
+
+
+@pytest.mark.parametrize("heading", ["II триместр", "II ТРИМЕСТР", "III триместр:"])
+def test_trimester_heading_without_a_colon_is_filtered_too(heading):
+    """Двоеточие в конце заголовка — не обязательная часть бланка. Без
+    отсева «II триместр» становится `pending_name` и приклеивается к
+    следующей настоящей строке результата — та самая склейка, которую
+    пломбирует `test_trimester_header_line_is_filtered_and_does_not_swallow_the_next_row`:
+    следующая строка начинается с числа, и заголовок встаёт в имя
+    показателя — «II триместр» со значением 0.05.
+    """
+    lines = [_CORPUS_SERVICE_HEADER, heading, "0.05 - 0.50 мЕд/мл"]
+    table = parse_lab_lines(lines)
+    assert table.rows == ()
+    assert table.unparsed == ("0.05 - 0.50 мЕд/мл",)
+
+
 _UNITS_BEFORE_REFERENCE_HEADER = "Показатель Результат Ед. изм. Референсные пределы"
 
 _LINES_THAT_ONLY_LOOK_SERVICE = [
