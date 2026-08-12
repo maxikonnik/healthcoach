@@ -295,6 +295,19 @@ def _split_row(line: str, roles: Sequence[str]) -> LabRow | None:
     if first is None or first == 0:
         return None
 
+    if first >= 2 and _COMPARISON_SIGN.match(tokens[first - 1]):
+        # «Белок < 0.140 г/л»: знак отделён от числа пробелом, но
+        # принадлежит значению, а не названию. Иначе бланк говорит
+        # «меньше 0.140», а в анализ встаёт ровно 0.140 — число, которого
+        # в бланке не было. Склеенный «<0.140» числом не считается
+        # (см. `parse_number`) и доходит до коуча текстом, как и должен.
+        tokens = [
+            *tokens[: first - 1],
+            f"{tokens[first - 1]}{tokens[first]}",
+            *tokens[first + 1 :],
+        ]
+        first -= 1
+
     name = " ".join(tokens[:first])
     rest = tokens[first:]
     fields: dict[str, str] = {ROLE_NAME: name}

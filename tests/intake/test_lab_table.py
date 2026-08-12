@@ -526,6 +526,27 @@ def test_empty_previous_value_cell_does_not_destroy_the_row():
     assert row.units == ""
 
 
+def test_a_comparison_sign_apart_from_the_number_stays_with_the_value():
+    """«Белок < 0.140 г/л» — ниже порога чувствительности метода.
+
+    Знак, оторванный от числа пробелом, оставался в имени показателя, а в
+    значение шло голое число: бланк говорит «меньше 0.140», а в анализ
+    живого человека встало бы ровно 0.140. Строка из корпуса; пока пустая
+    ячейка «прочего» убивала запись, ошибка пряталась в unparsed.
+    """
+    lines = [
+        "Исследование Результат Ед. изм. Референсные значения",
+        "Белок < 0.140 г/л < 0.14",
+    ]
+    table = parse_lab_lines(lines)
+    (row,) = table.rows
+    assert row.name == "Белок"
+    assert row.value_text == "<0.140"
+    assert parse_number(row.value_text) is None
+    assert row.units == "г/л"
+    assert row.reference_text == "< 0.14"
+
+
 def test_a_row_that_runs_out_before_a_needed_column_is_still_refused():
     """Пустой имеет право остаться только колонка «прочее»: её содержимое
     в запись бланка не идёт вовсе, поэтому пустота там ничего не значит.
