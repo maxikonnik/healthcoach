@@ -112,6 +112,77 @@ def test_service_lines_are_not_taken_for_results():
     assert not any("Дата исследования" in line for line in table.unparsed)
 
 
+_CORPUS_SERVICE_HEADER = "Показатель Результат Референсные значения Ед.изм."
+
+_CORPUS_SERVICE_LINES = [
+    "Страница 1 из 3",
+    "№ заказа 100200300",
+    "ПЕЧАТЬ: 01.01.2026 12:00:00 Страница",
+    "Дата рождения: 01.01.1990 Возраст: 36",
+]
+"""Служебные строки бланка по отчёту табло корпуса образцов (Task 3 плана):
+«Страница», «№ заказа», «ПЕЧАТЬ:», «Дата рождения» встречены там буквально —
+здесь та же форма строки, но с выдуманными числами вместо содержимого
+настоящего бланка."""
+
+
+@pytest.mark.parametrize("line", _CORPUS_SERVICE_LINES)
+def test_service_lines_from_the_corpus_report_do_not_become_measurements(line):
+    """Ни строкой показателя, ни строкой на экран коуча служебная строка
+    быть не должна — иначе табло «нераспознано» вечно пополняется тем, что
+    коучу читать незачем."""
+    table = parse_lab_lines([_CORPUS_SERVICE_HEADER, line])
+    assert table.rows == ()
+    assert table.unparsed == ()
+
+
+def test_trimester_header_line_is_filtered_and_does_not_swallow_the_next_row():
+    """«I триместр:» — заголовок раздела бланка при беременности, а не
+    строка показателя: после двоеточия нет значения. Без отсева она стала
+    бы `pending_name` и склеилась со следующей настоящей строкой результата
+    (см. `_STARTS_WITH_NUMBER` в lab_table.py)."""
+    lines = [
+        _CORPUS_SERVICE_HEADER,
+        "I триместр:",
+        "ХГЧ 25000 10000 - 60000 мЕд/мл",
+    ]
+    table = parse_lab_lines(lines)
+    assert len(table.rows) == 1
+    assert table.rows[0].name == "ХГЧ"
+
+
+def test_patient_address_line_is_not_stored_as_a_measurement():
+    """Адрес пациента — персональные данные, которым не место среди
+    измерений: строка начинается с «Адрес» и содержит цифру (номер дома),
+    поэтому без отсева она стала бы записью с домашним адресом в имени
+    показателя. Мутация: убрать «Адрес» из `_SERVICE` — этот тест падает.
+    """
+    lines = [
+        _CORPUS_SERVICE_HEADER,
+        "Адрес пациента г. Тестоград, ул. Придуманная, д. 5, кв. 10",
+        "Ферритин 45 10 - 120 нг/мл",
+    ]
+    table = parse_lab_lines(lines)
+    assert len(table.rows) == 1
+    assert table.rows[0].name == "Ферритин"
+    assert not any("Адрес" in r.name for r in table.rows)
+    assert not any("Адрес" in line for line in table.unparsed)
+
+
+def test_service_word_match_is_whole_word_not_a_string_prefix():
+    """«Пациент» как префикс проглотил бы и «Пациентка беременна» — реальную
+    по форме строку бланка, которая начинается на те же буквы, но служебной
+    не является (это не список отсева — в него включён только «Адрес», а не
+    «Пациент»). Строка с числом обязана дойти до коуча в unparsed, а не
+    исчезнуть по совпадению первых букв.
+    """
+    table = parse_lab_lines(
+        [_CORPUS_SERVICE_HEADER, "Пациентка беременна 12 недель"]
+    )
+    assert table.rows == ()
+    assert table.unparsed == ("Пациентка беременна 12 недель",)
+
+
 def test_line_with_a_number_that_did_not_parse_reaches_the_coach():
     """Строка с числом может быть результатом — молча выбросить её нельзя."""
     table = parse_lab_lines(_lines("gemotest"))
