@@ -108,6 +108,63 @@ def test_no_spelling_belongs_to_two_analytes(references):
     )
 
 
+def test_no_spelling_collides_on_either_matching_attempt(references):
+    """Ни одно написание не занято дважды — ни в уточнённой, ни в общей форме.
+
+    `resolve_analyte` пробует сперва полное написание (вместе с хвостом
+    после запятой), и только не найдя — обрезанное по первой запятой. Тест
+    выше идёт через сам `resolve_analyte` и поэтому столкновения во второй,
+    запасной, форме не видит: уточнённая попытка успевает вернуть ответ
+    раньше. А оно опасно — стоит написанию с запятой попасть в базу знаний
+    («Лимфоциты, абсолютное количество»), и его обрезок «лимфоциты» отберёт
+    у настоящих лимфоцитов их собственное имя на запасной попытке.
+    """
+    from healthcoach.intake.resolve import _clean, _clean_qualified
+
+    for clean, form in ((_clean_qualified, "уточнённой"), (_clean, "общей")):
+        owners: dict[str, list[str]] = {}
+        for analyte in references.analytes:
+            for spelling in (analyte.id, analyte.name, *analyte.synonyms):
+                key = clean(spelling)
+                if not key:
+                    continue
+                owners.setdefault(key, []).append(analyte.id)
+        clashes = {
+            key: sorted(set(ids)) for key, ids in owners.items() if len(set(ids)) > 1
+        }
+        assert not clashes, f"в {form} форме написание занято дважды: {clashes}"
+
+
+def test_percentage_and_absolute_variants_never_share_a_spelling(references):
+    """Доля и абсолютный счёт одной клеточной линии — разные показатели.
+
+    Синоним, объявленный у обоих, делает оба неоднозначными: `resolve_analyte`
+    вернёт двух кандидатов и не выберет. Хуже другое — если бы написание
+    абсолютного счёта досталось процентному показателю, абсолютный счёт
+    клиента поехал бы в отчёт под подписью «%».
+    """
+    pairs = (
+        ("лимфоциты", "лимфоциты_абс"),
+        ("моноциты", "моноциты_абс"),
+        ("нейтрофилы", "нейтрофилы_абс"),
+        ("эозинофилы", "эозинофилы_абс"),
+        ("базофилы", "базофилы_абс"),
+        ("незрелые_гранулоциты_процент", "незрелые_гранулоциты"),
+    )
+    for percent_id, absolute_id in pairs:
+        percent = references.resolve(percent_id)
+        absolute = references.resolve(absolute_id)
+        assert percent is not None, f"нет показателя {percent_id}"
+        assert absolute is not None, f"нет показателя {absolute_id}"
+        assert percent.units == "%", f"{percent_id}: единицы {percent.units!r}"
+        assert absolute.units != "%", f"{absolute_id}: единицы {absolute.units!r}"
+
+        shared = {s.casefold() for s in percent.synonyms} & {
+            s.casefold() for s in absolute.synonyms
+        }
+        assert not shared, f"{percent_id}/{absolute_id}: общее написание {shared}"
+
+
 def test_every_analyte_declares_units(references):
     without = [a.id for a in references.analytes if not a.units.strip()]
     assert not without, f"показатели без единиц: {without}"
@@ -199,6 +256,18 @@ def test_corpus_analytes_resolve_from_live_blank_spellings(references):
         "T3 свободный": "т3_свободный",
         "Билирубин общий": "билирубин_общий",
         "Билирубин прямой": "билирубин_прямой",
+        # Хвост после запятой называет величину, а не единицы: у одной
+        # клеточной линии печатаются обе строки, доля и абсолютный счёт.
+        "Лимфоциты (LYMPH), %": "лимфоциты",
+        "Лимфоциты (LYMPH), абсолютное количество": "лимфоциты_абс",
+        "Моноциты (MON), абсолютное количество": "моноциты_абс",
+        "Нейтрофилы (Ne), абсолютное количество": "нейтрофилы_абс",
+        "Эозинофилы (Ео), абсолютное количество": "эозинофилы_абс",
+        "Базофилы (Ва), абсолютное количество": "базофилы_абс",
+        # «#» и «%» другой лаборатории — те же две величины.
+        "Лимфоциты (LY) #": "лимфоциты_абс",
+        "Незрелые гранулоциты (IG) #": "незрелые_гранулоциты",
+        "Незрелые гранулоциты IG, %": "незрелые_гранулоциты_процент",
     }
     for raw_name, analyte_id in expected.items():
         resolution = resolve_analyte(references, raw_name)
@@ -281,7 +350,7 @@ class _CachingEngine:
         return observations
 
 
-MIN_RESOLVED_ROWS = 532
+MIN_RESOLVED_ROWS = 537
 """Абсолютное число строк корпуса, которое база знаний узнаёт — основной порог.
 
 Раньше порогом была доля (`resolved / rows`), и это наказывало прогресс.
@@ -304,6 +373,12 @@ tests/intake/test_corpus.py.
 Уборка (пункт 3 отчёта): гомоцистеин освобождён от роли заглушки в тестах
 и заведён показателем — печатается в корпусе четырежды, сопоставлено 532
 строки вместо 528.
+
+Уборка (запятая): хвост после запятой больше не отбрасывается вслепую —
+сперва пробуется полное написание, и только не найдя, обрезанное. Десять
+строк «X, абсолютное количество» лейкоцитарной формулы перестали выдавать
+себя за процентный показатель, пять строк «X #» нашлись впервые —
+сопоставлено 537 строк вместо 532.
 """
 
 
