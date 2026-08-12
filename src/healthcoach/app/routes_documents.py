@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from healthcoach.app.deps import Context
 from healthcoach.app.routes_snapshots import DocumentImport, render_snapshot_page
 from healthcoach.intake.documents import DocumentError, read_document
-from healthcoach.intake.lab_table import parse_number
+from healthcoach.intake.lab_table import LabTableError, parse_number
 from healthcoach.intake.measurements import prepare_measurements
 from healthcoach.privacy.redact import name_stems
 from healthcoach.storage.clients import Client
@@ -85,9 +85,33 @@ def build_router(context: Context, templates) -> APIRouter:
             read = read_document(staging_path, context.ocr)
         except DocumentError as exc:
             _discard_staging(staging_path, folder)
-            raise HTTPException(
-                status_code=400, detail=_coach_facing(exc, staging_path, file)
-            ) from exc
+            message = _coach_facing(exc, staging_path, file)
+            if isinstance(exc.__cause__, LabTableError):
+                # Документ прочитан, но это не таблица анализов (не похоже
+                # на таблицу совсем, или в нём вовсе не нашлось текста) —
+                # коуч должна увидеть это на самом экране среза, рядом с
+                # формой, из которой она только что грузила файл, а не на
+                # голой JSON-странице, куда браузер уводит после обычной
+                # отправки формы. Отказы пониже уровнем (неподдерживаемый
+                # формат, битый PDF, сбой распознавания) остаются как были:
+                # это скорее сбой инструмента, чем что-то, что коуч может
+                # исправить прямо на этом экране.
+                with context.session() as repo:
+                    snapshot = repo.snapshots.get(snapshot_id)
+                    if snapshot is None:
+                        raise HTTPException(
+                            status_code=404, detail=f"нет среза {snapshot_id}"
+                        )
+                    return render_snapshot_page(
+                        request,
+                        templates,
+                        context,
+                        repo,
+                        snapshot,
+                        document_refusal=message,
+                        status_code=400,
+                    )
+            raise HTTPException(status_code=400, detail=message) from exc
         except Exception:
             # read_document документирует единый тип ошибки, но обещание —
             # не гарантия: сорвись что-то незаявленное, временный файл всё

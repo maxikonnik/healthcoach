@@ -101,10 +101,18 @@ def render_snapshot_page(
     *,
     imported: ImportedAnswers | None = None,
     document_import: DocumentImport | None = None,
+    document_refusal: str | None = None,
+    status_code: int = 200,
 ):
     """Отрисовать экран среза. Общая точка входа: и обычный показ страницы,
     и оба обработчика загрузки (анкеты, документа) рендерят её напрямую —
-    редирект не пережил бы то, что нужно показать один раз."""
+    редирект не пережил бы то, что нужно показать один раз.
+
+    `document_refusal` — сообщение об отказе загрузки документа (см.
+    routes_documents.py), показанное на том же экране, откуда коуч
+    отправляла форму, а не на голой JSON-странице: она должна увидеть, что
+    случилось, не покидая срез. `status_code` по умолчанию 200 — обычный
+    показ страницы; отказ рендерит её же с 400, чтобы код ответа не врал."""
     return templates.TemplateResponse(
         request,
         "snapshot.html",
@@ -115,6 +123,7 @@ def render_snapshot_page(
             "answers_count": len(repo.snapshots.answers(snapshot.id)),
             "imported": imported,
             "document_import": document_import,
+            "document_refusal": document_refusal,
             # Какие документы уже приложены к срезу, и что в каждом из
             # них разбор не понял — показывается на каждом открытии
             # страницы, а не только сразу после загрузки: перезагрузка
@@ -122,6 +131,7 @@ def render_snapshot_page(
             # вписать руками.
             "documents": repo.documents.for_snapshot(snapshot.id),
         },
+        status_code=status_code,
     )
 
 

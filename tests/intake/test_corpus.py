@@ -14,9 +14,10 @@ from pathlib import Path
 import pytest
 
 from healthcoach.intake.corpus import (
+    REFUSAL_EMPTY_DOCUMENT,
     REFUSAL_FORMAT,
     REFUSAL_HEADER_COLUMNS,
-    REFUSAL_HEADER_MISSING,
+    REFUSAL_NOT_A_TABLE,
     CorpusReport,
     FileOutcome,
     format_report,
@@ -104,7 +105,7 @@ def test_scan_corpus_counts_accepted_refused_rows_and_resolution(corpus_dir, ref
     report = scan_corpus(corpus_dir, references, engine)
 
     assert report.accepted == 2
-    assert report.refused_by == {REFUSAL_FORMAT: 1, REFUSAL_HEADER_MISSING: 1}
+    assert report.refused_by == {REFUSAL_FORMAT: 1, REFUSAL_NOT_A_TABLE: 1}
     assert report.rows == 2
     assert report.resolved == 1
     assert report.unresolved_names == {"Выдуманный показатель": 1}
@@ -209,6 +210,42 @@ def test_header_refusals_are_classified_by_their_real_messages(corpus_dir, refer
 
     assert report.refused_by == {REFUSAL_HEADER_COLUMNS: 2}
     assert all(o.refusal == REFUSAL_HEADER_COLUMNS for o in report.outcomes)
+
+
+def test_not_a_table_and_empty_document_refusals_are_classified_by_their_real_messages(
+    corpus_dir, references
+):
+    """Task 4 плана расколола прежний класс «шапка-не-найдена» на два:
+    связный текст без шапки таблицы (УЗИ, протокол) и документ вовсе без
+    текста (пустой PDF, нечитаемое фото). Ту же ловушку, что и тест выше
+    про «шапка-колонки», здесь можно повторить дословно: переименуй
+    формулировку в lab_table.py — и оба класса молча съедут в «иное»,
+    поэтому классификация проверяется на настоящем отказе, полученном через
+    DocumentError, а не на выдуманной строке.
+    """
+    (corpus_dir / "12.jpg").write_bytes(b"\xff\xd8\xff")
+    (corpus_dir / "13.jpg").write_bytes(b"\xff\xd8\xff")
+
+    engine = _ScriptedEngine(
+        {
+            # Связный текст — заключение УЗИ, а не таблица показателей.
+            "12.jpg": [
+                TextLine("Заключение: без патологии", x=0.10, y=0.90),
+                TextLine("Печень не увеличена", x=0.10, y=0.80),
+            ],
+            # Распознавание не вернуло ни одного наблюдения.
+            "13.jpg": [],
+        }
+    )
+
+    report = scan_corpus(corpus_dir, references, engine)
+
+    assert report.refused_by == {
+        REFUSAL_NOT_A_TABLE: 1,
+        REFUSAL_EMPTY_DOCUMENT: 1,
+    }
+    by_label = {o.label: o.refusal for o in report.outcomes}
+    assert by_label == {"01": REFUSAL_NOT_A_TABLE, "02": REFUSAL_EMPTY_DOCUMENT}
 
 
 def test_format_report_prints_numbers_counts_and_indicator_names_only():
@@ -331,6 +368,18 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # показатель и падать с «единицы не сопоставлены», пять строк «X #»
     # (абсолютный счёт другой лаборатории) впервые нашлись вовсе —
     # сопоставлено 537 строк вместо 532. accepted не изменилось.
+    #
+    # Task 4 расколола отказ «шапка не найдена» на два честных сообщения
+    # (см. lab_table.py): «не похоже на таблицу» для документа со связным
+    # текстом без шапки (заключения УЗИ, протоколы, рекомендации) и
+    # «не нашлось текста» для документа вовсе без текста (пустой PDF,
+    # нечитаемое фото). По корпусу все 27 бывших «шапка-не-найдена»
+    # оказались первого рода — REFUSAL_NOT_A_TABLE: 27, REFUSAL_EMPTY_DOCUMENT: 0.
+    # В корпусе нет ни одного документа, из которого распознавание не
+    # вернуло бы вовсе никакого текста — путь пустого документа существует
+    # для реальных случаев (пустой скан, нечитаемое фото), которых среди
+    # 77 файлов не оказалось. accepted и resolved не изменились: это правка
+    # сообщения и его класса, а не разбора.
     min_accepted = 40
     min_resolved = 537
 

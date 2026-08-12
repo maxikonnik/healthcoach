@@ -49,6 +49,10 @@
   <button type="submit">Загрузить</button>
 </form>
 
+{% if document_refusal %}
+<p class="warn">{{ document_refusal }}</p>
+{% endif %}
+
 {% if document_import %}
 <p>«{{ document_import.filename }}» ({{ document_import.source }}):
   импортировано показателей: {{ document_import.count }}.</p>

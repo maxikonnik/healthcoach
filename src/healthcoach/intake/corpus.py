@@ -28,7 +28,8 @@ from healthcoach.intake.ocr import OCREngine
 from healthcoach.knowledge.references import References, load_references
 
 REFUSAL_HEADER_COLUMNS = "шапка-колонки"
-REFUSAL_HEADER_MISSING = "шапка-не-найдена"
+REFUSAL_NOT_A_TABLE = "не-таблица"
+REFUSAL_EMPTY_DOCUMENT = "документ-пуст"
 REFUSAL_FORMAT = "формат"
 REFUSAL_OTHER = "иное"
 
@@ -83,13 +84,24 @@ def _classify_refusal(message: str) -> str:
     Признак отказа по колонкам — «строка-шапка», а не формулировка одной
     из причин: причин уже две (слово шапки не опознано; колонка свободного
     текста стоит не последней), и обе называют саму строку-шапку.
+
+    Отказ «шапка не найдена вовсе» (Task 4 плана) разделён на два класса по
+    тому же принципу — по подстроке настоящего сообщения коучу, не по
+    выдуманной строке: в документе был связный текст, но ни одна строка не
+    подошла под шапку таблицы (REFUSAL_NOT_A_TABLE — заключения, протоколы,
+    рекомендации), или текста не нашлось вовсе (REFUSAL_EMPTY_DOCUMENT —
+    пустой PDF, нечитаемое фото). Порядок проверок важен: сообщение
+    REFUSAL_EMPTY_DOCUMENT тоже говорит «не нашлось текста», а не «не
+    похоже на таблицу», так что подстроки не пересекаются.
     """
     if "не поддерживается" in message:
         return REFUSAL_FORMAT
     if "строка-шапка" in message:
         return REFUSAL_HEADER_COLUMNS
-    if "не найдена шапка" in message:
-        return REFUSAL_HEADER_MISSING
+    if "не нашлось текста" in message:
+        return REFUSAL_EMPTY_DOCUMENT
+    if "не похоже на таблицу" in message:
+        return REFUSAL_NOT_A_TABLE
     return REFUSAL_OTHER
 
 

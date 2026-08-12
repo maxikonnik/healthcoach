@@ -294,9 +294,22 @@ def test_value_column_that_is_not_numeric_is_refused_not_smeared():
     assert any("Ферритин 45 нг/мл 10 - 120" in line for line in table.unparsed)
 
 
-def test_document_without_a_header_is_refused():
-    with pytest.raises(LabTableError, match="шапк"):
-        parse_lab_lines(["просто текст", "и ещё строка"])
+def test_document_with_text_but_no_header_says_it_is_not_a_lab_table():
+    """УЗИ, гастроскопия, рекомендации эндокринолога — связный текст без
+    шапки таблицы. Раньше отказ звучал как «не найдена шапка таблицы:
+    неизвестно, где значение, а где единицы» — про внутреннюю неудачу
+    разбора, а не про то, что случилось с коучем: она приложила заключение,
+    а не выгрузку анализов. Сообщение должно сказать это прямо и не
+    упоминать «шапку» — слово, которое коучу ничего не говорит."""
+    with pytest.raises(LabTableError, match="не похоже на таблицу"):
+        parse_lab_lines(["Заключение: без патологии", "Печень не увеличена"])
+
+
+def test_empty_document_says_no_text_was_found():
+    """Пустой PDF или нечитаемое фото — другая причина и другое лечение
+    (переснять/экспортировать заново), поэтому и сообщение другое."""
+    with pytest.raises(LabTableError, match="не нашлось текста"):
+        parse_lab_lines([])
 
 
 def test_parse_number_accepts_both_decimal_separators():
@@ -370,7 +383,8 @@ def test_header_word_znacheniya_alone_is_the_value_column():
     Словарь знал «значение» как результат, а «значения» — как референс,
     и шапка «Показатель Значения Ед. изм.» оставалась без колонки
     значения вовсе: кандидат в шапку отбрасывался, а документ умирал с
-    «не найдена шапка» — отказом, который не называет причины.
+    отказом «это не похоже на таблицу анализов» — который не называет
+    причины.
     """
     lines = [
         "Показатель Значения Ед. изм.",

@@ -344,6 +344,59 @@ def test_failed_upload_of_an_unreadable_pdf_leaves_no_row_and_no_file(client):
     assert not folder.exists()
 
 
+def test_not_a_table_document_shows_the_refusal_on_the_snapshot_screen(
+    client, monkeypatch
+):
+    """УЗИ, протокол, рекомендации — связный текст без шапки таблицы.
+
+    Раньше отказ уходил голой JSON-страницей (`{"detail": "..."}`) — коуч
+    видела её вместо экрана среза, из которого только что грузила файл.
+    Теперь при этом классе отказа страница рендерится как обычно, с
+    сообщением прямо на ней.
+    """
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    lines = ["Заключение: без патологии", "Печень не увеличена, контуры ровные"]
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: lines
+    )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/documents",
+        files={"file": ("узи.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert "не похоже на таблицу" in response.text
+    # Это правда экран среза, а не голый JSON: воронка шагов всё ещё видна.
+    assert "Показатели" in response.text
+    with context.session() as repo:
+        assert repo.documents.for_snapshot(snapshot_id) == []
+    folder = context.documents_dir / str(snapshot_id)
+    assert not folder.exists()
+
+
+def test_empty_document_shows_the_refusal_on_the_snapshot_screen(client, monkeypatch):
+    """Пустой PDF (нет текстового слоя) — другое сообщение, тоже на экране
+    среза, а не в JSON."""
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    monkeypatch.setattr(
+        "healthcoach.intake.documents.read_pdf_lines", lambda _path: []
+    )
+
+    response = test_client.post(
+        f"/snapshots/{snapshot_id}/documents",
+        files={"file": ("бланк.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert "не нашлось текста" in response.text
+    assert "Показатели" in response.text
+    with context.session() as repo:
+        assert repo.documents.for_snapshot(snapshot_id) == []
+
+
 def test_unexpected_error_from_read_document_still_cleans_up(client, monkeypatch):
     """read_document документирует единый тип ошибки, но не гарантирует
     его: сорвись что-то незаявленное, временный файл не должен остаться
