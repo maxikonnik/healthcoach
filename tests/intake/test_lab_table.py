@@ -159,45 +159,127 @@ def test_parse_number_rejects_non_finite_values():
     assert parse_number("-inf") is None
 
 
-def test_header_missing_units_word_due_to_pdf_spacing_is_refused():
+def test_header_units_word_split_by_a_pdf_missing_space_is_still_recognised():
     """«Ед.изм.» без пробела — обычный артефакт извлечения текста из PDF.
 
-    Не опознав колонку единиц, разбор не имеет права отдать хвост строки
-    референсу: «C-реактивный белок ... 0.7 мг/л 0 - 5» стал бы записью с
-    units='' и reference_text='мг/л 0 - 5' — единицы потеряны, а референс
-    неверен. Отказ безопаснее угадывания.
+    Токенизация шапки режет по точке так же, как по пробелу: иначе
+    «Ед.изм.» становится одним нераспознанным словом «ед.изм», и шапка
+    отвергается только из-за того, как легли пробелы при извлечении, а не
+    потому что колонка правда не опознана.
     """
     lines = [
         "Показатель Результат Ед.изм. Референсные пределы",
         "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
     ]
-    with pytest.raises(LabTableError) as exc_info:
-        parse_lab_lines(lines)
-    message = str(exc_info.value)
-    assert "Показатель Результат Ед.изм. Референсные пределы" in message
-    assert "единицы" in message
+    table = parse_lab_lines(lines)
+    row = table.rows[0]
+    assert row.value_text == "0.7"
+    assert row.units == "мг/л"
+    assert row.reference_text == "0 - 5"
 
 
-def test_header_with_an_unknown_units_word_is_refused():
-    """«Единицы» вместо «Ед. изм.» — тоже не входит в словарь ролей."""
+@pytest.mark.parametrize("units_spelling", ["Ед.изм.", "Ед. изм.", "Ед изм"])
+def test_header_units_word_recognised_regardless_of_spacing(units_spelling):
+    """«Ед.изм.», «Ед. изм.» и «Ед изм» — один и тот же смысл, встреченный
+    с разной расстановкой пробелов; шапка не должна зависеть от того, как
+    легли пробелы при извлечении текста."""
+    lines = [
+        f"Показатель Результат Референсные значения {units_spelling}",
+        "Ферритин 45 10 - 120 нг/мл",
+    ]
+    table = parse_lab_lines(lines)
+    row = table.rows[0]
+    assert row.units == "нг/мл"
+
+
+def test_header_word_edinitsy_is_recognised_as_units():
+    """Раньше «Единицы» не входило в словарь ролей — шапка «Исследование
+    Результат Единицы Референсные Комментарий» отвергалась целиком, хотя
+    ровно это слово стоит в десяти из четырнадцати отказов по корпусу
+    образцов."""
     lines = [
         "Показатель Результат Единицы Референсные пределы",
         "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
     ]
-    with pytest.raises(LabTableError) as exc_info:
-        parse_lab_lines(lines)
-    assert "единицы" in str(exc_info.value)
+    table = parse_lab_lines(lines)
+    row = table.rows[0]
+    assert row.value_text == "0.7"
+    assert row.units == "мг/л"
+    assert row.reference_text == "0 - 5"
 
 
 def test_header_with_an_unknown_reference_word_is_refused():
-    """«Норма» вместо «Нормальные»/«Референсные» — слово не в словаре."""
+    """«Норма» вместо «Нормальные»/«Референсные» — слово не в словаре.
+
+    Отказ называет само неизвестное слово, а не роль, которой не хватает:
+    новое правило судит по опознанности колонки, а не по набору ролей.
+    """
     lines = [
         "Показатель Результат Ед. изм. Норма",
         "C-реактивный белок (СРБ) 0.7 мг/л 0 - 5",
     ]
     with pytest.raises(LabTableError) as exc_info:
         parse_lab_lines(lines)
-    assert "референс" in str(exc_info.value)
+    assert "норма" in str(exc_info.value)
+
+
+def test_header_without_units_column_is_parsed_with_empty_units():
+    """Бланк без колонки единиц — обычное дело: единицы часто стоят прямо
+    в названии («Гемоглобин, г/л»), и отсутствие отдельной колонки не
+    повод отказывать в разборе всей таблицы."""
+    lines = [
+        "Параметр Результат Референсные значения",
+        "Ферритин 45 10 - 120",
+    ]
+    table = parse_lab_lines(lines)
+    row = table.rows[0]
+    assert row.value_text == "45"
+    assert row.reference_text == "10 - 120"
+    assert row.units == ""
+
+
+def test_other_column_does_not_leak_into_value_or_units():
+    """Колонка «Комментарий» опознана как известная, но не нужная роль —
+    её содержимое не должно попасть ни в значение, ни в единицы, ни в
+    референс."""
+    lines = [
+        "Исследование Результат Единицы Референсные Комментарий",
+        "Ферритин 45 нг/мл 10 - 120 в норме",
+    ]
+    table = parse_lab_lines(lines)
+    row = table.rows[0]
+    assert row.value_text == "45"
+    assert row.units == "нг/мл"
+    assert row.reference_text == "10 - 120"
+
+
+_CORPUS_HEADERS_PARSE = [
+    "Показатель Результат Референсные значения Ед.изм.",
+    "Исследование Результат Единицы Референсные Комментарий",
+    "Показатель Результат Реф. значения Предыдущий",
+    "Параметр Результат Референсные значения",
+    "Исследование Результат Единицы Референсные значения",
+]
+
+_CORPUS_HEADERS_REFUSE_OCR_TYPOS = [
+    "Показатель Результат Ел. изм. Референсные пределы",
+    "Параметр Результат Референскыю значения Ед. изм.",
+    "Параметр Результат Референсные значения En. изм.",
+]
+
+
+@pytest.mark.parametrize("header", _CORPUS_HEADERS_PARSE)
+def test_real_corpus_header_with_only_known_words_is_parsed(header):
+    parse_lab_lines([header])
+
+
+@pytest.mark.parametrize("header", _CORPUS_HEADERS_REFUSE_OCR_TYPOS)
+def test_real_corpus_header_with_an_ocr_typo_is_still_refused(header):
+    """«Ел.», «Референскыю», «En.» — опечатки распознавания, не слова
+    словаря. Неточное совпадение — задача 6; здесь они по-прежнему
+    отвергаются, а не подставляются под известную роль."""
+    with pytest.raises(LabTableError):
+        parse_lab_lines([header])
 
 
 def test_units_last_header_with_a_spaced_reference_range_is_parsed_as_a_range():

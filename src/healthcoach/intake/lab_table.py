@@ -19,8 +19,17 @@ ROLE_NAME = "название"
 ROLE_VALUE = "значение"
 ROLE_UNITS = "единицы"
 ROLE_REFERENCE = "референс"
+ROLE_OTHER = "прочее"
+"""Колонка опознана, но её содержимое коучу не нужно (комментарий лаборатории,
+предыдущее значение, динамика). Опознана — значит не пуста строкой отказа;
+не нужна — значит в `LabRow` не попадает."""
 
-_ROLES_REQUIRED = (ROLE_NAME, ROLE_VALUE, ROLE_UNITS, ROLE_REFERENCE)
+_ROLES_MANDATORY = (ROLE_NAME, ROLE_VALUE)
+"""Без имени и значения строка не запись бланка вовсе. Единицы и референс —
+не обязательны: бланк без колонки единиц — обычное дело (единицы часто
+стоят в самом названии, «Гемоглобин, г/л»), и его отсутствие не повод для
+отказа. Опасность не в отсутствующей колонке, а в неопознанной — см.
+`_find_header`."""
 
 _HEADER_WORDS = {
     "исследование": ROLE_NAME,
@@ -29,8 +38,16 @@ _HEADER_WORDS = {
     "значение": ROLE_VALUE,
     "результат": ROLE_VALUE,
     "ед": ROLE_UNITS,
+    "единицы": ROLE_UNITS,
+    "изм": ROLE_UNITS,
     "нормальные": ROLE_REFERENCE,
     "референсные": ROLE_REFERENCE,
+    "реф": ROLE_REFERENCE,
+    "пределы": ROLE_REFERENCE,
+    "значения": ROLE_REFERENCE,
+    "комментарий": ROLE_OTHER,
+    "предыдущий": ROLE_OTHER,
+    "динамика": ROLE_OTHER,
 }
 
 _NUMBER = re.compile(r"^[<>]?\d+(?:[.,]\d+)?$")
@@ -38,6 +55,11 @@ _STARTS_WITH_NUMBER = re.compile(r"^\s*[<>]?\d")
 _HAS_DIGIT = re.compile(r"\d")
 _SERVICE = re.compile(r"^\s*(Дата исследования|Штрихкод|Материал|Вн\.№)")
 _SPACES = re.compile(r"\s+")
+_HEADER_WORD_SPLIT = re.compile(r"[\s.]+")
+"""Точка режет слово шапки так же, как пробел: «Ед.изм.» и «Ед. изм.» —
+одно и то же, случайно склеенное или разбитое при извлечении текста из
+PDF/OCR. Цифр в кандидате в шапку не бывает (см. `_find_header`), поэтому
+резать по точке здесь безопасно — это не десятичная дробь."""
 _RANGE_DASH = re.compile(r"^[-–—]$")
 _COMPARISON_SIGN = re.compile(r"^[<>≤≥]$")
 
@@ -80,11 +102,19 @@ def parse_number(text: str) -> float | None:
     return value
 
 
+def _header_words(line: str) -> list[str]:
+    """Слова строки-шапки, очищенные от пунктуации, без пустых."""
+    words = [
+        word.strip(":") for word in _HEADER_WORD_SPLIT.split(line.strip().casefold())
+    ]
+    return [word for word in words if word]
+
+
 def _header_word_roles(line: str) -> list[str]:
     """Роли, узнанные среди слов строки, по порядку появления."""
     roles: list[str] = []
-    for word in _SPACES.split(line.strip().casefold()):
-        role = _HEADER_WORDS.get(word.strip(".:"))
+    for word in _header_words(line):
+        role = _HEADER_WORDS.get(word)
         if role is not None and role not in roles:
             roles.append(role)
     return roles
@@ -93,10 +123,9 @@ def _header_word_roles(line: str) -> list[str]:
 def _unrecognised_header_words(line: str) -> list[str]:
     """Слова строки-шапки, не сопоставленные ни одной роли."""
     words: list[str] = []
-    for word in _SPACES.split(line.strip().casefold()):
-        cleaned = word.strip(".:")
-        if cleaned and cleaned not in _HEADER_WORDS and cleaned not in words:
-            words.append(cleaned)
+    for word in _header_words(line):
+        if word not in _HEADER_WORDS and word not in words:
+            words.append(word)
     return words
 
 
@@ -108,23 +137,27 @@ def _find_header(lines: Sequence[str]) -> tuple[int, list[str]]:
     со словами, похожими на шапку (`Показатель: Глюкоза Результат: 5.2 ...`),
     шапкой быть не может, и её значение не должно пропасть под видом шапки.
 
-    Если у найденного кандидата нет всех четырёх ролей, разбирать дальше
-    нельзя: колонка, роль которой не опознана, встанет не на своё место
-    (например, единицы — в референс), а это опаснее отказа.
+    Отказ наступает не когда колонки не хватает, а когда колонку не
+    удалось опознать. Бланк без колонки единиц или референса — обычное
+    дело (единицы часто стоят в самом названии, «Гемоглобин, г/л») и не
+    повод отказывать. Опасность в другом: колонка, чьё слово шапки не
+    входит в словарь, встанет не на своё место (например, единицы — в
+    референс), а это опаснее отказа. Поэтому обязательны только «название»
+    и «значение»; каждое остальное слово шапки обязано быть опознано хоть
+    какой-то ролью, включая «прочее» — известную, но не нужную колонку
+    вроде «Комментарий» или «Предыдущий».
     """
     for index, line in enumerate(lines):
         if _HAS_DIGIT.search(line):
             continue
         roles = _header_word_roles(line)
-        if ROLE_NAME not in roles or ROLE_VALUE not in roles:
+        if any(role not in roles for role in _ROLES_MANDATORY):
             continue
-        missing = [role for role in _ROLES_REQUIRED if role not in roles]
-        if missing:
-            unrecognised = _unrecognised_header_words(line)
+        unrecognised = _unrecognised_header_words(line)
+        if unrecognised:
             raise LabTableError(
                 f"строка-шапка {line.strip()!r} не называет колонки: "
-                f"{', '.join(missing)}; нераспознанные слова: "
-                f"{', '.join(unrecognised) if unrecognised else 'нет'} — "
+                f"нераспознанные слова: {', '.join(unrecognised)} — "
                 "разбирать дальше нельзя, колонка встанет не на своё место"
             )
         return index, roles

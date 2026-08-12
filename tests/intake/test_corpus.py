@@ -227,8 +227,12 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     """
     from healthcoach.intake.ocr import AppleVisionEngine
 
-    min_accepted = 29
-    min_resolved = 15
+    # Task 2 подняла порог: словарь шапки принял «Единицы», «Ед.изм.» без
+    # пробела, «Реф.», «пределы», «значения» и роль «прочее» для
+    # «Комментарий»/«Предыдущий»; отказ «шапка-колонки» упал с 14 до 3
+    # (остались три OCR-опечатки в самой шапке — задача 6).
+    min_accepted = 40
+    min_resolved = 18
 
     knowledge_dir = Path(__file__).parents[2] / "knowledge"
     references = load_references(knowledge_dir / "references")
