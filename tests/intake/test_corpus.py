@@ -126,6 +126,40 @@ def test_scan_corpus_counts_accepted_refused_rows_and_resolution(corpus_dir, ref
     assert refused_outcome.refusal == REFUSAL_FORMAT
 
 
+def test_scan_corpus_counts_rows_whose_units_agree_with_the_resolved_analyte(
+    corpus_dir, references
+):
+    """`resolved` говорит, что строка с чем-то сопоставилась, но не с чем.
+
+    На ревью уточнённая попытка в resolve.py была выключена — «Лимфоциты,
+    абсолютное количество» снова находило процентный показатель, — и табло
+    показало ровно те же числа: неверное сопоставление ему невидимо, а
+    значит, каждое число в журнале мерило меньше, чем обещало.
+
+    Единицы — независимая проверка того же события: строка, ушедшая к
+    чужому показателю, почти всегда расходится с ним в единицах. Здесь обе
+    строки — глюкоза, обе сопоставлены, но у второй единицы бланка
+    показателю не принадлежат, и она в новый счёт не идёт.
+    """
+    (corpus_dir / "01.jpg").write_bytes(b"\xff\xd8\xff")
+
+    engine = _ScriptedEngine(
+        {
+            "01.jpg": [
+                *_HEADER,
+                *_row("Глюкоза", "5.5", "ммоль/л", "3.3-5.5", 0.80),
+                *_row("Глюкоза", "99", "мг/дл", "3.3-5.5", 0.70),
+            ]
+        }
+    )
+
+    report = scan_corpus(corpus_dir, references, engine)
+
+    assert report.rows == 2
+    assert report.resolved == 2
+    assert report.units_agreed == 1
+
+
 def test_report_identifies_files_by_number_not_by_name(corpus_dir, references):
     """В именах файлов корпуса стоят фамилии пациентов и номер карты.
 
@@ -478,9 +512,25 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # туда справедливо не дотягивается). resolved не изменилось: обе новые
     # шапки — фотографии, чьи строки база знаний не узнаёт (10 строк, 0
     # сопоставлений), и их вклад в табло виден только в rows.
+    #
+    # Разбор финального ревью, пункт 3: к порогам добавлен `units_agreed` —
+    # строки, которые сопоставились и у которых единицы бланка принадлежат
+    # найденному показателю. `resolved` не видит неверного сопоставления:
+    # с выключенной уточнённой попыткой в resolve.py «Лимфоциты,
+    # абсолютное количество» снова уходят к процентному показателю, а табло
+    # показывает те же 40/537. Замер на сегодня — 460 из 537; остальные 77
+    # сопоставленных строк пришли с бланков без колонки единиц (это
+    # законно) или в написании, которого у показателя не объявлено.
+    #
+    # Пункты 2 и 4 ревью на эти числа не влияют: «Наименование»/«Референс»
+    # и точный отказ по недочитанной шапке переставили семь документов из
+    # класса «не-таблица» (27 → 20) в «шапка-колонки» (1 → 8) — им теперь
+    # называют непонятое слово («флаг») вместо «это не таблица анализов», —
+    # а «абс.» в корпусе не встречается вовсе (см. решение в журнале).
     min_accepted = 40
     min_confirmable = 2
     min_resolved = 537
+    min_units_agreed = 460
 
     knowledge_dir = Path(__file__).parents[2] / "knowledge"
     references = load_references(knowledge_dir / "references")
@@ -494,7 +544,7 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     # строки бланка с результатами пациенток. Красная сборка выкладывала бы
     # их в лог. Сравнение голых чисел печатает только числа.
     accepted, confirmable = report.accepted, report.confirmable
-    resolved, rows = report.resolved, report.rows
+    resolved, rows, units_agreed = report.resolved, report.rows, report.units_agreed
 
     assert accepted >= min_accepted, (
         f"принято {accepted} документов из {len(report.outcomes)}, "
@@ -507,4 +557,9 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     assert resolved >= min_resolved, (
         f"сопоставлено {resolved} строк из {rows}, "
         f"нужно не меньше {min_resolved}"
+    )
+    assert units_agreed >= min_units_agreed, (
+        f"единицы сошлись с найденным показателем у {units_agreed} строк из "
+        f"{resolved} сопоставленных, нужно не меньше {min_units_agreed} — "
+        "похоже, строка стала находить не тот показатель"
     )

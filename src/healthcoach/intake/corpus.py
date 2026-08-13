@@ -32,6 +32,7 @@ from healthcoach.intake.documents import DocumentError, read_document
 from healthcoach.intake.measurements import UNRESOLVED, prepare_measurements
 from healthcoach.intake.ocr import OCREngine
 from healthcoach.knowledge.references import References, load_references
+from healthcoach.knowledge.units import units_match
 
 REFUSAL_HEADER_COLUMNS = "шапка-колонки"
 REFUSAL_NOT_A_TABLE = "не-таблица"
@@ -93,6 +94,22 @@ class CorpusReport:
     """Документы, разобранные только благодаря неточному совпадению слов
     шапки. Их строки и сопоставления посчитаны в `rows` и `resolved` — разбор
     их правда прочитал, — но в базу они попадают лишь с согласия коуча."""
+    units_agreed: int = 0
+    """Строки, которые не только сопоставились, но сопоставились с тем, с
+    чем надо: единицы бланка принадлежат найденному показателю
+    (`units_match`).
+
+    `resolved` считает, что строка нашла показатель, и не считает, какой:
+    на ревью уточнённая попытка в resolve.py была выключена — «Лимфоциты,
+    абсолютное количество» снова уходило к процентному показателю, — и
+    табло показало те же самые 40/537. Инструмент, который не видит
+    неверного сопоставления, мерил меньше, чем обещал каждым своим числом.
+
+    Единицы — независимая проверка того же события: у чужого показателя они
+    почти всегда другие (проценты против 10⁹/л). Счёт заведомо ниже
+    `resolved` — бланк без колонки единиц законен, и его строки сюда не
+    попадают вовсе, — но он падает ровно тогда, когда распознавание
+    портится, а этого от него и надо."""
 
 
 _VALUE_TOKEN = re.compile(r"^[<>≤≥]?\d+(?:[.,]\d+)?[+\-*↑↓hHlL]*[,;:.]?$")
@@ -182,6 +199,7 @@ def scan_corpus(
     unresolved_names: Counter[str] = Counter()
     total_rows = 0
     total_resolved = 0
+    total_units_agreed = 0
 
     for number, path in enumerate(_iter_documents(folder), start=1):
         label = f"{number:02d}"
@@ -204,9 +222,16 @@ def scan_corpus(
 
         prepared = prepare_measurements(references, document.table)
         resolved = sum(1 for m in prepared if m.analyte_id != UNRESOLVED)
-        for measurement in prepared:
+        # Единицы берутся из самой записи бланка, а не из `measurement.units`:
+        # там они уже канонизированы найденным показателем, и сверять их с
+        # ним значило бы сверять его с самим собой.
+        for row, measurement in zip(document.table.rows, prepared, strict=True):
             if measurement.analyte_id == UNRESOLVED:
                 unresolved_names[measurement.raw_name] += 1
+                continue
+            analyte = references.analyte(measurement.analyte_id)
+            if analyte is not None and units_match(analyte, row.units):
+                total_units_agreed += 1
 
         total_rows += len(document.table.rows)
         total_resolved += resolved
@@ -231,6 +256,7 @@ def scan_corpus(
         resolved=total_resolved,
         unresolved_names=dict(unresolved_names),
         confirmable=sum(1 for o in outcomes if o.confirmable),
+        units_agreed=total_units_agreed,
     )
 
 
@@ -284,6 +310,10 @@ def format_report(report: CorpusReport) -> str:
 
     lines.append("")
     lines.append(f"=== сопоставлено с базой знаний: {report.resolved} строк ===")
+    lines.append(
+        f"  из них единицы бланка принадлежат найденному показателю: "
+        f"{report.units_agreed}"
+    )
 
     unresolved_total = report.rows - report.resolved
     lines.append("")
