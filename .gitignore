@@ -25,3 +25,7 @@ knowledge/questionnaire.draft.yaml
 # Образцы выгрузок лабораторий — медданные, в репозиторий не идут
 samples/
 макеты/
+
+# Собранный значок: внутри абсолютные пути этой машины.
+# Пересобирается из scripts/make_app.py
+Health Coaching.app/
