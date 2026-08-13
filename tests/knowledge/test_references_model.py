@@ -222,6 +222,77 @@ def test_analytes_without_the_new_keys_still_load(tmp_path):
     assert analyte.conversions == ()
 
 
+def test_analyte_without_targets_key_loads_and_checks_as_rule_missing(tmp_path):
+    """Отсутствующий ключ 'целевые' — валидный показатель, не ошибка файла.
+
+    Коуч заводит показатели без коридора намеренно (решение 1 плана):
+    коридор — её врачебное суждение, придумывать его нельзя. Раньше
+    отсутствие ключа было ошибкой загрузки; теперь показатель загружается,
+    узнаётся и сверяется как «правило не задано».
+    """
+    from healthcoach.scoring.references import (
+        STATUS_NO_RULE,
+        Measurement,
+        Subject,
+        check_measurements,
+    )
+
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: без_ключа\n"
+        "    название: Без ключа\n"
+        "    единицы: ед\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    analyte = references.analyte("без_ключа")
+    assert analyte is not None
+    assert analyte.targets == ()
+
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("без_ключа", 5.0, "ед")],
+        Subject(sex="ж", age=32),
+    )
+    assert verdict.status == STATUS_NO_RULE
+    assert verdict.rule_missing is True
+
+
+def test_analyte_with_empty_targets_list_loads_and_checks_as_rule_missing(tmp_path):
+    """'целевые: []' — то же самое, что ключ вовсе не заведён.
+
+    Молча пустой список и явно опущенный ключ должны значить одно и то же
+    (см. комментарий у `_analyte` в references.py) — тест держит оба.
+    """
+    from healthcoach.scoring.references import (
+        STATUS_NO_RULE,
+        Measurement,
+        Subject,
+        check_measurements,
+    )
+
+    (tmp_path / "x.yaml").write_text(
+        "показатели:\n"
+        "  - id: пустой_список\n"
+        "    название: Пустой список\n"
+        "    единицы: ед\n"
+        "    целевые: []\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    analyte = references.analyte("пустой_список")
+    assert analyte is not None
+    assert analyte.targets == ()
+
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("пустой_список", 5.0, "ед")],
+        Subject(sex="ж", age=32),
+    )
+    assert verdict.status == STATUS_NO_RULE
+    assert verdict.rule_missing is True
+
+
 def test_empty_synonym_is_refused(tmp_path):
     """Пустой ключ в указателе ловил бы каждое нераспознанное измерение.
 

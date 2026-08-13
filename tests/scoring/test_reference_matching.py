@@ -94,6 +94,57 @@ def test_unknown_analyte_is_reported_not_dropped():
     assert verdict.value == 12
 
 
+def test_no_target_at_all_says_so_not_that_sex_and_age_are_wrong(tmp_path):
+    """Показатель без единого коридора — это не «не подошли пол и возраст».
+
+    Раньше обе причины звучали одной фразой: «нет целевого значения для
+    этого пола и возраста». Коуч читает note на экране находок как
+    рабочий список; фраза обещает, что коридор существует для кого-то
+    другого, хотя его нет вовсе ни для кого — и это неправда.
+    """
+    (tmp_path / "no_target.yaml").write_text(
+        "показатели:\n"
+        "  - id: без_коридора\n"
+        "    название: Без коридора\n"
+        "    единицы: ммоль/л\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("без_коридора", 5.0, "ммоль/л")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "правило не задано"
+    assert verdict.rule_missing is True
+    assert "пол" not in verdict.note
+    assert "возраст" not in verdict.note
+
+
+def test_target_exists_but_not_for_this_sex_and_age(tmp_path):
+    """Коридор есть, просто не для этого пола/возраста — другая причина,
+    другой текст: тут коучу стоит завести условие, а не показатель."""
+    (tmp_path / "conditional.yaml").write_text(
+        "показатели:\n"
+        "  - id: условный\n"
+        "    название: Условный\n"
+        "    единицы: ммоль/л\n"
+        "    целевые:\n"
+        "      - условие: {пол: м}\n"
+        "        оптимум: [1, 2]\n",
+        encoding="utf-8",
+    )
+    references = load_references(tmp_path)
+    (verdict,) = check_measurements(
+        references,
+        [Measurement("условный", 1.5, "ммоль/л")],
+        Subject(sex="ж", age=32, cycle_phase=None),
+    )
+    assert verdict.status == "правило не задано"
+    assert verdict.rule_missing is True
+    assert "пол" in verdict.note and "возраст" in verdict.note
+
+
 def test_unit_mismatch_is_not_interpreted():
     (verdict,) = check_measurements(
         _refs(),

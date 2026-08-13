@@ -8,9 +8,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from healthcoach.knowledge.references import Analyte, References
+
+Cleaner = Callable[[str], str]
+"""Одна из двух форм написания: уточнённая (`_clean_qualified`) или общая
+(`_clean`). Название с бланка и написания из базы знаний обязаны чиститься
+одной и той же — иначе сравниваются разные формы одной строки."""
 
 _NOISE = re.compile(r"[*†‡]|\(.*?\)|\[.*?\]")
 _TRAILING = re.compile(r"[\s,;:.\-–—]+$")
@@ -67,30 +73,76 @@ class Resolution:
         return self.analyte is None and not self.candidates
 
 
+def _strip_noise(raw_name: str) -> str:
+    """Общее для обеих попыток: код номенклатуры, сноски, скобочные уточнения.
+
+    Чистится одинаково и там, и там — иначе уточнённая попытка спотыкалась
+    бы о код номенклатуры перед названием, а заметно это стало бы только на
+    строках с запятой.
+    """
+    return _NOISE.sub(" ", LAB_CODE.sub("", raw_name))
+
+
+def _finish(text: str) -> str:
+    return _SPACES.sub(" ", _TRAILING.sub("", text)).strip().casefold()
+
+
+def _clean_qualified(raw_name: str) -> str:
+    """Полное написание — вместе с тем, что стоит после запятой.
+
+    Запятая становится пробелом, а не границей: «Лимфоциты (LYMPH), %» и
+    «Лимфоциты %» — одно написание, разделённое по-разному разными
+    лабораториями.
+    """
+    return _finish(_strip_noise(raw_name).replace(",", " "))
+
+
 def _clean(raw_name: str) -> str:
-    """Убрать сноски, скобочные уточнения и хвостовые единицы."""
-    text = LAB_CODE.sub("", raw_name)
-    text = _NOISE.sub(" ", text)
-    text = text.split(",")[0]
-    text = _TRAILING.sub("", text)
-    return _SPACES.sub(" ", text).strip().casefold()
+    """Общее написание: всё после первой запятой отброшено.
+
+    Хвост чаще всего единицы («Гемоглобин, г/л»), и колонка единиц несёт
+    то же самое, так что терять его безопасно. Но не всегда — см.
+    `_clean_qualified` и порядок попыток в `resolve_analyte`.
+    """
+    return _finish(_strip_noise(raw_name).split(",")[0])
 
 
-def _keys(analyte: Analyte) -> set[str]:
+def _keys(analyte: Analyte, clean: Cleaner) -> set[str]:
     return {
-        _clean(name) for name in (analyte.id, analyte.name, *analyte.synonyms) if name
+        clean(name) for name in (analyte.id, analyte.name, *analyte.synonyms) if name
     }
 
 
+def _match(references: References, cleaned: str, clean: Cleaner) -> tuple[Analyte, ...]:
+    return tuple(a for a in references.analytes if cleaned in _keys(a, clean))
+
+
 def resolve_analyte(references: References, raw_name: str) -> Resolution:
-    """Найти показатель по строке бланка."""
+    """Найти показатель по строке бланка.
+
+    Две попытки, уточнённая раньше общей. Хвост после запятой бывает не
+    единицами, а именем самой величины: лейкоцитарная формула печатает
+    «Лимфоциты (LYMPH), %» и «Лимфоциты (LYMPH), абсолютное количество» —
+    две разные величины в разных единицах. Обрезав хвост сразу, обе строки
+    приходили к одному написанию «лимфоциты», обе находили процентный
+    показатель, и абсолютный счёт отвергался жалобой «единицы не
+    сопоставлены» — то есть коуч видел спор о единицах там, где на самом
+    деле стоял другой показатель.
+
+    Общая попытка остаётся запасной и работает ровно как раньше, поэтому
+    «Гемоглобин, г/л» и всё, что находилось до сих пор, находится и теперь.
+    """
+    qualified = _clean_qualified(raw_name)
+    if qualified:
+        matched = _match(references, qualified, _clean_qualified)
+        if len(matched) == 1:
+            return Resolution(analyte=matched[0], candidates=matched, raw_name=raw_name)
+
     cleaned = _clean(raw_name)
     if not cleaned:
         return Resolution(analyte=None, candidates=(), raw_name=raw_name)
 
-    matched = tuple(
-        analyte for analyte in references.analytes if cleaned in _keys(analyte)
-    )
+    matched = _match(references, cleaned, _clean)
     if len(matched) == 1:
         return Resolution(analyte=matched[0], candidates=matched, raw_name=raw_name)
     return Resolution(analyte=None, candidates=matched, raw_name=raw_name)

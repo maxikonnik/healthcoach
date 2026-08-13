@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -11,9 +12,13 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from healthcoach.app.deps import Context
-from healthcoach.app.routes_snapshots import DocumentImport, render_snapshot_page
-from healthcoach.intake.documents import DocumentError, read_document
-from healthcoach.intake.lab_table import parse_number
+from healthcoach.app.routes_snapshots import (
+    DocumentConfirmation,
+    DocumentImport,
+    render_snapshot_page,
+)
+from healthcoach.intake.documents import DocumentError, ReadDocument, read_document
+from healthcoach.intake.lab_table import LabTableError, parse_number
 from healthcoach.intake.measurements import prepare_measurements
 from healthcoach.privacy.redact import name_stems
 from healthcoach.storage.clients import Client
@@ -21,6 +26,32 @@ from healthcoach.storage.clients import Client
 HEADER_LINES = 3
 """Сколько первых строк документа показывать коучу как шапку — печатные
 бланки кладут ФИО и дату в начало, до самой таблицы показателей."""
+
+CONFIRMATION_ROWS = 5
+"""Сколько разобранных строк показать на экране подтверждения. Коуч
+проверяет не весь бланк, а то, верно ли легли колонки, — для этого хватает
+первых строк, и они помещаются на экран целиком."""
+
+_STAGING_PREFIX = ".upload-"
+_STAGING_NAME = re.compile(rf"^\{_STAGING_PREFIX}[0-9a-f]{{32}}(?:\.[^.\\/]*)?$")
+"""Имя временного файла, каким его выдаёт `upload_document`.
+
+Форма подтверждения возвращает это имя запросом, то есть оно приходит
+снаружи и доверия не заслуживает: без проверки «staging» вида
+`../../../etc/passwd` заставил бы инструмент прочитать и импортировать
+любой файл машины. Разрешено ровно то, что инструмент выдаёт сам, — и
+разделителей пути в этом нет вовсе."""
+
+_MESSAGE_CANCELLED = (
+    "Загрузка отменена: ни документа, ни показателей не сохранено. "
+    "Если колонки распознались неверно, попробуйте переснять бланк — "
+    "или впишите нужные показатели вручную."
+)
+
+_MESSAGE_BAD_STAGING = (
+    "загрузка не найдена: подтверждать нечего. Возможно, она уже отменена "
+    "или подтверждена в другой вкладке — загрузите файл заново."
+)
 
 
 def document_belongs_to(client: Client, lines: tuple[str, ...] | list[str]) -> bool:
@@ -50,64 +81,40 @@ def document_belongs_to(client: Client, lines: tuple[str, ...] | list[str]) -> b
 def build_router(context: Context, templates) -> APIRouter:
     router = APIRouter()
 
-    @router.post("/snapshots/{snapshot_id}/documents", response_class=HTMLResponse)
-    def upload_document(
-        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    def _snapshot_or_404(repo, snapshot_id: int):
+        snapshot = repo.snapshots.get(snapshot_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"нет среза {snapshot_id}")
+        return snapshot
+
+    def _store_document(
+        request: Request,
+        snapshot_id: int,
+        staging_path: Path,
+        folder: Path,
+        filename: str,
+        read: ReadDocument,
     ):
-        # Синхронный def: чтение файла, обращения к sqlite и распознавание
-        # фотографии — блокирующая работа. FastAPI выполняет такой
-        # обработчик в пуле потоков; будь он async def, вся эта работа шла
-        # бы прямо на цикле событий, и сервер не отвечал бы никому на время
-        # разбора одной фотографии.
-        with context.session() as repo:
-            snapshot = repo.snapshots.get(snapshot_id)
-            if snapshot is None:
-                raise HTTPException(
-                    status_code=404, detail=f"нет среза {snapshot_id}"
-                )
+        """Записать разобранный документ и показать сводку импорта.
 
-        payload = file.file.read()
-        suffix = Path(file.filename or "").suffix.casefold()
-        folder = context.documents_dir / str(snapshot_id)
-        folder.mkdir(parents=True, exist_ok=True)
-
-        # Файл сперва пишется во временное имя и читается им же: запись в
-        # базу и постоянное, названное идентификатором документа имя на
-        # диске появляются только после того, как read_document подтвердит,
-        # что документ вообще пригоден. Иначе неудачная загрузка (плохой
-        # PDF, чужой формат, битое фото) оставляла бы висячую строку в
-        # documents и файл на диске, которые коуч не может ни увидеть, ни
-        # удалить.
-        staging_path = folder / f".upload-{uuid4().hex}{suffix}"
-        staging_path.write_bytes(payload)
-
-        try:
-            read = read_document(staging_path, context.ocr)
-        except DocumentError as exc:
-            _discard_staging(staging_path, folder)
-            raise HTTPException(
-                status_code=400, detail=_coach_facing(exc, staging_path, file)
-            ) from exc
-        except Exception:
-            # read_document документирует единый тип ошибки, но обещание —
-            # не гарантия: сорвись что-то незаявленное, временный файл всё
-            # равно не должен остаться висеть без строки в базе, которая
-            # дала бы коучу его увидеть или удалить.
-            _discard_staging(staging_path, folder)
-            raise
-
+        Общий путь двух дорог к импорту: точно опознанная шапка приходит
+        сюда сразу из `upload_document`, неточная — только после того, как
+        коуч согласилась с догадкой (`confirm_document`). Одна запись в базу
+        на оба случая: разойдись они, подтверждённый импорт мог бы,
+        например, забыть про `stored_path` или про источник измерения.
+        """
         prepared = prepare_measurements(context.references, read.table)
-
         added_at = datetime.now()
         with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
             document = repo.documents.add(
                 snapshot_id,
-                file.filename or "без имени",
+                filename,
                 "",
                 added_at,
                 unparsed=read.table.unparsed,
             )
-            stored_path = folder / f"{document.id}{suffix}"
+            stored_path = folder / f"{document.id}{staging_path.suffix}"
             staging_path.rename(stored_path)
             repo.documents.set_stored_path(document.id, str(stored_path))
 
@@ -129,11 +136,7 @@ def build_router(context: Context, templates) -> APIRouter:
         # Страница рендерится напрямую — тем же приёмом, что и загрузка
         # анкеты в routes_snapshots.py.
         with context.session() as repo:
-            snapshot = repo.snapshots.get(snapshot_id)
-            if snapshot is None:
-                raise HTTPException(
-                    status_code=404, detail=f"нет среза {snapshot_id}"
-                )
+            snapshot = _snapshot_or_404(repo, snapshot_id)
             client = repo.clients.get(snapshot.client_code)
             return render_snapshot_page(
                 request,
@@ -151,6 +154,165 @@ def build_router(context: Context, templates) -> APIRouter:
                         document_belongs_to(client, read.lines) if client else True
                     ),
                 ),
+            )
+
+    def _staging_path(folder: Path, staging: str) -> Path:
+        """Путь временного файла по имени, пришедшему из формы подтверждения."""
+        if not _STAGING_NAME.match(staging):
+            raise HTTPException(status_code=400, detail=_MESSAGE_BAD_STAGING)
+        path = folder / staging
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=_MESSAGE_BAD_STAGING)
+        return path
+
+    @router.post("/snapshots/{snapshot_id}/documents", response_class=HTMLResponse)
+    def upload_document(
+        request: Request, snapshot_id: int, file: UploadFile = File(...)
+    ):
+        # Синхронный def: чтение файла, обращения к sqlite и распознавание
+        # фотографии — блокирующая работа. FastAPI выполняет такой
+        # обработчик в пуле потоков; будь он async def, вся эта работа шла
+        # бы прямо на цикле событий, и сервер не отвечал бы никому на время
+        # разбора одной фотографии.
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+
+        payload = file.file.read()
+        suffix = Path(file.filename or "").suffix.casefold()
+        folder = context.documents_dir / str(snapshot_id)
+        folder.mkdir(parents=True, exist_ok=True)
+
+        # Файл сперва пишется во временное имя и читается им же: запись в
+        # базу и постоянное, названное идентификатором документа имя на
+        # диске появляются только после того, как read_document подтвердит,
+        # что документ вообще пригоден. Иначе неудачная загрузка (плохой
+        # PDF, чужой формат, битое фото) оставляла бы висячую строку в
+        # documents и файл на диске, которые коуч не может ни увидеть, ни
+        # удалить.
+        staging_path = folder / f".upload-{uuid4().hex}{suffix}"
+        staging_path.write_bytes(payload)
+
+        try:
+            read = read_document(staging_path, context.ocr)
+        except DocumentError as exc:
+            _discard_staging(staging_path, folder)
+            message = _coach_facing(exc, staging_path, file)
+            if isinstance(exc.__cause__, LabTableError):
+                # Документ прочитан, но это не таблица анализов (не похоже
+                # на таблицу совсем, или в нём вовсе не нашлось текста) —
+                # коуч должна увидеть это на самом экране среза, рядом с
+                # формой, из которой она только что грузила файл, а не на
+                # голой JSON-странице, куда браузер уводит после обычной
+                # отправки формы. Отказы пониже уровнем (неподдерживаемый
+                # формат, битый PDF, сбой распознавания) остаются как были:
+                # это скорее сбой инструмента, чем что-то, что коуч может
+                # исправить прямо на этом экране.
+                with context.session() as repo:
+                    snapshot = _snapshot_or_404(repo, snapshot_id)
+                    return render_snapshot_page(
+                        request,
+                        templates,
+                        context,
+                        repo,
+                        snapshot,
+                        document_refusal=message,
+                        status_code=400,
+                    )
+            raise HTTPException(status_code=400, detail=message) from exc
+        except Exception:
+            # read_document документирует единый тип ошибки, но обещание —
+            # не гарантия: сорвись что-то незаявленное, временный файл всё
+            # равно не должен остаться висеть без строки в базе, которая
+            # дала бы коучу его увидеть или удалить.
+            _discard_staging(staging_path, folder)
+            raise
+
+        if read.table.needs_confirmation:
+            # Шапка опознана неточно — измерений не создаётся ни одного,
+            # пока коуч не увидит догадку и не согласится с ней (решение 2
+            # плана). Файл остаётся во временном имени: тот же механизм,
+            # что убирает за неудачной загрузкой, ждёт здесь решения коуча,
+            # и до него на диске нет ни документа, ни строки в базе.
+            with context.session() as repo:
+                snapshot = _snapshot_or_404(repo, snapshot_id)
+                return render_snapshot_page(
+                    request,
+                    templates,
+                    context,
+                    repo,
+                    snapshot,
+                    document_confirmation=DocumentConfirmation(
+                        filename=file.filename or "без имени",
+                        staging=staging_path.name,
+                        header_line=read.table.header_line,
+                        columns=read.table.columns,
+                        rows=read.table.rows[:CONFIRMATION_ROWS],
+                        total_rows=len(read.table.rows),
+                    ),
+                )
+
+        return _store_document(
+            request,
+            snapshot_id,
+            staging_path,
+            folder,
+            file.filename or "без имени",
+            read,
+        )
+
+    @router.post(
+        "/snapshots/{snapshot_id}/documents/confirm", response_class=HTMLResponse
+    )
+    def confirm_document(
+        request: Request,
+        snapshot_id: int,
+        staging: str = Form(...),
+        filename: str = Form(...),
+    ):
+        """Коуч согласилась с догадкой о колонках — импортировать.
+
+        Документ читается заново из того же временного файла, а не хранится
+        разобранным между запросами: разбор — чистая функция от файла, и
+        второе чтение даёт ровно то же, что показывал экран подтверждения.
+        Держать разобранную таблицу в памяти сервера значило бы завести
+        второе состояние жизни загрузки рядом с временным файлом — а он и
+        есть механизм, которым эта жизнь уже описана.
+        """
+        folder = context.documents_dir / str(snapshot_id)
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+        staging_path = _staging_path(folder, staging)
+
+        try:
+            read = read_document(staging_path, context.ocr)
+        except DocumentError as exc:
+            _discard_staging(staging_path, folder)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return _store_document(
+            request, snapshot_id, staging_path, folder, filename, read
+        )
+
+    @router.post(
+        "/snapshots/{snapshot_id}/documents/cancel", response_class=HTMLResponse
+    )
+    def cancel_document(request: Request, snapshot_id: int, staging: str = Form(...)):
+        """Коуч отказалась от догадки — убрать за загрузкой без следа."""
+        folder = context.documents_dir / str(snapshot_id)
+        with context.session() as repo:
+            _snapshot_or_404(repo, snapshot_id)
+        staging_path = _staging_path(folder, staging)
+        _discard_staging(staging_path, folder)
+
+        with context.session() as repo:
+            snapshot = _snapshot_or_404(repo, snapshot_id)
+            return render_snapshot_page(
+                request,
+                templates,
+                context,
+                repo,
+                snapshot,
+                document_notice=_MESSAGE_CANCELLED,
             )
 
     @router.post("/snapshots/{snapshot_id}/measurements/{measurement_id}/value")
