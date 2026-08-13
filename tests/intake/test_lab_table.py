@@ -255,6 +255,50 @@ def test_patient_address_line_is_not_stored_as_a_measurement():
     assert not any("Адрес" in line for line in table.unparsed)
 
 
+def test_case_number_line_is_filtered_even_though_the_surname_comes_first():
+    """Бланк печатает фамилию, а номер истории болезни — следом за ней, и
+    строка разбирается *успешно*: номер становится значением, фамилия —
+    именем показателя. Так фамилия клиентки попадала и в базу как
+    измерение, и в отчёт табло как нераспознанный показатель.
+
+    Метка стоит не в начале строки, поэтому два прежних класса отсева её
+    не видят. Мутация: убрать `_SERVICE_ID` из `_is_service_line` — этот
+    тест падает.
+    """
+    lines = [
+        _CORPUS_SERVICE_HEADER,
+        "Соловьёва И. А. ИБ №: 4471 Возраст: 41",
+        "Тестова М. П. карта: 9930012 Пол: ж",
+        "Ферритин 45 10 - 120 нг/мл",
+    ]
+    table = parse_lab_lines(lines)
+    assert [r.name for r in table.rows] == ["Ферритин"]
+    printed = " ".join(
+        [r.name for r in table.rows] + list(table.unparsed)
+    )
+    assert "Соловьёва" not in printed
+    assert "Тестова" not in printed
+    assert "4471" not in printed
+    assert "9930012" not in printed
+
+
+def test_case_number_marker_needs_a_whole_word_and_a_number():
+    """«иб» встречается внутри обычных слов, а «карта» без числа следом
+    могла бы оказаться частью названия. Оба условия обязательны, иначе
+    отсев съедал бы настоящие результаты.
+    """
+    lines = [
+        _CORPUS_SERVICE_HEADER,
+        "Фибриноген 3.2 2 - 4 г/л",
+        "Карта глюкозотолерантного теста 5.4 3.9 - 6.1 ммоль/л",
+    ]
+    table = parse_lab_lines(lines)
+    assert [r.name for r in table.rows] == [
+        "Фибриноген",
+        "Карта глюкозотолерантного теста",
+    ]
+
+
 def test_service_word_match_is_whole_word_not_a_string_prefix():
     """«Пациент» как префикс проглотил бы и «Пациентка беременна» — реальную
     по форме строку бланка, которая служебной не является (в списке отсева
