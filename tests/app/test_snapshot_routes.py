@@ -724,6 +724,37 @@ def test_missing_rule_indicator_is_named_in_the_missing_rules_block(client):
     assert page.index("Нет правила в базе знаний") < page.rindex("Гомоцистеин")
 
 
+def test_missing_rules_block_does_not_promise_a_corridor_for_someone_else(client):
+    """Заголовок списка не должен противоречить заметке под самим показателем.
+
+    Коммит 4793c9e развёл два случая: коридора нет вовсе и коридор есть, но
+    не для этого пола и возраста. Заметка у показателя пишет их по-разному,
+    а шапка списка осталась в старой редакции — обещала коридор, заданный
+    «для кого-то другого», прямо над заметкой, которая говорит, что коридора
+    нет ни для кого. Коуч читает этот список как рабочий: текст решает,
+    пойдёт она дописывать коридор или искать, где он уже есть.
+    """
+    test_client, context = client
+    snapshot_id = _snapshot(test_client)
+    test_client.post(
+        f"/snapshots/{snapshot_id}/measurements",
+        data={
+            "raw_name": "Гомоцистеин", "value": "12", "units": "мкмоль/л",
+            "taken_on": "2026-08-20",
+        },
+    )
+    (stored,) = _measurements(context, snapshot_id)
+    test_client.post(f"/snapshots/{snapshot_id}/measurements/{stored.id}/confirm")
+
+    page = " ".join(test_client.get(f"/snapshots/{snapshot_id}/findings").text.split())
+
+    assert "для этого показателя целевой коридор в базе знаний не задан" in page
+    assert (
+        "он есть, но целевой коридор для этого пола и возраста у него не задан"
+        not in page
+    )
+
+
 # Значение за пределами оси — это не «плохое значение», а «шкала его не
 # показывает». Отличаться от риски внутри полосы оно должно формой, а не
 # только цветом: цвет уже занят тяжестью статуса.
