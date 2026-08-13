@@ -320,6 +320,54 @@ def test_format_report_prints_numbers_counts_and_indicator_names_only():
     assert "Выдуманный показатель" in text
 
 
+def test_format_report_never_prints_a_row_that_did_not_split_into_name_and_value():
+    """Обещание README «ни значений, ни исходного текста строк» держится и
+    здесь — на строках, которые разбор не сумел разделить.
+
+    Прежнее рассуждение было неверным: из отчёта исключался `unparsed`, а
+    утечка приходила разобранными строками. Когда значение написано слитно
+    с пометкой лаборатории («8.8++»), числом оно не считается, разбор
+    ищет число дальше по строке, и в `raw_name` остаётся вся строка целиком
+    — вместе с результатом пациентки, а иногда и с адресом, вычитанным
+    распознаванием из колонтитула. Отчёт печатал это дословно.
+
+    Такие записи считаются числом и не печатаются вовсе; настоящие названия
+    показателей — печатаются, в том числе с цифрами внутри: список нужен
+    коучу, чтобы видеть, чего не хватает её базе знаний.
+
+    Строки здесь выдуманы — по форме тех, что нашлись в корпусе, но без
+    единой настоящей цифры и без настоящего адреса: корпус в репозиторий не
+    попадает ни файлами, ни цитатами.
+    """
+    report = CorpusReport(
+        outcomes=(
+            FileOutcome(
+                label="01", accepted=True, refusal=None, rows=4, unparsed=0, resolved=0
+            ),
+        ),
+        accepted=1,
+        refused_by={},
+        rows=4,
+        resolved=0,
+        unresolved_names={
+            "Выдуманное антитело (кол.) 88.8++ МЕ/мл": 2,
+            "Адрес: 00000, г. Выдуманск, Z9": 1,
+            "Т3 свободный": 1,
+        },
+    )
+
+    text = format_report(report)
+
+    assert "88.8" not in text
+    assert "антитело" not in text
+    assert "00000" not in text
+    assert "Выдуманск" not in text
+    # Название показателя с цифрой внутри — не строка бланка, оно остаётся.
+    assert "Т3 свободный" in text
+    # Скрытое не исчезает бесследно: коуч видит, сколько названий не показано.
+    assert "2" in text
+
+
 class _CachingEngine:
     """Кэширует распознавание фотографии на диске, внутри самой папки корпуса.
 
@@ -439,15 +487,24 @@ def test_corpus_scoreboard_meets_baseline(samples_dir):
     engine = _CachingEngine(AppleVisionEngine(), samples_dir / ".ocr-cache")
     report = scan_corpus(samples_dir, references, engine)
 
-    assert report.accepted >= min_accepted, (
-        f"принято {report.accepted} документов из {len(report.outcomes)}, "
+    # Числа берутся в локальные переменные до assert намеренно. pytest
+    # переписывает утверждение и на падении печатает, откуда взялось левое
+    # значение: `assert 39 >= 40 + where 39 = CorpusReport(…).accepted` — то
+    # есть repr всего отчёта, вместе с `unresolved_names`, где лежат целые
+    # строки бланка с результатами пациенток. Красная сборка выкладывала бы
+    # их в лог. Сравнение голых чисел печатает только числа.
+    accepted, confirmable = report.accepted, report.confirmable
+    resolved, rows = report.resolved, report.rows
+
+    assert accepted >= min_accepted, (
+        f"принято {accepted} документов из {len(report.outcomes)}, "
         f"нужно не меньше {min_accepted}"
     )
-    assert report.confirmable >= min_confirmable, (
-        f"под подтверждение разобрано {report.confirmable} документов, "
+    assert confirmable >= min_confirmable, (
+        f"под подтверждение разобрано {confirmable} документов, "
         f"нужно не меньше {min_confirmable}"
     )
-    assert report.resolved >= min_resolved, (
-        f"сопоставлено {report.resolved} строк из {report.rows}, "
+    assert resolved >= min_resolved, (
+        f"сопоставлено {resolved} строк из {rows}, "
         f"нужно не меньше {min_resolved}"
     )
