@@ -5,6 +5,13 @@
 // так не отличить работающую проверку чужого файла от вычеркнутой. Здесь
 // скрипт исполняется по-настоящему, на разметке, которую сам генератор и
 // выдал: заглушка собирает дерево из неё, а не из выдуманного образца.
+//
+// Заглушка обязана уметь краснеть. Поэтому здесь воспроизведено то, чем
+// браузер отличается от удобного объекта: клик по «Продолжить» доходит до
+// выборщика файла и возвращает выбранный файл с именем, радиокнопки одной
+// группы снимают друг друга, чтение файла заканчивается отдельным оборотом
+// цикла событий (а значит, бросок внутри onload уже никем не ловится), и
+// setTimeout не теряет обратный вызов, а откладывает его до команды теста.
 
 const fs = require('fs');
 
@@ -18,9 +25,26 @@ const inputs = [];
 const inputRe = /<input type="radio" name="([^"]+)" value="([^"]+)"/g;
 let m;
 while ((m = inputRe.exec(html)) !== null) {
-  inputs.push({ name: m[1], value: m[2], checked: false, type: 'radio' });
+  inputs.push({ name: m[1], value: m[2], type: 'radio' });
 }
 if (!inputs.length) throw new Error('в разметке не нашлось ни одного ответа');
+
+// Взаимное исключение в группе — не украшение: в браузере отметка варианта
+// снимает прежнюю отметку того же вопроса. Без этого «слияние» ответов
+// выглядит безобидным, хотя старый черновик затирает свежий ответ.
+const checked = new Set();
+for (const input of inputs) {
+  Object.defineProperty(input, 'checked', {
+    get: () => checked.has(input),
+    set: (on) => {
+      if (!on) return void checked.delete(input);
+      for (const other of inputs) {
+        if (other.name === input.name) checked.delete(other);
+      }
+      checked.add(input);
+    },
+  });
+}
 
 const questions = [...html.matchAll(/data-q="([^"]+)"/g)].map((hit) => ({
   dataset: { q: hit[1] },
@@ -31,6 +55,34 @@ for (const q of questions) {
   q.classList = {
     toggle: (name, on) => (on ? q.classes.add(name) : q.classes.delete(name)),
   };
+}
+
+// --- отложенные вызовы --------------------------------------------------
+
+const timers = [];
+const reads = [];
+let crashed = null;
+
+function safely(fn) {
+  // Бросок в обратном вызове браузер не передаёт никому: он пишет в консоль,
+  // а страница остаётся в середине недоделанной работы. Здесь он не валит
+  // заглушку молча, а запоминается — тест читает его как «страница сломалась
+  // и клиенту об этом не сказали».
+  try {
+    fn();
+  } catch (e) {
+    crashed = String((e && e.message) || e);
+  }
+}
+
+function runTimers() {
+  for (const t of timers.splice(0)) safely(t.fn);
+}
+
+function settle() {
+  // Чтение файла и лист отправки заканчиваются вне вызова, который их завёл.
+  for (const read of reads.splice(0)) safely(read);
+  return new Promise((done) => setImmediate(done));
 }
 
 // --- заглушка дерева ----------------------------------------------------
@@ -58,7 +110,27 @@ elements.download = stubNode('download');
 elements.continue = stubNode('continue');
 elements.picker = stubNode('picker');
 
+let chosenFile = null;
+let pickerOpened = 0;
+elements.picker.click = () => {
+  // Клик по невидимому выборщику открывает диалог. Если клиент файл выбрал,
+  // браузер кладёт его в files, подставляет имя в value и посылает change.
+  pickerOpened += 1;
+  if (!chosenFile) return;
+  const file = chosenFile;
+  chosenFile = null;
+  elements.picker.files = [file];
+  elements.picker.value = file.name;
+  const fn = handlers['picker:change'];
+  if (fn) fn();
+};
+
 function match(selector) {
+  if (selector === 'input[type=radio]') return inputs;
+  if (selector === 'input[type=radio]:checked') {
+    return inputs.filter((i) => i.checked);
+  }
+  if (selector === '.q') return questions;
   const byName = selector.match(/^input\[name="(.+?)"\]\[value="(.+?)"\]$/);
   if (byName) {
     return inputs.filter(
@@ -69,11 +141,6 @@ function match(selector) {
   if (checkedByName) {
     return inputs.filter((i) => i.name === checkedByName[1] && i.checked);
   }
-  if (selector === 'input[type=radio]:checked') {
-    return inputs.filter((i) => i.checked);
-  }
-  if (selector === 'input[type=radio]') return inputs;
-  if (selector === '.q') return questions;
   throw new Error('заглушка не знает селектора: ' + selector);
 }
 
@@ -86,6 +153,7 @@ elements.form = {
 };
 
 const downloads = [];
+const shared = [];
 let revoked = 0;
 
 global.document = {
@@ -111,6 +179,10 @@ global.CSS = { escape: (s) => s.replace(/["\\]/g, '\\$&') };
 global.Blob = function (parts) {
   this.text = parts.join('');
 };
+global.File = function (parts, name) {
+  this.text = parts.join('');
+  this.name = name;
+};
 global.URL = {
   createObjectURL: (blob) => {
     global.__lastBlob = blob;
@@ -120,7 +192,26 @@ global.URL = {
     revoked += 1;
   },
 };
-global.setTimeout = (fn) => fn && 0;
+global.setTimeout = (fn, ms) => {
+  timers.push({ fn: fn, ms: ms });
+  return timers.length;
+};
+
+// Лист отправки есть не везде: в встроенном браузере мессенджера он часто
+// единственный способ отдать файл, а на обычном рабочем столе его нет вовсе.
+global.navigator = {};
+if (plan.canShare) {
+  global.navigator.canShare = (what) => !!(what && what.files && what.files[0]);
+  global.navigator.share = (what) => {
+    shared.push({
+      name: what.files && what.files[0] && what.files[0].name,
+      text: what.files && what.files[0] && what.files[0].text,
+    });
+    return plan.shareFails
+      ? Promise.reject(new Error('отправка отменена'))
+      : Promise.resolve();
+  };
+}
 
 const store = Object.assign({}, plan.storage || {});
 global.localStorage = {
@@ -136,12 +227,17 @@ global.localStorage = {
 
 global.FileReader = function () {
   this.readAsText = (file) => {
-    this.result = file.text;
-    if (file.broken) {
-      if (this.onerror) this.onerror();
-      return;
-    }
-    this.onload();
+    // Чтение заканчивается отдельным оборотом цикла событий. Это не
+    // придирка: именно поэтому бросок внутри onload не ловится тем кодом,
+    // который вызвал readAsText, и загрузка остаётся сделанной наполовину.
+    reads.push(() => {
+      if (file.broken) {
+        if (this.onerror) this.onerror();
+        return;
+      }
+      this.result = file.text;
+      this.onload();
+    });
   };
 };
 
@@ -151,32 +247,55 @@ eval(script);
 
 function answer(name, value) {
   for (const input of inputs) {
-    if (input.name === name) input.checked = String(input.value) === String(value);
+    if (input.name === name && String(input.value) === String(value)) {
+      input.checked = true;
+    }
   }
   handlers['form:change']();
 }
 
-for (const step of plan.steps) {
-  if (step.answer) answer(step.answer[0], step.answer[1]);
-  if (step.download) elements.download.click();
-  if (step.load) {
-    elements.picker.files = [{ text: step.load, broken: !!step.broken }];
-    handlers['picker:change']();
+async function main() {
+  await settle();
+  for (const step of plan.steps) {
+    if (step.answer) answer(step.answer[0], step.answer[1]);
+    if (step.download) elements.download.click();
+    // Единственный вход в восстановление — кнопка «Продолжить»: она и
+    // открывает выборщик. Дёргать picker:change напрямую значит проверять
+    // проводку, минуя её.
+    if (step.load || step.continue) {
+      chosenFile = {
+        text: step.load || step.continue,
+        broken: !!step.broken,
+        name: 'ответы.json',
+      };
+      elements.continue.click();
+    }
+    if (step.cancel) elements.continue.click();
+    if (step.timers) runTimers();
+    await settle();
   }
+  await settle();
+
+  console.log(
+    JSON.stringify({
+      warning: elements.warning.textContent,
+      warningKind: elements.warning.className,
+      warningHidden: elements.warning.hidden,
+      progress: elements.progress.textContent,
+      checked: inputs.filter((i) => i.checked).map((i) => i.name + '=' + i.value),
+      done: questions.filter((q) => q.classes.has('done')).length,
+      downloads: downloads.map((d) => ({ name: d.name, inDom: d.inDom })),
+      shared: shared,
+      saved: global.__lastBlob ? global.__lastBlob.text : null,
+      stored: store,
+      revoked: revoked,
+      timerDelays: timers.map((t) => t.ms),
+      pickerOpened: pickerOpened,
+      pickerValue: elements.picker.value,
+      pickerReset: elements.picker.value === '',
+      crashed: crashed,
+    })
+  );
 }
 
-console.log(
-  JSON.stringify({
-    warning: elements.warning.textContent,
-    warningKind: elements.warning.className,
-    warningHidden: elements.warning.hidden,
-    progress: elements.progress.textContent,
-    checked: inputs.filter((i) => i.checked).map((i) => i.name + '=' + i.value),
-    done: questions.filter((q) => q.classes.has('done')).length,
-    downloads: downloads.map((d) => ({ name: d.name, inDom: d.inDom })),
-    saved: global.__lastBlob ? global.__lastBlob.text : null,
-    stored: store,
-    revoked: revoked,
-    pickerReset: elements.picker.value === '',
-  })
-);
+main();

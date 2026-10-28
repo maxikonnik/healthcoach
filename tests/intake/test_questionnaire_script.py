@@ -293,3 +293,38 @@ def test_the_file_picker_does_not_filter_by_extension(questionnaire):
     picker = re.search(r'<input type="file" id="picker"[^>]*>', page)
     assert picker, "выборщика файла нет"
     assert "accept" not in picker.group(0)
+
+
+def test_continue_opens_the_file_picker(questionnaire, tmp_path):
+    """«Продолжить» — единственный вход в восстановление. Кнопка невидимого
+    выборщика не нажимает сама себя: без этой проводки клиент не может
+    вернуть заполненное, а кроме неё об этом сказать некому."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(page, {"steps": [{"cancel": True}]}, tmp_path)
+    assert result["pickerOpened"] == 1, "кнопка не дошла до выборщика файла"
+    assert not result["crashed"]
+
+
+def test_closing_the_picker_without_a_file_changes_nothing(questionnaire, tmp_path):
+    """Диалог закрыли, файл не выбрали: это не повод терять ответы или
+    пугать клиента."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {"protocol": "http:", "steps": [{"answer": ["blok.a.1", 2]}, {"cancel": True}]},
+        tmp_path,
+    )
+    assert result["checked"] == ["blok.a.1=2"]
+    assert result["warningHidden"]
+
+
+def test_the_blob_address_is_released_only_much_later(questionnaire, tmp_path):
+    """Часть браузеров телефона обрывает скачивание, если адрес отозвать в
+    тот же миг. Отзыв отложен — и всё же случается, а не теряется."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(page, {"steps": [{"download": True}]}, tmp_path)
+    assert result["revoked"] == 0, "адрес отозван слишком рано"
+    assert result["timerDelays"] == [60000]
+
+    drained = run(page, {"steps": [{"download": True}, {"timers": True}]}, tmp_path)
+    assert drained["revoked"] == 1, "адрес не освобождается никогда"
