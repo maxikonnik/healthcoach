@@ -328,3 +328,132 @@ def test_the_blob_address_is_released_only_much_later(questionnaire, tmp_path):
 
     drained = run(page, {"steps": [{"download": True}, {"timers": True}]}, tmp_path)
     assert drained["revoked"] == 1, "адрес не освобождается никогда"
+
+
+def _storage_key(questionnaire, tmp_path) -> str:
+    """Ключ хранилища спрашивается у самой страницы: тест не должен знать,
+    как он собран, иначе проверка версии в ключе окажется проверкой
+    совпадения двух строк, списанных друг с друга."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    first = run(page, {"steps": [{"answer": ["blok.a.1", 2]}]}, tmp_path)
+    (key,) = first["stored"].keys()
+    return key
+
+
+def test_storage_holds_the_same_thing_as_the_file(questionnaire, tmp_path):
+    """Хранилище и файл — один формат и одни проверки. Пока в хранилище
+    лежали голые ответы, применить их можно было только вслепую: ни чей
+    они, ни от какой версии опросника, узнать было не из чего."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(page, {"steps": [{"answer": ["blok.a.1", 2]}]}, tmp_path)
+    (key,) = result["stored"].keys()
+    kept = json.loads(result["stored"][key])
+    assert kept["клиент"] == "CL-0417"
+    assert kept["спецификация"] == "тест-1"
+    assert kept["ответы"] == {"blok.a.1": 2}
+    assert "тест-1" in key, "версия опросника не попала в ключ хранилища"
+
+
+def test_storage_from_another_questionnaire_version_is_not_applied(
+    questionnaire, tmp_path
+):
+    """Проверено в WebKit: ответы от другой версии опросника молча
+    применялись, и неверные баллы доходили до отчёта. Файл такое отвергал,
+    хранилище — нет."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    key = _storage_key(questionnaire, tmp_path)
+    stale = answers_file("CL-0417", "другая", {"blok.a.1": 2})
+    result = run(page, {"storage": {key: stale}, "steps": []}, tmp_path)
+    assert result["checked"] == [], "ответы от другой версии встали в опросник"
+    assert "другой версии" in result["warning"]
+
+
+def test_storage_from_another_client_is_not_applied(questionnaire, tmp_path):
+    page = render_questionnaire(questionnaire, "CL-0417")
+    key = _storage_key(questionnaire, tmp_path)
+    alien = answers_file("CL-0999", "тест-1", {"blok.a.1": 2})
+    result = run(page, {"storage": {key: alien}, "steps": []}, tmp_path)
+    assert result["checked"] == []
+    assert "CL-0999" in result["warning"]
+
+
+def test_storage_that_is_not_readable_points_at_continue(questionnaire, tmp_path):
+    """«Придётся заполнить заново» больше не правда: файл ответов
+    возвращает заполненное."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    key = _storage_key(questionnaire, tmp_path)
+    result = run(page, {"storage": {key: "не json вовсе"}, "steps": []}, tmp_path)
+    assert "заново" not in result["warning"]
+    assert "Продолжить" in result["warning"]
+
+
+def test_storage_reports_answers_that_did_not_fit(questionnaire, tmp_path):
+    """Счёт неподошедших ответов из хранилища выбрасывался: вопросы могли
+    исчезнуть из опросника, а клиент об этом не узнавал."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    key = _storage_key(questionnaire, tmp_path)
+    mixed = answers_file("CL-0417", "тест-1", {"blok.a.1": 2, "чужой.вопрос": 1})
+    result = run(page, {"storage": {key: mixed}, "steps": []}, tmp_path)
+    assert result["checked"] == ["blok.a.1=2"]
+    assert "Не подошло: 1" in result["warning"]
+
+
+def test_an_answer_on_screen_is_never_replaced_by_the_file(questionnaire, tmp_path):
+    """«Слияние» обещало не терять свежие ответы, но варианты одного
+    вопроса снимают друг друга: старый черновик молча заменял ответ,
+    который клиент только что дал."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "steps": [
+                {"answer": ["blok.a.1", 2]},
+                {"load": answers_file(
+                    "CL-0417", "тест-1", {"blok.a.1": 0, "blok.a.2": 1})},
+            ]
+        },
+        tmp_path,
+    )
+    assert sorted(result["checked"]) == ["blok.a.1=2", "blok.a.2=1"]
+    assert "Загружено ответов: 1" in result["warning"]
+    assert "1" in result["warning"] and "экране" in result["warning"]
+
+
+def test_a_strange_value_in_the_file_does_not_break_the_load(
+    questionnaire, tmp_path
+):
+    """Балл подставлялся в селектор без экранирования. Кавычка в чужом или
+    испорченном файле роняла загрузку на середине, и клиент видел прежнюю
+    подсказку, как будто ничего не случилось."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "steps": [
+                {"load": answers_file(
+                    "CL-0417", "тест-1", {"blok.a.1": '2"]', "blok.a.2": 1})},
+            ]
+        },
+        tmp_path,
+    )
+    assert not result["crashed"], "загрузка умерла молча: " + str(result["crashed"])
+    assert result["checked"] == ["blok.a.2=1"]
+    assert "Не подошло: 1" in result["warning"]
+
+
+def test_a_failure_inside_the_load_is_told_to_the_client(questionnaire, tmp_path):
+    """Бросок внутри чтения файла никому не передаётся: страница остаётся с
+    наполовину применённой загрузкой, а на экране висит прежнее сообщение.
+    Молчания быть не должно."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "breakTreeAt": 2,
+            "steps": [{"load": answers_file("CL-0417", "тест-1", {"blok.a.1": 2})}],
+        },
+        tmp_path,
+    )
+    assert not result["crashed"], "сбой не поймали: " + str(result["crashed"])
+    assert "не удалось" in result["warning"] or "Сбой" in result["warning"]
+    assert result["warningKind"] == "warn"

@@ -89,7 +89,22 @@ function settle() {
 
 const elements = {
   warning: { textContent: '', hidden: true, className: '' },
-  progress: { textContent: '' },
+  progress: {
+    writes: 0,
+    text: '',
+    // Сбой при работе с деревом — обычное дело в браузере телефона, и
+    // страница обязана о нём сказать, а не остаться с полуприменённой
+    // загрузкой. Ломается по команде теста, на заданном по счёту обращении:
+    // первое приходится на запуск страницы.
+    set textContent(value) {
+      this.writes += 1;
+      if (plan.breakTreeAt === this.writes) throw new Error('дерево недоступно');
+      this.text = value;
+    },
+    get textContent() {
+      return this.text;
+    },
+  },
 };
 const handlers = {};
 
@@ -131,17 +146,20 @@ function match(selector) {
     return inputs.filter((i) => i.checked);
   }
   if (selector === '.q') return questions;
-  const byName = selector.match(/^input\[name="(.+?)"\]\[value="(.+?)"\]$/);
-  if (byName) {
-    return inputs.filter(
-      (i) => i.name === byName[1] && String(i.value) === byName[2]
-    );
-  }
-  const checkedByName = selector.match(/^input\[name="(.+?)"\]:checked$/);
-  if (checkedByName) {
-    return inputs.filter((i) => i.name === checkedByName[1] && i.checked);
-  }
-  throw new Error('заглушка не знает селектора: ' + selector);
+  // Браузер разбирает селектор по грамматике, а не по шаблону: лишняя
+  // кавычка внутри — SyntaxError, а не «ничего не нашлось». Заглушка обязана
+  // падать там же, иначе селектор, собранный из чужого значения, выглядит
+  // безобидным.
+  const parts = selector.match(
+    /^input\[name="([^"\\]*)"\](?:\[value="([^"\\]*)"\])?(:checked)?$/
+  );
+  if (!parts) throw new Error('заглушка не знает селектора: ' + selector);
+  return inputs.filter(
+    (i) =>
+      i.name === parts[1] &&
+      (parts[2] === undefined || String(i.value) === parts[2]) &&
+      (!parts[3] || i.checked)
+  );
 }
 
 elements.form = {

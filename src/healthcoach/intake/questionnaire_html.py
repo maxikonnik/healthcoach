@@ -57,8 +57,20 @@ button { font: inherit; padding: .5rem 1rem; cursor: pointer; }
 """
 
 _SCRIPT = """
-const KEY = 'healthcoach-' + CLIENT_CODE;
+// Версия опросника — часть ключа: вопрос мог поменять смысл, сохранив
+// идентификатор, и ответы прошлой версии превратились бы в баллы этой.
+const KEY = 'healthcoach-' + CLIENT_CODE + '-' + SPEC_VERSION;
 const form = document.getElementById('form');
+
+// Варианты каждого вопроса собираются один раз, по именам. Селектор,
+// собранный из имени или балла, пришедшего из файла, — это либо брошенное
+// исключение на кавычке, либо поиск не того, что искали; сравнить значение
+// в коде и проще, и не бросает.
+const groups = new Map();
+for (const el of form.querySelectorAll('input[type=radio]')) {
+  if (!groups.has(el.name)) groups.set(el.name, []);
+  groups.get(el.name).push(el);
+}
 
 // Страница, открытая из мессенджера или «Файлов», живёт по адресу file://.
 // Там браузер телефона хранилищу не хозяин: встроенный просмотрщик заводит
@@ -88,33 +100,31 @@ function noStorage() {
 
 function collect() {
   const data = {};
-  for (const el of form.querySelectorAll('input[type=radio]:checked')) {
-    data[el.name] = Number(el.value);
+  for (const [name, options] of groups) {
+    for (const el of options) {
+      if (el.checked) data[name] = Number(el.value);
+    }
   }
   return data;
-}
-
-function total() {
-  return new Set(
-    [...form.querySelectorAll('input[type=radio]')].map((el) => el.name)
-  ).size;
 }
 
 function refresh() {
   const answered = Object.keys(collect()).length;
   document.getElementById('progress').textContent =
-    'Отвечено ' + answered + ' из ' + total();
+    'Отвечено ' + answered + ' из ' + groups.size;
   for (const q of form.querySelectorAll('.q')) {
-    const name = q.dataset.q;
-    q.classList.toggle('done', form.querySelector(
-      'input[name="' + name + '"]:checked') !== null);
+    const options = groups.get(q.dataset.q) || [];
+    q.classList.toggle('done', options.some((el) => el.checked));
   }
 }
 
 function save() {
   if (!storageBroken) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(collect()));
+      // В памяти браузера лежит то же, что в файле: иначе применить
+      // сохранённое можно только вслепую — ни чьи это ответы, ни от какой
+      // версии опросника, узнать не из чего.
+      localStorage.setItem(KEY, JSON.stringify(payload()));
     } catch (e) {
       noStorage();
     }
@@ -125,6 +135,68 @@ function save() {
         'потерять их, если страница закроется.');
   }
   refresh();
+}
+
+function mismatch(data) {
+  // Один ответ на один вопрос — можно ли применять этот набор ответов, — и
+  // для файла, и для памяти браузера. Две проверки, решавшие это
+  // по-разному, и привели к тому, что ответы прошлой версии опросника молча
+  // становились баллами отчёта: файл такое отвергал, память — нет.
+  if (!data || typeof data !== 'object' || typeof data["ответы"] !== 'object'
+      || data["ответы"] === null) {
+    return 'это не ответы этого опросника';
+  }
+  // Чужие ответы загружать нельзя: они оказались бы в опроснике другого
+  // человека, и специалист узнал бы об этом в лучшем случае по несуразным
+  // находкам.
+  if (data["клиент"] && data["клиент"] !== CLIENT_CODE) {
+    return 'они заполнены по другому опроснику (' + data["клиент"] + ')';
+  }
+  if (data["спецификация"] && data["спецификация"] !== SPEC_VERSION) {
+    return 'они заполнены по другой версии опросника — вопросы могли ' +
+           'измениться, и балл встал бы не туда';
+  }
+  return null;
+}
+
+function apply(answers) {
+  // Ответ, который уже стоит на экране, не заменяется: вариант отмечается
+  // взамен прежнего, поэтому старый черновик молча затирал бы ответ,
+  // который клиент только что дал.
+  let applied = 0;
+  let kept = 0;
+  let unknown = 0;
+  for (const name of Object.keys(answers)) {
+    const options = groups.get(name);
+    if (!options) {
+      unknown += 1;
+    } else if (options.some((el) => el.checked)) {
+      kept += 1;
+    } else {
+      const wanted = options.filter(
+        (el) => String(el.value) === String(answers[name]));
+      if (wanted.length) {
+        wanted[0].checked = true;
+        applied += 1;
+      } else {
+        unknown += 1;
+      }
+    }
+  }
+  return { applied: applied, kept: kept, unknown: unknown };
+}
+
+function tale(result, lead) {
+  let text = lead + ': ' + result.applied + '.';
+  if (result.kept) {
+    text += ' Оставлено как на экране: ' + result.kept +
+            ' — отвеченное здесь и сейчас важнее сохранённого.';
+  }
+  if (result.unknown) {
+    text += ' Не подошло: ' + result.unknown +
+            ' — таких вопросов или таких ответов в опроснике нет.';
+  }
+  return text;
 }
 
 function restore() {
@@ -149,31 +221,20 @@ function restore() {
   } catch (e) {
     data = null;
   }
-  if (!data || typeof data !== 'object') {
-    say('Сохранённые ответы не читаются, придётся заполнить заново.');
+  const why = mismatch(data);
+  if (why) {
+    say('Сохранённое в браузере не подошло: ' + why + '. Нажмите ' +
+        '«Продолжить» и выберите файл ответов — заполненное встанет ' +
+        'на место.');
     return refresh();
   }
-  apply(data);
+  const result = apply(data["ответы"]);
   refresh();
-}
-
-function apply(answers) {
-  // Ответы не стираются, а дополняются: клиент мог ответить на несколько
-  // вопросов до того, как вспомнил про файл, и терять их при загрузке
-  // черновика незачем.
-  let applied = 0;
-  let unknown = 0;
-  for (const [name, score] of Object.entries(answers)) {
-    const el = form.querySelector(
-      'input[name="' + CSS.escape(name) + '"][value="' + score + '"]');
-    if (el) {
-      el.checked = true;
-      applied += 1;
-    } else {
-      unknown += 1;
-    }
+  let text = tale(result, 'Вернулось ответов из памяти браузера');
+  if (FRAGILE) {
+    text += ' Браузер телефона может их забыть — сохраните файл ответов.';
   }
-  return { applied: applied, unknown: unknown };
+  say(text, result.unknown ? 'warn' : 'hint');
 }
 
 function payload() {
@@ -214,38 +275,41 @@ function load(file) {
     say('Файл не прочитался. Попробуйте выбрать его ещё раз.');
   };
   reader.onload = function () {
-    let data = null;
+    // Чтение заканчивается отдельным оборотом цикла событий: бросок отсюда
+    // не поймает никто, загрузка останется сделанной наполовину, а на
+    // экране — прежняя подсказка, как будто ничего не случилось.
     try {
-      data = JSON.parse(reader.result);
+      accept(reader.result);
     } catch (e) {
-      return say('Это не файл ответов: он не читается как JSON.');
+      refresh();
+      say('Загрузить файл не удалось: ' + ((e && e.message) || e) +
+          '. Ответы могли встать не полностью — проверьте экран и ' +
+          'выберите файл ещё раз.');
     }
-    if (!data || typeof data !== 'object' || typeof data["ответы"] !== 'object'
-        || data["ответы"] === null) {
-      return say('Это не файл ответов этого опросника.');
-    }
-    // Чужой файл загружать нельзя: ответы одного человека оказались бы
-    // в опроснике другого, и специалист узнал бы об этом в лучшем случае
-    // по несуразным находкам.
-    if (data["клиент"] && data["клиент"] !== CLIENT_CODE) {
-      return say('Этот файл заполнен по другому опроснику (' +
-                 data["клиент"] + '). Возьмите свой.');
-    }
-    if (data["спецификация"] && data["спецификация"] !== SPEC_VERSION) {
-      return say('Файл заполнен по другой версии опросника — перенести ' +
-                 'ответы нельзя, вопросы могли измениться.');
-    }
-    const result = apply(data["ответы"]);
-    refresh();
-    unsaved = 0;
-    let text = 'Загружено ответов: ' + result.applied + '.';
-    if (result.unknown) {
-      text += ' Не подошло: ' + result.unknown + ' — этих вопросов ' +
-              'в опроснике нет.';
-    }
-    say(text, result.unknown ? 'warn' : 'hint');
   };
-  reader.readAsText(file);
+  try {
+    reader.readAsText(file);
+  } catch (e) {
+    say('Файл не прочитался. Попробуйте выбрать его ещё раз.');
+  }
+}
+
+function accept(text) {
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    return say('Это не файл ответов: он не читается как JSON.');
+  }
+  const why = mismatch(data);
+  if (why) {
+    return say('Файл не подошёл: ' + why + '. Возьмите последний файл ' +
+               'ответов этого опросника.');
+  }
+  const result = apply(data["ответы"]);
+  refresh();
+  unsaved = 0;
+  say(tale(result, 'Загружено ответов'), result.unknown ? 'warn' : 'hint');
 }
 
 form.addEventListener('change', save);
