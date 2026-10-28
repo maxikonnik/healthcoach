@@ -25,7 +25,6 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
 APP_NAME = "Health Coaching"
-PORT = 8765
 
 _UV_CANDIDATES = (
     Path.home() / ".local" / "bin" / "uv",
@@ -184,8 +183,6 @@ set -u
 
 PROJECT="{project}"
 UV="{uv}"
-PORT={port}
-URL="http://127.0.0.1:$PORT"
 LOG="$PROJECT/data/запуск.log"
 
 fail() {{
@@ -194,12 +191,6 @@ message \\"$1\\n\\nПодробности: $LOG\\" as critical" >/dev/null 2>&1
     exit 1
 }}
 
-# Уже запущен из Терминала или вторым щелчком — просто открыть окно.
-if /usr/bin/curl -s -o /dev/null -m 2 "$URL"; then
-    /usr/bin/open "$URL"
-    exit 0
-fi
-
 [ -x "$UV" ] || UV="$(/usr/bin/which uv 2>/dev/null || true)"
 [ -x "$UV" ] || fail "не найден uv — переустановите его и пересоберите значок."
 [ -d "$PROJECT" ] || fail "папка проекта не найдена: $PROJECT"
@@ -207,25 +198,17 @@ fi
 mkdir -p "$PROJECT/data"
 echo "--- $(date '+%Y-%m-%d %H:%M:%S') запуск ---" >> "$LOG"
 
-# Браузер открывается отдельно и только когда сервер ответит: окно,
-# открытое раньше, показало бы ошибку соединения.
-(
-    for _ in $(seq 1 90); do
-        if /usr/bin/curl -s -o /dev/null -m 2 "$URL"; then
-            /usr/bin/open "$URL"
-            exit 0
-        fi
-        sleep 1
-    done
-    /usr/bin/osascript -e "display alert \\"Health Coaching не отвечает\\" \\
-message \\"Сервер не поднялся за полторы минуты.\\n\\nПодробности: $LOG\\" \\
-as critical" >/dev/null 2>&1
-) &
+# Кем система считает процесс. После exec исполняемым файлом становится
+# uv, а затем python — и приложение показалось бы в Dock чужим значком с
+# именем «Python». CFProcessPath оставляет процессу принадлежность к
+# бандлу: имя и значок берутся отсюда.
+export CFProcessPath="$0"
 
-# exec, а не фоновый процесс: сервер становится самим приложением, и выход
-# из него в Dock останавливает инструмент, не оставляя сервер висеть.
+# exec, а не фоновый процесс: оконное приложение становится самим
+# процессом бандла, и «Завершить» в Dock останавливает инструмент, не
+# оставляя сервис висеть без значка.
 cd "$PROJECT" || fail "не удалось перейти в папку проекта"
-exec "$UV" run python -m healthcoach.app.main >> "$LOG" 2>&1
+exec "$UV" run python -m healthcoach.app.desktop >> "$LOG" 2>&1
 """
 
 
@@ -251,7 +234,7 @@ def build(destination: Path) -> Path:
 
     launcher = macos / "HealthCoaching"
     launcher.write_text(
-        _LAUNCHER.format(project=PROJECT, uv=_find_uv(), port=PORT),
+        _LAUNCHER.format(project=PROJECT, uv=_find_uv()),
         encoding="utf-8",
     )
     launcher.chmod(0o755)
