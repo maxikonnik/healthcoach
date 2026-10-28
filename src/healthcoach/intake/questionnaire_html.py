@@ -8,9 +8,12 @@
 этого не переживает: страница, открытая из мессенджера, живёт по адресу
 file:// — встроенный просмотрщик заводит хранилище заново на каждый
 показ. Поэтому надёжный способ вернуться к заполненному здесь один —
-тот же файл ответов: страница умеет не только его скачивать, но и
-загружать обратно. localStorage остался быстрым путём там, где он
-работает, но обещаний на нём больше не строится.
+тот же файл ответов: страница умеет не только его отдавать, но и
+загружать обратно. Отдаёт она его листом отправки, если он есть, — в
+встроенном браузере мессенджера скачивания может не быть вовсе, а лист
+отправки ещё и сообщает, что файл ушёл. Память браузера осталась быстрым
+путём там, где она работает, но обещаний на ней больше не строится, и
+применяется сохранённое по тем же проверкам, что файл.
 """
 
 from __future__ import annotations
@@ -83,19 +86,47 @@ const FRAGILE = location.protocol === 'file:';
 const NUDGE_AFTER = 15;
 
 let storageBroken = false;
-let unsaved = 0;
+
+// Отказ — сломанная память браузера — не стирается подсказками и не
+// отменяется ничем: подсказка приходит по ходу заполнения, а отказ остаётся
+// единственной причиной, по которой клиент вообще нажмёт «Сохранить
+// ответы». Поэтому он не замещается, а сопровождает всё остальное.
+let refusal = '';
+
+// Что уже лежит в файле у клиента. Несохранённое считается по ответам, а не
+// по нажатиям: пятнадцать касаний одного вопроса — это один ответ, и
+// «накопилось 15 ответов» рядом с «отвечено 1 из 3» было неправдой.
+let inFile = new Map();
 
 function say(text, kind) {
   const el = document.getElementById('warning');
-  el.textContent = text;
-  el.className = kind || 'warn';
-  el.hidden = !text;
+  const full = text && refusal ? text + ' ' + refusal : (text || refusal);
+  el.textContent = full;
+  el.className = refusal ? 'warn' : (kind || 'warn');
+  el.hidden = !full;
 }
 
 function noStorage() {
   storageBroken = true;
-  say('Браузер не запоминает ответы. Нажимайте «Сохранить ответы» — ' +
-      'вернуться к заполненному можно будет через «Продолжить».');
+  refusal = 'Браузер не запоминает ответы: вернуться к заполненному можно ' +
+            'только через файл — «Сохранить ответы», потом «Продолжить».';
+  say('');
+}
+
+function snapshot(answers) {
+  inFile = new Map();
+  for (const name of Object.keys(answers)) {
+    inFile.set(name, String(answers[name]));
+  }
+}
+
+function unsavedCount() {
+  const now = collect();
+  let count = 0;
+  for (const name of Object.keys(now)) {
+    if (inFile.get(name) !== String(now[name])) count += 1;
+  }
+  return count;
 }
 
 function collect() {
@@ -129,9 +160,13 @@ function save() {
       noStorage();
     }
   }
-  unsaved += 1;
+  // Сообщение о прошлом действии перестаёт быть правдой, как только появился
+  // новый ответ: зелёное «загружено» висело на экране, пока рядом копились
+  // несохранённые ответы.
+  say('');
+  const unsaved = unsavedCount();
   if (FRAGILE && unsaved >= NUDGE_AFTER) {
-    say('Накопилось ' + unsaved + ' ответов. Сохраните файл, чтобы не ' +
+    say('Несохранённых ответов: ' + unsaved + '. Сохраните файл, чтобы не ' +
         'потерять их, если страница закроется.');
   }
   refresh();
@@ -250,12 +285,58 @@ function payload() {
 }
 
 function download() {
-  const blob = new Blob([JSON.stringify(payload(), null, 2)],
-                        { type: 'application/json' });
+  const data = payload();
+  const text = JSON.stringify(data, null, 2);
+  const name = 'ответы-' + CLIENT_CODE + '.json';
+  const file = shareable(name, text);
+  if (file) return handOver(file, name, text, data["ответы"]);
+  deliver(name, text, data["ответы"]);
+}
+
+function shareable(name, text) {
+  // В встроенном браузере мессенджера скачивания часто нет вовсе: клик по
+  // ссылке не делает ничего и об этом не сообщает — а это и есть то
+  // окружение, ради которого всё затевалось. Лист отправки на телефоне
+  // отдаёт файл прямо в чат, и он единственный путь, про который страница
+  // узнаёт, что файл действительно ушёл.
+  if (typeof navigator === 'undefined' || !navigator.canShare
+      || typeof File !== 'function') {
+    return null;
+  }
+  try {
+    const file = new File([text], name, { type: 'application/json' });
+    return navigator.canShare({ files: [file] }) ? file : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function handOver(file, name, text, answers) {
+  const answered = Object.keys(answers).length;
+  navigator.share({ files: [file], title: name }).then(function () {
+    snapshot(answers);
+    say('Файл с ' + answered + ' ответами отправлен. Сохраните его у себя: ' +
+        'через «Продолжить» он вернёт заполненное.', 'hint');
+  }, function (e) {
+    // Отказ человека и неработающая отправка — разные вещи. Закрыли лист
+    // отправки — AbortError, и сохранением это не стало. А вот встроенный
+    // браузер, объявивший отправку и не справившийся, не повод оставить
+    // клиента без файла: иначе «Сохранить ответы» снова ничего не делает и
+    // молчит об этом.
+    if (e && e.name === 'AbortError') {
+      return say('Файл не отправлен. Ответы остались только на этой ' +
+                 'странице — нажмите «Сохранить ответы» ещё раз.');
+    }
+    deliver(name, text, answers);
+  });
+}
+
+function deliver(name, text, answers) {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'ответы-' + CLIENT_CODE + '.json';
+  a.download = name;
   // Ссылка добавляется в документ, а адрес освобождается не сразу: часть
   // браузеров телефона не скачивает по ссылке вне документа и обрывает
   // скачивание, если адрес отозвать в тот же миг.
@@ -263,10 +344,13 @@ function download() {
   a.click();
   a.remove();
   setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-  unsaved = 0;
-  const answered = Object.keys(collect()).length;
-  say('Файл с ' + answered + ' ответами сохранён. Пришлите его специалисту, ' +
-      'когда закончите.', 'hint');
+  snapshot(answers);
+  // Что файл скачался, страница проверить не может: браузер мог не начать
+  // скачивание и ничего об этом не сказать. Поэтому не «сохранено», а что
+  // проверить и что делать дальше.
+  say('Файл ' + name + ' с ' + Object.keys(answers).length +
+      ' ответами передан браузеру. Проверьте, что он появился в загрузках, ' +
+      'и пришлите его специалисту, когда закончите.');
 }
 
 function load(file) {
@@ -308,7 +392,9 @@ function accept(text) {
   }
   const result = apply(data["ответы"]);
   refresh();
-  unsaved = 0;
+  // Ответы из файла в файле и лежат; несохранённым остаётся то, что
+  // оставлено как на экране.
+  snapshot(data["ответы"]);
   say(tale(result, 'Загружено ответов'), result.unknown ? 'warn' : 'hint');
 }
 
@@ -409,9 +495,10 @@ def render_questionnaire(
         "<h1>Большой интегральный опросник</h1>"
         "<p>Отвечайте по своему состоянию за последний месяц. "
         "Заполнять можно за несколько подходов: нажмите «Сохранить ответы» — "
-        "браузер скачает файл. Когда вернётесь, откройте опросник снова и "
-        "нажмите «Продолжить»: выберите этот файл, и заполненное встанет на "
-        "место. Последний скачанный файл пришлите специалисту.</p>"
+        "телефон предложит отправить файл или положит его в загрузки. Когда "
+        "вернётесь, откройте опросник снова и нажмите «Продолжить»: выберите "
+        "этот файл, и заполненное встанет на место. Последний файл ответов "
+        "пришлите специалисту.</p>"
         f'<form id="form">{"".join(sections)}</form>'
         "</main>"
         '<div class="bar"><p id="warning" hidden></p>'

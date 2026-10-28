@@ -225,9 +225,19 @@ if (plan.canShare) {
       name: what.files && what.files[0] && what.files[0].name,
       text: what.files && what.files[0] && what.files[0].text,
     });
-    return plan.shareFails
-      ? Promise.reject(new Error('отправка отменена'))
-      : Promise.resolve();
+    if (plan.shareFails) {
+      // Клиент закрыл лист отправки, не отправив: браузер отвечает
+      // AbortError — это отказ человека, а не поломка.
+      const no = new Error('отправка отменена');
+      no.name = 'AbortError';
+      return Promise.reject(no);
+    }
+    if (plan.shareBroken) {
+      // Лист отправки есть, но не работает: встроенный браузер объявил
+      // поддержку и не справился. Клиент тут ни при чём.
+      return Promise.reject(new Error('отправка невозможна'));
+    }
+    return Promise.resolve();
   };
 }
 

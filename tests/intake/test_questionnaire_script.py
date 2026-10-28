@@ -38,8 +38,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
-def questionnaire() -> Questionnaire:
+def _questionnaire(count: int = 3) -> Questionnaire:
     scale = (
         ScaleOption(score=0, label="нет"),
         ScaleOption(score=1, label="иногда"),
@@ -53,7 +52,7 @@ def questionnaire() -> Questionnaire:
             scale=None,
             block_scale=scale,
         )
-        for number in (1, 2, 3)
+        for number in range(1, count + 1)
     )
     block = Block(
         id="blok",
@@ -72,6 +71,19 @@ def questionnaire() -> Questionnaire:
         ),
     )
     return Questionnaire(version="тест-1", blocks=(block,))
+
+
+@pytest.fixture
+def questionnaire() -> Questionnaire:
+    return _questionnaire()
+
+
+@pytest.fixture
+def long_questionnaire() -> Questionnaire:
+    """Напоминание приходит после пятнадцати несохранённых ответов, поэтому
+    трёх вопросов для него мало: на трёх вопросах видно только то, что
+    пятнадцать нажатий — это не пятнадцать ответов."""
+    return _questionnaire(20)
 
 
 def _script_of(page: str) -> str:
@@ -219,21 +231,49 @@ def test_phone_is_told_upfront_that_progress_may_not_survive(
     assert desktop["warningHidden"], "на обычной странице пугать нечем"
 
 
-def test_unsaved_answers_are_nudged_on_a_phone(questionnaire, tmp_path):
+def test_unsaved_answers_are_nudged_on_a_phone(long_questionnaire, tmp_path):
     """Напоминание приходит по мере накопления, а не раз в начале: за
     пятнадцать ответов клиент успевает забыть предупреждение."""
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    result = run(page, {"protocol": "file:", "steps": steps}, tmp_path)
+    assert "Сохраните файл" in result["warning"]
+    assert "15" in result["warning"]
+
+
+def test_the_nudge_counts_answers_not_taps(questionnaire, tmp_path):
+    """Пятнадцать касаний одного вопроса — один ответ. «Накопилось 15
+    ответов» рядом с «Отвечено 1 из 3» было неправдой, а неправда здесь
+    стоит дороже молчания: ей перестают верить."""
     page = render_questionnaire(questionnaire, "CL-0417")
     steps = [{"answer": ["blok.a.1", 1]}] * 15
     result = run(page, {"protocol": "file:", "steps": steps}, tmp_path)
-    assert "Сохраните файл" in result["warning"]
-
-
-def test_saving_resets_the_nudge(questionnaire, tmp_path):
-    page = render_questionnaire(questionnaire, "CL-0417")
-    steps = [{"answer": ["blok.a.1", 1]}] * 15 + [{"download": True}]
-    result = run(page, {"protocol": "file:", "steps": steps}, tmp_path)
+    assert result["progress"] == "Отвечено 1 из 3"
     assert "Сохраните файл" not in result["warning"]
-    assert "сохранён" in result["warning"]
+
+
+def test_saving_resets_the_nudge(long_questionnaire, tmp_path):
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    result = run(
+        page, {"protocol": "file:", "steps": steps + [{"download": True}]}, tmp_path
+    )
+    assert "Сохраните файл" not in result["warning"]
+    assert "ответы-CL-0417.json" in result["warning"]
+
+
+def test_saving_restarts_the_count_of_unsaved_answers(
+    long_questionnaire, tmp_path
+):
+    """После сохранения счёт начинается заново: иначе напоминание приходит
+    на каждый следующий ответ и перестаёт что-либо значить."""
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    steps += [{"download": True}, {"answer": ["blok.a.16", 1]}]
+    result = run(page, {"protocol": "file:", "steps": steps}, tmp_path)
+    assert "Сохраните файл" not in result["warning"], (
+        "счёт несохранённого не начался заново"
+    )
 
 
 def test_download_survives_phone_browsers(questionnaire, tmp_path):
@@ -457,3 +497,171 @@ def test_a_failure_inside_the_load_is_told_to_the_client(questionnaire, tmp_path
     assert not result["crashed"], "сбой не поймали: " + str(result["crashed"])
     assert "не удалось" in result["warning"] or "Сбой" in result["warning"]
     assert result["warningKind"] == "warn"
+
+
+def test_the_file_goes_through_the_share_sheet_when_there_is_one(
+    questionnaire, tmp_path
+):
+    """В встроенном браузере мессенджера скачивания часто нет вовсе: клик по
+    ссылке не делает ничего и об этом не сообщает — ровно то окружение, для
+    которого всё и затевалось. Лист отправки отдаёт файл прямо в чат."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "canShare": True,
+            "steps": [{"answer": ["blok.a.1", 2]}, {"download": True}],
+        },
+        tmp_path,
+    )
+    (sent,) = result["shared"]
+    assert sent["name"] == "ответы-CL-0417.json"
+    assert json.loads(sent["text"])["ответы"] == {"blok.a.1": 2}
+    assert result["downloads"] == [], "файл ушёл дважды"
+    assert "отправлен" in result["warning"]
+    assert result["warningKind"] == "hint"
+
+
+def test_a_cancelled_share_is_not_called_saved(long_questionnaire, tmp_path):
+    """Лист отправки можно закрыть, не отправив. Это не сохранение, и
+    говорить о сохранении не о чем: ответы остались только на странице."""
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    result = run(
+        page,
+        {
+            "canShare": True,
+            "shareFails": True,
+            "protocol": "file:",
+            "steps": steps + [{"download": True}, {"answer": ["blok.a.16", 1]}],
+        },
+        tmp_path,
+    )
+    assert "Сохраните файл" in result["warning"], (
+        "непрошедшая отправка сошла за сохранение"
+    )
+
+
+def test_download_does_not_promise_what_it_cannot_check(questionnaire, tmp_path):
+    """Страница не может узнать, что браузер скачал файл. Прежнее зелёное
+    «Файл сохранён» было обещанием, которого код не держит: при сломанном
+    хранилище клиент отвечал дальше под надписью «сохранено» и терял всё."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {"steps": [{"answer": ["blok.a.1", 2]}, {"download": True}]},
+        tmp_path,
+    )
+    assert "сохранён" not in result["warning"]
+    assert "загрузк" in result["warning"], "клиенту не сказано, что проверить"
+    assert result["warningKind"] == "warn"
+
+
+def test_saving_does_not_erase_the_broken_storage_warning(questionnaire, tmp_path):
+    """Отказ переживает подсказки: он единственная причина, по которой
+    клиент вообще нажмёт «Сохранить ответы»."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "storageThrows": True,
+            "steps": [{"answer": ["blok.a.1", 2]}, {"download": True}],
+        },
+        tmp_path,
+    )
+    assert "не запоминает" in result["warning"]
+    assert result["warningKind"] == "warn"
+
+
+def test_the_nudge_does_not_erase_the_broken_storage_warning(
+    long_questionnaire, tmp_path
+):
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    result = run(
+        page,
+        {"storageThrows": True, "protocol": "file:", "steps": steps},
+        tmp_path,
+    )
+    assert "не запоминает" in result["warning"]
+    assert "Сохраните файл" in result["warning"]
+
+
+def test_a_green_message_does_not_outlive_the_next_answer(questionnaire, tmp_path):
+    """После загрузки зелёное «загружено» висело, пока копились
+    несохранённые ответы: сообщение о прошлом действии перестаёт быть
+    правдой, как только появился новый ответ."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "steps": [
+                {"load": answers_file("CL-0417", "тест-1", {"blok.a.1": 2})},
+                {"answer": ["blok.a.2", 1]},
+            ]
+        },
+        tmp_path,
+    )
+    assert "Загружено" not in result["warning"]
+    assert result["warningHidden"]
+
+
+def test_answers_that_came_from_the_file_are_not_counted_as_unsaved(
+    long_questionnaire, tmp_path
+):
+    """Клиент только что загрузил свой файл — требовать сохранить его
+    обратно не за что: эти ответы в файле и лежат."""
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    answers = {f"blok.a.{n}": 1 for n in range(1, 16)}
+    result = run(
+        page,
+        {
+            "protocol": "file:",
+            "steps": [
+                {"load": answers_file("CL-0417", "тест-1", answers)},
+                {"answer": ["blok.a.16", 1]},
+            ],
+        },
+        tmp_path,
+    )
+    assert result["progress"] == "Отвечено 16 из 20"
+    assert "Сохраните файл" not in result["warning"]
+
+
+def test_a_sent_file_restarts_the_count_of_unsaved_answers(
+    long_questionnaire, tmp_path
+):
+    """Отправленный файл — единственное, про что страница знает наверняка:
+    он ушёл, и счёт несохранённого начинается заново."""
+    page = render_questionnaire(long_questionnaire, "CL-0417")
+    steps = [{"answer": [f"blok.a.{n}", 1]} for n in range(1, 16)]
+    steps += [{"download": True}, {"answer": ["blok.a.16", 1]}]
+    result = run(
+        page, {"canShare": True, "protocol": "file:", "steps": steps}, tmp_path
+    )
+    assert "Сохраните файл" not in result["warning"]
+
+
+def test_a_share_sheet_that_does_not_work_falls_back_to_a_download(
+    questionnaire, tmp_path
+):
+    """Встроенный браузер может объявить лист отправки и не справиться.
+    Отказ человека и неработающая отправка — разные вещи: во втором случае
+    остаться без файла нельзя, иначе «Сохранить ответы» не делает ничего и
+    молчит об этом — то самое, ради чего всё затевалось."""
+    page = render_questionnaire(questionnaire, "CL-0417")
+    result = run(
+        page,
+        {
+            "canShare": True,
+            "shareBroken": True,
+            "steps": [{"answer": ["blok.a.1", 2]}, {"download": True}],
+        },
+        tmp_path,
+    )
+    assert len(result["shared"]) == 1, "отправку даже не попробовали"
+    (download,) = result["downloads"]
+    assert download["name"] == "ответы-CL-0417.json"
+    assert download["inDom"]
+    assert json.loads(result["saved"])["ответы"] == {"blok.a.1": 2}
+    assert "загрузк" in result["warning"]
